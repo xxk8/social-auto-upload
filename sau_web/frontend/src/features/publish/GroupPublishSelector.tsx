@@ -40,6 +40,20 @@ type GroupPublishSelectorProps = {
   mode: 'video' | 'note'
   value: GroupSelection | null
   onChange: (selection: GroupSelection | null) => void
+  /**
+   * OPT-3G: handler invoked when the user clicks the
+   * "💡 N 项平台专属待配置" chip next to the summary line.
+   * PublishPage wires this up to BOTH open VideoForm's
+   * controlled "advanced" Accordion AND highlight the matching
+   * platform-specific section.
+   *
+   * The platform argument is the first pending config the chip
+   * computed from the current `value.platforms`. Publishers can
+   * extend the chip to highlight several platforms later, but
+   * today the UI prioritises one section at a time so the ring
+   * is unambiguous.
+   */
+  onExpandAdvanced?: (platform: 'douyin' | 'bilibili' | 'tencent') => void
 }
 
 /** Platforms that support note uploads. */
@@ -69,6 +83,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
   mode,
   value,
   onChange,
+  onExpandAdvanced,
 }: GroupPublishSelectorProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(
     value?.groupId ?? null,
@@ -208,6 +223,31 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
     () => groups.filter((g) => g.authorizations.length > 0),
     [groups],
   )
+
+  // OPT-3G: pending platform-specific configuration count. Reads from
+  // `value.platforms` (the user-checked set) so chip + count always
+  // match what is actually queued. Note: 只在 video 模式下计数 —
+  // NoteForm 上没有 advanced Accordion 接口，点击也不会起作用。
+  const pendingPlatformConfigs = useMemo<
+    Array<'douyin' | 'bilibili' | 'tencent'>
+  >(() => {
+    if (mode !== 'video') return []
+    const items: Array<'douyin' | 'bilibili' | 'tencent'> = []
+    const checked = value?.platforms ?? []
+    if (checked.includes('douyin')) items.push('douyin')
+    if (checked.includes('bilibili')) items.push('bilibili')
+    if (checked.includes('tencent')) items.push('tencent')
+    return items
+  }, [mode, value?.platforms])
+  const pendingPlatformConfigsCount = pendingPlatformConfigs.length
+
+  const handleExpandAdvancedClick = useCallback(() => {
+    if (!onExpandAdvanced) return
+    if (pendingPlatformConfigs.length === 0) return
+    // 默认高亮首个待配置平台。后续轮次可以循环（lastIdx + 1），但
+    // 现在只点亮一个以免同一时刻多个 ring 重叠搶眼。
+    onExpandAdvanced(pendingPlatformConfigs[0])
+  }, [onExpandAdvanced, pendingPlatformConfigs])
 
   const checkedCount = value?.platforms.length ?? 0
   const totalCount = availableAuths.length
@@ -400,22 +440,56 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
 
                 {/* Summary */}
                 {value && checkedCount > 0 && (
-                  <div className="flex items-center gap-2.5 rounded-lg bg-muted/40 border border-border/50 px-3 py-2.5 text-xs">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground">将发布到</span>
-                    <span className="font-semibold text-foreground">{checkedCount} 个平台</span>
-                    <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
-                    <div className="flex items-center gap-1 flex-wrap min-w-0">
-                      {value.platforms.map((p) => (
-                        <span
-                          key={p}
-                          className="inline-flex items-center gap-1 rounded bg-background border border-border/60 px-1.5 py-0.5 text-[11px] font-medium"
-                        >
-                          <PlatformIcon platform={p} className="h-3 w-3" />
-                          {platformLabelMap[p] ?? p}
-                        </span>
-                      ))}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2.5 rounded-lg bg-muted/40 border border-border/50 px-3 py-2.5 text-xs">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground">将发布到</span>
+                      <span className="font-semibold text-foreground">{checkedCount} 个平台</span>
+                      <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
+                      <div className="flex items-center gap-1 flex-wrap min-w-0">
+                        {value.platforms.map((p) => (
+                          <span
+                            key={p}
+                            className="inline-flex items-center gap-1 rounded bg-background border border-border/60 px-1.5 py-0.5 text-[11px] font-medium"
+                          >
+                            <PlatformIcon platform={p} className="h-3 w-3" />
+                            {platformLabelMap[p] ?? p}
+                          </span>
+                        ))}
+                      </div>
                     </div>
+                    {/*
+                      OPT-3G: 平台专属待配置 chip.
+                      - Shows only in video mode (NoteForm lacks the
+                        advanced Accordion + hasDouyin/hasBilibili/hasTencent
+                        sections, so the chip would dangle).
+                      - Click bubbles through `onExpandAdvanced` so the
+                        parent (PublishPage) can both open the Accordion
+                        AND pin the highlight ring on the matching
+                        platform section.
+                      - emoji-prefix copy is intentional — 给长期用户保留
+                        “平台““抖音”“商品链接”的心智模型；提示轻量。
+                    */}
+                    {mode === 'video' && pendingPlatformConfigsCount > 0 && onExpandAdvanced && (
+                      <button
+                        type="button"
+                        onClick={handleExpandAdvancedClick}
+                        aria-label={`扩展高级选项，配置 ${pendingPlatformConfigsCount} 项平台专属`}
+                        title={`点击展开“高级选项”并定位“${pendingPlatformConfigs[0]}”平台专属设置`}
+                        data-testid="pending-platform-configs-chip"
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium cursor-pointer',
+                          'bg-blue-50 text-blue-700 border border-blue-200',
+                          'hover:bg-blue-100 hover:border-blue-300 active:scale-[0.97] transition',
+                          'dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1',
+                        )}
+                      >
+                        <span aria-hidden>💡</span>
+                        <span>{pendingPlatformConfigsCount} 项平台专属待配置</span>
+                        <ChevronRight className="h-3 w-3 opacity-60" aria-hidden />
+                      </button>
+                    )}
                   </div>
                 )}
               </motion.div>

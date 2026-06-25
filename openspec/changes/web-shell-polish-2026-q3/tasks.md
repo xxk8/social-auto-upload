@@ -48,7 +48,7 @@
 
 - [x] 3.1 **OPT-3F** `PublishPage.tsx`：AI 侧栏加 `PanelRightClose` 按钮，collapse 时模板从 `grid-cols-[3fr_2fr]` → `grid-cols-[1fr_60px]`。
 - [x] 3.2 **OPT-3F** collapse 状态持久化到 `localStorage[sau-publish-ai-collapsed]`，mount 时回读。
-- [ ] 3.3 **OPT-3G** `GroupPublishSelector` summary chip 旁加 "💡 N 项平台专属待配置" 快捷按钮；点击时通过 `Accordion` controlled `value` 把 `advanced` 展开并高亮对应 platform 区块（`hasDouyin` / `hasBilibili` / `hasTencent`）。
+- [x] 3.3 **OPT-3G** `GroupPublishSelector` summary chip 旁加 "💡 N 项平台专属待配置" 快捷按钮；点击时通过 `Accordion` controlled `value` 把 `advanced` 展开并高亮对应 platform 区块（`hasDouyin` / `hasBilibili` / `hasTencent`）。
 - [x] 3.4 **OPT-3H** `GroupPublishSelector` 失效 badge 点击触发 `LoginProgressModal`：传入 `platform + cookie_file`，复用现有 modal 流程。
 - [x] 3.5 **OPT-3I** `PublishPage.scheduleNavigateAfterSubmit` 改为可取消 timer：banner 上"4s 后跳转到任务列表 · 取消"按钮，点击清 timer。
 - [ ] 3.6 **OPT-3J** `AiSidebar` 头部 Key 状态栏：把"添加 / 批量 / 列表 / 删除全部"折叠成单齿轮 `Popover`；状态行只剩 "已配置 · N 个 Key · 2 个限速中"。

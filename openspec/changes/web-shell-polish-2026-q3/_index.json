@@ -7,24 +7,24 @@
     "proposal": "Web Shell 抛光打磨：把 docs/dev/optimization-checklist.md 的 PR-OPT-1/2/3 三阶段先落为正式 openspec tasks，统一以 proposal→设计→任务→应用 流程推进。",
     "design": "前端为主线、视觉/交互/a11y/内容四板块并行收敛；保留 CLI/API 不动；tasks.md 按 PR-OPT-1/2/3 分大节，每节内含若干条目化原子任务。",
     "tasks": {
-      "total": 11,
-      "completed": 11,
+      "total": 12,
+      "completed": 12,
       "completed_in": [
         "PR-OPT-1",
         "PR-OPT-2",
         "PR-OPT-3F",
         "PR-OPT-3H",
-        "PR-OPT-3I"
+        "PR-OPT-3I",
+        "PR-OPT-3G"
       ],
       "in_flight": [
         "PR-OPT-3"
       ],
       "remaining_phases": [
-        "PR-OPT-3G",
         "PR-OPT-3J",
         "PR-OPT-3F e2e"
       ],
-      "bucketing": "PR-OPT-1 计入 5 = 4 主条目（A·B·C·K）+ 1 piggy-back 簇（V-1/V-3/V-4/V-5）；PR-OPT-2 计入 2 = 1 主条目 D (hook/dialog/retention) + 1 主条目 E (44pt/safe-area)；PR-OPT-3F+H+I 本轮起手计入 4 = 1 主条目 F (PanelRightClose/grid/LS-persist/rail) + 1 主条目 H (失效账号就地重登录) + 1 主条目 I (可取消的提交后跳转) + 1 backlog piggy V-2 (real-tone from useTasks)。合计 11 = 5 (OPT-1) + 2 (OPT-2) + 4 (OPT-3F+H+I+V-2)，按「是否影响用户可见行为」聚合。G/J 以及 OPT-3F Playwright e2e（tasks.md 3.3 + 3.6 + 3.9）尚未起手。",
+      "bucketing": "PR-OPT-1 计入 5 = 4 主条目（A·B·C·K）+ 1 piggy-back 簇（V-1/V-3/V-4/V-5）；PR-OPT-2 计入 2 = 1 主条目 D (hook/dialog/retention) + 1 主条目 E (44pt/safe-area)；PR-OPT-3F+H+I+G 本轮起手计入 5 = 1 主条目 F (PanelRightClose/grid/LS-persist/rail) + 1 主条目 H (失效账号就地重登录) + 1 主条目 I (可取消的提交后跳转) + 1 主条目 G (平台专属提示 chip + 受控 advanced Accordion) + 1 backlog piggy V-2 (real-tone from useTasks)。合计 12 = 5 (OPT-1) + 2 (OPT-2) + 5 (OPT-3F+H+I+G+V-2)，按「是否影响用户可见行为」聚合。J + OPT-3F Playwright e2e（tasks.md 3.6 + 3.9）尚未起手。",
       "piggy_backs": [
         {
           "src": "V-2",
@@ -130,16 +130,17 @@
       "shipped_in_this_ms": [
         "PR-OPT-3F",
         "PR-OPT-3H",
-        "PR-OPT-3I"
+        "PR-OPT-3I",
+        "PR-OPT-3G"
       ],
       "shipped_subitems": [
         "OPT-3F (3.1 + 3.2)",
         "OPT-3H (3.4)",
         "OPT-3I (3.5)",
+        "OPT-3G (3.3)",
         "OPT-V-2 (3.7)"
       ],
       "remaining_subitems": [
-        "OPT-3G (3.3)",
         "OPT-3J (3.6)",
         "OPT-3F Playwright e2e (3.9)"
       ],
@@ -190,6 +191,13 @@
             "last-tick sub-frame flicker: 原代码中 `cancelCountdown !== null` 在倒数 0s 仍显示 “0s 后跳转”，然后 useEffect 才跳。该 MINOR 已在 R1 闭环中修正：`cancelCountdown !== null && cancelCountdown > 0`。查阅 ts-string? 现 codebase 中 X 为本地变量名而该文件 useRef-fenced publishStore 以不会冲突，所以直接 alias 为 `X`。",
             "original spec.规字面是 \"1.5s 后跳转”, 又 “不可取消”；此处选择改延时为 4s（使取消 UX 可用） + 加取消入口。 description 表中的 \"1.5s\" 于第二 pass 重命名以反映实际行为。"
           ]
+        },
+        {
+          "round": "PR-OPT-3G-R1",
+          "blockers": [],
+          "minor": [
+            "需补充验证：NoteForm 上未渲染此 chip（mode!=video gating）。检查 VideoForm.test.tsx 的 Accordion Mock 不会被新 props (advancedOpen/onAdvancedChange) 干扰。"
+          ]
         }
       ]
     }
@@ -206,7 +214,7 @@
     "tiktok",
     "baijiahao"
   ],
-  "_status_note": "MS-OPT-3 has 3 PRs shipped (PR-OPT-3F covers 3.1 + 3.2 + 3.7 piggy V-2; PR-OPT-3H covers 3.4 失效账号就地重登录; PR-OPT-3I covers 3.5 可取消跳转). sub-items F+H+I landed on feat/OPT-3H / feat/OPT-3I with no new tsc errors. Remaining: G (3.3 publish-state migration), J (3.6 AI Key 管理密度), OPT-3F Playwright e2e (3.9). applyReady candidates shift: closing the milestone still requires G because G unlocks the publish-state reorg that J piggy-back builds on.",
+  "_status_note": "MS-OPT-3 has 4 PRs shipped (PR-OPT-3F covers 3.1 + 3.2 + 3.7 piggy V-2; PR-OPT-3H covers 3.4 失效账号就地重登录; PR-OPT-3I covers 3.5 可取消跳转; PR-OPT-3G covers 3.3 平台专属提示 chip + 受控 advanced Accordion 跨组件协调). sub-items F+H+G+I landed on feat/OPT-3H / feat/OPT-3I / feat/OPT-3G with no new tsc errors. Remaining: J (3.6 AI Key 管理密度), OPT-3F Playwright e2e (3.9). applyReady candidates shift: J is now the lone pending PR-ship; G closing released OPT-3 to a single remaining sub-item, simplifying the milestone push.",
   "applyReady": false,
   "dependsOn": [
     "docs/dev/optimization-checklist.md"

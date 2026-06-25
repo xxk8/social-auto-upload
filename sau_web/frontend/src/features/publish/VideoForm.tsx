@@ -16,6 +16,14 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Card,
   CardContent,
@@ -28,12 +36,14 @@ import {
   SelectTrigger,
   SelectValue,
   Textarea,
-} from '@/components/ui/index'
+} from '@/Components/ui/index'
 import { cn } from '@/lib/utils'
-import { PlatformIcon } from '@/components/ui/platform-icon'
-import { TagInput } from '@/components/ui/tag-input'
+import { PlatformIcon } from '@/Components/ui/platform-icon'
+import { TagInput } from '@/Components/ui/tag-input'
 import { motion } from 'motion/react'
-import { useToast } from '@/components/ui/toast'
+import { useToast } from '@/Components/ui/toast'
+import { usePublishDraft } from '@/hooks/usePublishDraft'
+import { PublishDraftBanner } from './PublishDraftBanner'
 import {
   api,
   PLATFORMS,
@@ -51,6 +61,7 @@ import {
   platformTagLabel,
   SectionHeader,
 } from './shared'
+import { cardVariants, springTransition } from './animations'
 import { SchedulePicker } from './SchedulePicker'
 import { formatFileSize } from '@/lib/features'
 import { Tip } from '@/lib/tip'
@@ -59,22 +70,6 @@ import { Tip } from '@/lib/tip'
  * Staggered entrance for each animated card in the form. `custom={index}` (0..N)
  * cascades the cards from top to bottom.
  */
-const cardVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      type: 'spring' as const,
-      stiffness: 320,
-      damping: 28,
-      delay: i * 0.06,
-    },
-  }),
-}
-
-const springTransition = { type: 'spring' as const, stiffness: 400, damping: 30 }
-
 /** Bilibili zone (分区) options surfaced in the advanced-options card. */
 const BILIBILI_TIDS = [
   { id: 1, name: '动画' },
@@ -119,6 +114,28 @@ type VideoFormProps = {
   onError: (label: '视频') => void
   /** Called on every form-change so the parent can render a live preview. */
   onFormChange?: (data: FormPreviewData) => void
+  /**
+   * OPT-3G: controlled `advanced` accordion state, owned by PublishPage so
+   * `GroupPublishSelector`'s 'N 项平台专属待配置' chip can drive it from
+   * outside the form. Default false keeps prior behaviour for callers
+   * that don't opt in.
+   */
+  advancedOpen?: boolean
+  /**
+   * OPT-3G: callback fired whenever the user toggles the advanced
+   * accordion inside the form (manual click on the trigger). Lets the
+   * parent keep its `advancedOpen` state in sync with the form's local
+   * intent so future cross-component affordances stay accurate.
+   */
+  onAdvancedChange?: (open: boolean) => void
+  /**
+   * OPT-3G: which platform-specific section (if any) to surface with a
+   * highlight ring inside the expanded accordion. Cleared by the parent's
+   * auto-timer (or via `onHighlightConsumed`). Three platforms are
+   * supported because they are the only ones with conditional gen-fields
+   * in this form: 抖音 / Bilibili / 视频号.
+   */
+  highlightedSection?: 'douyin' | 'bilibili' | 'tencent' | null
 }
 
 /**
@@ -134,7 +151,15 @@ type VideoFormProps = {
  */
 export const VideoForm = memo(
   forwardRef<VideoFormHandle, VideoFormProps>(function VideoForm(
-    { groupSelection, onSuccess, onError, onFormChange },
+    {
+      groupSelection,
+      onSuccess,
+      onError,
+      onFormChange,
+      advancedOpen = false,
+      onAdvancedChange,
+      highlightedSection = null,
+    },
     ref,
   ) {
     const { addToast } = useToast()
@@ -159,6 +184,144 @@ export const VideoForm = memo(
     const [fileInfo, setFileInfo] = useState<{ name: string; size: number } | null>(null)
     const [dragOver, setDragOver] = useState(false)
     const [submitting, setSubmitting] = useState(false)
+    const [confirmClearOpen, setConfirmClearOpen] = useState(false)
+
+    // ── PR-OPT-2D: draft auto-save + restore + clear-confirmation ───────
+    // Snapshot is the canonical serializable view of every persisting field.
+    // `lastFileMeta` rides along so a recovered draft can hint "请重新上传".
+    // Function refs are NOT needed (state setters are reactive reference).
+    const draftSnapshot = useMemo(
+      () => ({
+        title,
+        desc,
+        tags,
+        schedule,
+        headless,
+        thumbnail,
+        thumbnailLandscape,
+        thumbnailPortrait,
+        productLink,
+        productTitle,
+        tid,
+        shortTitle,
+        category,
+        isDraft,
+        lastFileMeta: fileInfo,
+      }),
+      [
+        title,
+        desc,
+        tags,
+        schedule,
+        headless,
+        thumbnail,
+        thumbnailLandscape,
+        thumbnailPortrait,
+        productLink,
+        productTitle,
+        tid,
+        shortTitle,
+        category,
+        isDraft,
+        fileInfo,
+      ],
+    )
+
+    const {
+      pendingDraft,
+      draftSavedAt,
+      acknowledge,
+      clearDraftStorage,
+    } = usePublishDraft('video', draftSnapshot)
+
+    // Filled-field count drives the clear-confirmation threshold (≥2).
+    // Booleans don't count unless true; numbers (tid) count if non-null.
+    const filledFieldCount = useMemo(() => {
+      let n = 0
+      const textKeys = [
+        title, desc, tags, schedule,
+        thumbnail, thumbnailLandscape, thumbnailPortrait,
+        productLink, productTitle, shortTitle, category,
+      ] as const
+      for (const v of textKeys) if (v.trim()) n++
+      if (tid != null) n++
+      if (isDraft) n++
+      return n
+    }, [
+      title, desc, tags, schedule,
+      thumbnail, thumbnailLandscape, thumbnailPortrait,
+      productLink, productTitle, shortTitle, category,
+      tid, isDraft,
+    ])
+
+    // Helper: copy every persisted field from a pending draft back into the
+    // form's local state. The video File itself (fileRef) cannot be restored
+    // across reloads — we only set the visible `fileInfo` so the user sees
+    // "请重新上传" context in the empty dropzone.
+    const restoreDraft = useCallback(() => {
+      if (!pendingDraft) return
+      const d = pendingDraft as typeof draftSnapshot
+      let restored = 0
+      if (d.title) { setTitle(d.title); restored++ }
+      if (d.desc) { setDesc(d.desc); restored++ }
+      if (typeof d.tags === 'string') { setTags(d.tags); if (d.tags) restored++ }
+      if (typeof d.schedule === 'string') { setSchedule(d.schedule); if (d.schedule) restored++ }
+      if (typeof d.headless === 'boolean') { setHeadless(d.headless); if (d.headless) restored++ }
+      if (typeof d.thumbnail === 'string') { setThumbnail(d.thumbnail); if (d.thumbnail) restored++ }
+      if (typeof d.thumbnailLandscape === 'string') { setThumbnailLandscape(d.thumbnailLandscape); if (d.thumbnailLandscape) restored++ }
+      if (typeof d.thumbnailPortrait === 'string') { setThumbnailPortrait(d.thumbnailPortrait); if (d.thumbnailPortrait) restored++ }
+      if (typeof d.productLink === 'string') { setProductLink(d.productLink); if (d.productLink) restored++ }
+      if (typeof d.productTitle === 'string') { setProductTitle(d.productTitle); if (d.productTitle) restored++ }
+      if (d.tid != null) { setTid(d.tid); restored++ }
+      if (typeof d.shortTitle === 'string') { setShortTitle(d.shortTitle); if (d.shortTitle) restored++ }
+      if (typeof d.category === 'string') { setCategory(d.category); if (d.category) restored++ }
+      if (typeof d.isDraft === 'boolean') { setIsDraft(d.isDraft); if (d.isDraft) restored++ }
+      if (d.lastFileMeta) {
+        setFileInfo(d.lastFileMeta)
+        restored++
+      }
+      acknowledge()
+      // Guard zero-restored: a draft of only `headless: true` (default) or
+      // cleared form defaults would otherwise say "已恢复 0 项字段".
+      if (restored > 0) {
+        addToast(`已恢复 ${restored} 项字段；视频文件请重新上传`, 'success')
+      } else {
+        addToast('草稿内容全部为空，未应用', 'info')
+      }
+    }, [pendingDraft, acknowledge, addToast])
+
+    const discardDraft = useCallback(() => {
+      clearDraftStorage()
+      acknowledge()
+    }, [clearDraftStorage, acknowledge])
+
+    /** Restore draft hint text — surfaces in the banner under the heading. */
+    const draftBannerFieldsHint = useMemo(() => {
+      if (!pendingDraft) return undefined
+      const d = pendingDraft as Record<string, unknown>
+      const filled: string[] = []
+      if (typeof d.title === 'string' && d.title.trim()) filled.push('标题')
+      if (typeof d.desc === 'string' && d.desc.trim()) filled.push('简介')
+      if (typeof d.tags === 'string' && d.tags.trim()) filled.push('标签')
+      if (typeof d.schedule === 'string' && d.schedule.trim()) filled.push('定时')
+      if (d.lastFileMeta) filled.push('视频元信息')
+      return filled.length > 0
+        ? `将恢复：${filled.join(' · ')}${filled.includes('视频元信息') ? '（视频需重新上传）' : ''}`
+        : '草稿不含可恢复字段；视频需重新上传'
+    }, [pendingDraft])
+
+    /** draft fields count, ignoring pure-metadata entries, for the banner footer. */
+    const draftFieldCountForBanner = useMemo(() => {
+      if (!pendingDraft) return 0
+      const d = pendingDraft as Record<string, unknown>
+      let n = 0
+      for (const k of ['title', 'desc', 'tags', 'schedule', 'thumbnail', 'thumbnailLandscape', 'thumbnailPortrait', 'productLink', 'productTitle', 'shortTitle', 'category']) {
+        const v = d[k]
+        if (typeof v === 'string' && v.trim()) n++
+      }
+      if (d.tid != null) n++
+      return n
+    }, [pendingDraft])
 
     const platformLabelMap = useMemo(
       () => Object.fromEntries(PLATFORMS.map((p) => [p.value, p.label])),
@@ -279,7 +442,17 @@ export const VideoForm = memo(
       })
     }, [title, desc, tags, previewUrl, thumbnailPortrait, thumbnailLandscape, thumbnail, fileInfo])
 
-    const clearAll = useCallback(() => {
+    /**
+     * PR-OPT-2D: split clearAll into two intents:
+     *   - clearEverything(): end-user triggered "清空" — wipes EVERYTHING
+     *     + the persisted LS draft. Guarded by an AlertDialog when
+     *     `filledFieldCount >= 2`.
+     *   - clearFilesAndReset(): post-submit success — clears the video
+     *     file reference + its preview, but keeps title/desc/tags/schedule
+     *     so the user can immediately re-submit to another account group
+     *     without retyping.
+     */
+    const clearEverything = useCallback(() => {
       setTitle('')
       setDesc('')
       setTags('')
@@ -295,7 +468,24 @@ export const VideoForm = memo(
       setIsDraft(false)
       setFileInfo(null)
       fileRef.current = null
+      clearDraftStorage()
+    }, [clearDraftStorage])
+
+    const clearFilesAndReset = useCallback(() => {
+      setFileInfo(null)
+      fileRef.current = null
+      // Title/desc/tags/schedule/headless/thumbnails/platform-specific stay.
+      // The next debounced auto-save tick (after useEffect re-runs) will
+      // persist the retained fields so a reload still has them.
     }, [])
+
+    const handleClearClick = useCallback(() => {
+      if (filledFieldCount >= 2) {
+        setConfirmClearOpen(true)
+      } else {
+        clearEverything()
+      }
+    }, [filledFieldCount, clearEverything])
 
     const submit = useCallback(async () => {
       if (!groupSelection?.platforms.length) {
@@ -356,7 +546,7 @@ export const VideoForm = memo(
         } else {
           addToast(`已提交 ${results.length} 个视频上传任务`, 'success')
         }
-        clearAll()
+        clearFilesAndReset()
         onSuccess({ count: results.length, taskIds: ids, failedCount: failed.length, mode: '视频' })
       } catch {
         addToast('视频请求失败，请检查后端连接', 'error')
@@ -381,7 +571,7 @@ export const VideoForm = memo(
       category,
       isDraft,
       addToast,
-      clearAll,
+      clearFilesAndReset,
       onSuccess,
       onError,
     ])
@@ -589,7 +779,12 @@ export const VideoForm = memo(
           animate="visible"
         >
           <Card className="card-refined overflow-hidden">
-            <Accordion type="single" collapsible>
+            <Accordion
+              type="single"
+              collapsible
+              value={advancedOpen ? 'advanced' : ''}
+              onValueChange={(v) => onAdvancedChange?.((v as string) === 'advanced')}
+            >
               <AccordionItem value="advanced" className="border-b-0">
                 <AccordionTrigger className="px-5 py-3 hover:no-underline">
                   <div className="flex items-center gap-2">
@@ -655,7 +850,14 @@ export const VideoForm = memo(
 
                   {/* ── 平台特定字段: 抖音 ── */}
                   {hasDouyin && (
-                    <div className="mt-4 pt-4 border-t border-border/30">
+                    <div
+                      id="advanced-section-douyin"
+                      data-section="douyin"
+                      className={cn(
+                        'mt-4 pt-4 border-t border-border/30 rounded-md transition-all duration-300',
+                        highlightedSection === 'douyin' && 'ring-2 ring-primary ring-offset-2 ring-offset-background px-3 pb-3 bg-primary/5',
+                      )}
+                    >
                       <div className="flex items-center gap-1.5 mb-2">
                         <PlatformIcon platform="douyin" className="h-3 w-3" />
                         <span className="text-[11px] font-semibold text-muted-foreground">
@@ -687,7 +889,14 @@ export const VideoForm = memo(
 
                   {/* ── 平台特定字段: Bilibili ── */}
                   {hasBilibili && (
-                    <div className="mt-4 pt-4 border-t border-border/30">
+                    <div
+                      id="advanced-section-bilibili"
+                      data-section="bilibili"
+                      className={cn(
+                        'mt-4 pt-4 border-t border-border/30 rounded-md transition-all duration-300',
+                        highlightedSection === 'bilibili' && 'ring-2 ring-primary ring-offset-2 ring-offset-background px-3 pb-3 bg-primary/5',
+                      )}
+                    >
                       <div className="flex items-center gap-1.5 mb-2">
                         <PlatformIcon platform="bilibili" className="h-3 w-3" />
                         <span className="text-[11px] font-semibold text-muted-foreground">
@@ -719,7 +928,14 @@ export const VideoForm = memo(
 
                   {/* ── 平台特定字段: 视频号 ── */}
                   {hasTencent && (
-                    <div className="mt-4 pt-4 border-t border-border/30">
+                    <div
+                      id="advanced-section-tencent"
+                      data-section="tencent"
+                      className={cn(
+                        'mt-4 pt-4 border-t border-border/30 rounded-md transition-all duration-300',
+                        highlightedSection === 'tencent' && 'ring-2 ring-primary ring-offset-2 ring-offset-background px-3 pb-3 bg-primary/5',
+                      )}
+                    >
                       <div className="flex items-center gap-1.5 mb-2">
                         <PlatformIcon platform="tencent" className="h-3 w-3" />
                         <span className="text-[11px] font-semibold text-muted-foreground">
@@ -772,7 +988,7 @@ export const VideoForm = memo(
 
         {/* ── 提交按钮 ─────────────────────────────────────────── */}
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={clearAll}>
+          <Button variant="outline" onClick={handleClearClick}>
             清空
           </Button>
           <Button
@@ -784,6 +1000,39 @@ export const VideoForm = memo(
             提交视频
           </Button>
         </div>
+
+        {/* ── PR-OPT-2D: 草稿恢复条 ──── */}
+        <PublishDraftBanner
+          visible={pendingDraft !== null}
+          savedAt={draftSavedAt}
+          fieldsHint={draftBannerFieldsHint}
+          fieldCount={draftFieldCountForBanner}
+          onRestore={restoreDraft}
+          onDiscard={discardDraft}
+        />
+
+        {/* ── PR-OPT-2D: 清空二次确认对话框 ──── */}
+        <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认清空表单？</AlertDialogTitle>
+              <AlertDialogDescription>
+                当前已填写 {filledFieldCount} 项字段。清空后会同时删除本地草稿，操作不可撤销。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setConfirmClearOpen(false)
+                  clearEverything()
+                }}
+              >
+                清空
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </>
     )
   }),

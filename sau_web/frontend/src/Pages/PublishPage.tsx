@@ -215,6 +215,73 @@ export default function PublishPage() {
     stopAutoNavigate()
   }, [stopAutoNavigate])
 
+  // OPT-3G: controlled 'advanced' accordion state + per-platform
+  //         section highlight, owned here in PublishPage so
+  //         GroupPublishSelector's pending-platforms chip can drive
+  //         VideoForm's Accordion across the component boundary.
+  //         State is module-local because PublishPage is the only
+  //         tree that owns BOTH children at the same time.
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [highlightedSection, setHighlightedSection] = useState<
+    'douyin' | 'bilibili' | 'tencent' | null
+  >(null)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * OPT-3G: handler passed down to GroupPublishSelector's chip.
+   * Opens the advanced Accordion AND pins the highlightedSection ring
+   * on the matching platform for `HIGHLIGHT_MS` so the user can
+   * visually locate where to fill in platform-specific fields.
+   * Auto-clears: a reset-then-restart pattern so rapid double-clicks
+   * still get a fresh full window of highlight time.
+   */
+  const HIGHLIGHT_MS = 3000
+  const handleExpandAdvanced = useCallback(
+    (platform: 'douyin' | 'bilibili' | 'tencent') => {
+      setAdvancedOpen(true)
+      setHighlightedSection(platform)
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedSection(null)
+        highlightTimerRef.current = null
+      }, HIGHLIGHT_MS)
+    },
+    [],
+  )
+
+  // Clear pending highlight timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+    }
+  }, [])
+
+  /**
+   * OPT-3G (R1 review): when the user switches group OR mode, drop the
+   * chip-driven Accordion + ring state. Otherwise:
+   *   - group A has `douyin` selected, user clicks the chip → ring on
+   *     douyin section. User switches to group B that excludes douyin
+   *     → `highlightedSection === 'douyin'` but the matching `<div
+   *     data-section="douyin">` is unmounted; ring is invisible while
+   *     the Accordion stays expanded — the "look here next" promise
+   *     is silently broken.
+   *   - video → note → video would re-open the Accordion simply
+   *     because `advancedOpen` survived the VideoForm unmount.
+   *
+   * Dep tuple `(groupSelection?.groupId, mode)` covers both cases.
+   * Safe on initial mount: setAdvancedOpen(false) is idempotent (the
+   * default), highlightTimerRef.current is null, setHighlightedSection
+   * (null) is idempotent — no spurious UX churn.
+   */
+  useEffect(() => {
+    setAdvancedOpen(false)
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current)
+      highlightTimerRef.current = null
+    }
+    setHighlightedSection(null)
+  }, [groupSelection?.groupId, mode])
+
   const handleSubmitSuccess = useCallback(
     (info: { count: number; taskIds: string[]; failedCount: number; mode: '视频' | '图文' }) => {
       setLastTaskIds(info.taskIds)
@@ -300,6 +367,7 @@ export default function PublishPage() {
               mode={mode}
               value={groupSelection}
               onChange={setGroupSelection}
+              onExpandAdvanced={handleExpandAdvanced}
             />
 
             <div className="mt-4">
@@ -310,6 +378,9 @@ export default function PublishPage() {
                   onSuccess={handleSubmitSuccess}
                   onError={noopError}
                   onFormChange={handleFormChange}
+                  advancedOpen={advancedOpen}
+                  onAdvancedChange={setAdvancedOpen}
+                  highlightedSection={highlightedSection}
                 />
               </TabsContent>
               <TabsContent value="note" className="mt-0 data-[state=inactive]:hidden">
