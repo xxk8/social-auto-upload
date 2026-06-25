@@ -54,7 +54,8 @@
 - [x] 3.6 **OPT-3J** `AiSidebar` 头部 Key 状态栏：把"添加 / 批量 / 列表 / 删除全部"折叠成单齿轮 `Popover`；状态行只剩 "已配置 · N 个 Key · 2 个限速中"。
 - [x] 3.7 **OPT-V-2** `PublishStatsBar` "最近提交" 卡片：从 `usePublishStore + useTasks` 读最新任务状态，用 `@/lib/tone::toneTextClass(tone)` 配色（success / warning / muted-foreground）。*(本 PR 3.1–3.2 中同步落地)*
 - [x] 3.8 **OPT-3V-5** *(piggy-back, PR-OPT-1R2 提前落地)* `PublishPreview` 0 张图 fallback 用 `<ImageIcon className="h-6 w-6 text-muted-foreground/80">` 替代 `bg-muted-foreground/20` 占位。
-- [ ] 3.9 测试：Playwright 桌面模式打开 → 折叠 AI 侧栏 → 刷新验证状态保留（OPT-3F）；Playwright 移动模式 375 宽度 → 4 tab 触摸 OK（OPT-2E）。
+- [x] 3.9a **OPT-3F-e2e** 测试：Playwright 桌面模式打开 → 折叠 AI 侧栏 → 刷新验证状态保留（OPT-3F）。
+- [ ] 3.9b **OPT-2E-e2e** 测试：Playwright 移动模式 375 宽度 → 4 tab 触摸 OK（OPT-2E）。
 
 ## 4. 配套改动（cross-cutting）
 

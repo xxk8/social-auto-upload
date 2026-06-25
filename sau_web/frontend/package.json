@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e": "playwright test --config ../../tests/playwright.config.ts",
+    "e2e:install": "playwright install --with-deps chromium",
+    "e2e:ui": "playwright test --ui --config ../../tests/playwright.config.ts"
   },
   "dependencies": {
     "@dnd-kit/helpers": "^0.5.0",
@@ -52,6 +55,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@playwright/test": "^1.55.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "eslint": "^10.3.0",

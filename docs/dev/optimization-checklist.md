@@ -416,3 +416,13 @@
   4. 完成后移动到"已完成"段（如需保留）。
 - 维护人：Owner + 任意 contributor。
 - 反馈：新增条目时直接 append，按板块归类。
+
+## 🔬 E2E 覆盖 (OPT-3F-e2e)
+
+| Surface | Spec | File |
+|---------|------|------|
+| AI 侧栏折叠 + LS 状态保留 | OPT-3F | `tests/e2e/opt-3f-ai-collapse.spec.ts` |
+| Chip → controlled Accordion + ring-2 高亮环 | OPT-3G | `tests/e2e/opt-3g-chip-ring.spec.ts` |
+| 提交后取消自动跳转 | OPT-3I | `tests/e2e/opt-3i-cancel-navigate.spec.ts` |
+
+运行要求：Web Shell 已启动（`bash sau_web/start.sh`）；在 `sau_web/frontend/` 下 `pnpm e2e`。 可选 `E2E_BOOT_SERVER=1 pnpm e2e` 让 Playwright 自己拉起服务。

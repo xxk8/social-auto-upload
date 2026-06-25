@@ -1,13 +1,13 @@
 {
   "name": "web-shell-polish-2026-q3",
   "created": "2026-06-25T12:00:00+08:00",
-  "last_sync": "2026-06-25T22:30:00+08:00",
+  "last_sync": "2026-06-25",
   "status": "proposed",
   "artifacts": {
     "proposal": "Web Shell 抛光打磨：把 docs/dev/optimization-checklist.md 的 PR-OPT-1/2/3 三阶段先落为正式 openspec tasks，统一以 proposal→设计→任务→应用 流程推进。",
     "design": "前端为主线、视觉/交互/a11y/内容四板块并行收敛；保留 CLI/API 不动；tasks.md 按 PR-OPT-1/2/3 分大节，每节内含若干条目化原子任务。",
     "tasks": {
-      "total": 13,
+      "total": 14,
       "completed": 13,
       "completed_in": [
         "PR-OPT-1",
@@ -17,14 +17,13 @@
         "PR-OPT-3I",
         "PR-OPT-3G",
         "PR-OPT-3J",
-        "chore/OPT-platform-type-union"
+        "chore/OPT-platform-type-union",
+        "feat/OPT-3F-e2e"
       ],
       "in_flight": [
         "PR-OPT-3"
       ],
-      "remaining_phases": [
-        "PR-OPT-3F e2e"
-      ],
+      "remaining_phases": [],
       "bucketing": "PR-OPT-1 计入 5 = 4 主条目 (A·B·C·K) + 1 piggy-back 簇（V-1/V-3/V-4/V-5）；PR-OPT-2 计入 2 = 1 主条目 D (hook/dialog/retention) + 1 主条目 E (44pt/safe-area)；PR-OPT-3F+H+I+G+J 本轮起手计入 6 = 1 主条目 F (PanelRightClose/grid/LS-persist/rail) + 1 主条目 H (失效账号就地重登录) + 1 主条目 I (可取消的提交后跳转) + 1 主条目 G (平台专属提示 chip + 受控 advanced Accordion) + 1 主条目 J (ApiSidebar Key 管理 Popover 封装) + 1 backlog piggy V-2 (real-tone from useTasks)。合计 13 = 5 (OPT-1) + 2 (OPT-2) + 6 (OPT-3F+H+I+G+J+V-2)，按「是否影响用户可见行为」聚合。OPT-3F Playwright e2e（tasks.md 3.9）是仅剩未起手的任务。",
       "piggy_backs": [
         {
@@ -133,7 +132,8 @@
         "PR-OPT-3H",
         "PR-OPT-3I",
         "PR-OPT-3G",
-        "PR-OPT-3J"
+        "PR-OPT-3J",
+        "PR-OPT-3F-e2e"
       ],
       "shipped_subitems": [
         "OPT-3F (3.1 + 3.2)",
@@ -214,6 +214,16 @@
           "minor": [
             "Closes the OPT-3G R1 leftover triplication MINOR: triple 'douyin' | 'bilibili' | 'tencent' literal union is now a single canonical export type PlatformSpecificSection in VideoForm.tsx, reused in GroupPublishSelector + PublishPage. 1 canonical edit point instead of 3."
           ]
+        },
+        {
+          "round": "feat/OPT-3F-e2e-R1",
+          "blockers": [],
+          "minor": [
+            "OPT-3I spec mock URL hard-coded /api/videos/upload; actual is /api/upload/video (client.ts uploadVideo). Fixed in same PR.",
+            "OPT-3G data-state check was scoped to [role=\"region\"] which is overbroad; tightened to #advanced-section-bilibili in same PR.",
+            "Optional follow-up: wire a CI job that runs pnpm e2e against E2E_BOOT_SERVER=1 mode in a Linux runner."
+          ],
+          "verdict": "ship"
         }
       ]
     }
