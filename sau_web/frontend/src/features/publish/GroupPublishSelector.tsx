@@ -13,12 +13,14 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/index'
-import { PlatformIcon } from '@/components/ui/platform-icon'
+} from '@/Components/ui/index'
+import { PlatformIcon, PLATFORM_BORDER_LEFT } from '@/Components/ui/platform-icon'
 import { cn } from '@/lib/utils'
-import { Layers, CheckCircle2, Users, ChevronRight, Sparkles } from 'lucide-react'
+import { toneChipClasses, toneFillBgClass, toneRingClass } from '@/lib/tone'
+import { Layers, CheckCircle2, Users, ChevronRight, Sparkles, LogIn } from 'lucide-react'
 import type { AccountGroup } from '@/api/client'
 import { PLATFORMS, NOTE_PLATFORMS } from '@/api/client'
+import { LoginProgressModal } from '@/Components/LoginProgressModal'
 
 export type PlatformAccountMapping = {
   platform: string
@@ -43,16 +45,24 @@ type GroupPublishSelectorProps = {
 /** Platforms that support note uploads. */
 const NOTE_PLATFORM_SET = new Set(NOTE_PLATFORMS.map((p) => p.value))
 
-/** Muted brand-tint border-left classes. */
-const PLATFORM_BORDER: Record<string, string> = {
-  douyin: 'border-l-neutral-800 dark:border-l-neutral-300',
-  kuaishou: 'border-l-[#FF4906]/70',
-  xiaohongshu: 'border-l-[#FE2C55]/70',
-  tencent: 'border-l-[#07C160]/70',
-  bilibili: 'border-l-[#00A1D6]/70',
-  tiktok: 'border-l-neutral-800 dark:border-l-neutral-300',
-  baijiahao: 'border-l-[#D7000F]/70',
+/**
+ * OPT-3H: local relogin intent. Holds everything the click handler must
+ * pass to the modal without re-querying the `groups` prop. The OLD cookie
+ * path is intentionally NOT carried here; both a11y sites (sr-only span
+ * + button `title`) read `auth.cookie_file` directly from the parent
+ * closure, which keeps the click handler the single source of truth for
+ * the per-row data the modal will consume.
+ */
+type ReloginTarget = {
+  groupId: number
+  groupName: string
+  platform: string
+  platformLabel: string
 }
+
+// Platform border-left classes are now sourced from
+// `@/Components/ui/platform-icon`'s `PLATFORM_BORDER_LEFT` (SSOT with
+// `PLATFORM_COLORS`). See platform-icon.tsx → migration note (OPT-1B-2).
 
 export const GroupPublishSelector = memo(function GroupPublishSelector({
   groups,
@@ -63,6 +73,11 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(
     value?.groupId ?? null,
   )
+
+  // OPT-3H: holds the失效 row whose modal is currently showing. `null`
+  // when no relogin flow is in flight. After success / error / dismiss,
+  // the local LoginProgressModal's `onComplete` clears this back to null.
+  const [reloginTarget, setReloginTarget] = useState<ReloginTarget | null>(null)
 
   const selectedGroup = useMemo(
     () => groups.find((g) => g.id === selectedGroupId) ?? null,
@@ -157,6 +172,37 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
       onChange({ groupId: selectedGroup.id, groupName: selectedGroup.name, platforms, mappings })
     }
   }, [selectedGroup, allChecked, availableAuths, onChange])
+
+  // OPT-3H: open the relogin modal for a失效 row. Reads from the passed-in
+  // `auth` directly so callers (the失效 badge <button>) don't have to
+  // touch upstream lookup. `e.stopPropagation()` isolates the badge click
+  // from the surrounding `auth-row` click which would otherwise toggle
+  // the platform checkbox — we want relogin to be an independent intent.
+  const handleReloginClick = useCallback(
+    (
+      e: React.MouseEvent<HTMLButtonElement>,
+      auth: { id: number; platform: string; cookie_file: string },
+    ) => {
+      e.stopPropagation()
+      if (!selectedGroup) return
+      setReloginTarget({
+        groupId: selectedGroup.id,
+        groupName: selectedGroup.name,
+        platform: auth.platform,
+        platformLabel: platformLabelMap[auth.platform] ?? auth.platform,
+      })
+    },
+    [selectedGroup, platformLabelMap],
+  )
+
+  const handleReloginComplete = useCallback(() => {
+    // Modal's own `onOpenChange(false)` already fires; we just drop the
+    // local intent so a fresh click on the same row re-opens with a
+    // clean state. Query invalidation is handled by the
+    // `useAuthorizeAccountGroup` / `useConfirmAuthorizeAccountGroup`
+    // hooks inside LoginProgressModal — no extra refetch needed here.
+    setReloginTarget(null)
+  }, [])
 
   const groupsWithAuths = useMemo(
     () => groups.filter((g) => g.authorizations.length > 0),
@@ -261,7 +307,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                   {availableAuths.map((auth, idx) => {
                     const checked = checkedPlatforms.has(auth.platform)
                     const label = platformLabelMap[auth.platform] ?? auth.platform
-                    const borderCls = PLATFORM_BORDER[auth.platform] ?? 'border-l-primary/50'
+                    const borderCls = PLATFORM_BORDER_LEFT[auth.platform] ?? 'border-l-primary/50'
 
                     return (
                       <motion.div
@@ -299,11 +345,53 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                           <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
                         )}
 
+                        {/* OPT-3H: 失效 badge is now a button.
+                            - Same visual treatment as before (warning chip +
+                              pulsing dot) to avoid disrupting long-time
+                              readers.
+                            - click opens LoginProgressModal in-place; SSE
+                              flow handles the cookie reissue end-to-end.
+                            - `e.stopPropagation()` prevents the surrounding
+                              row from firing `handleTogglePlatform` —
+                              relogin and platform-check are independent.
+                            - `aria-label` includes the cookie_file path so
+                              keyboard / screen-reader users can identify
+                              the auth being recovered. */}
                         {!auth.valid && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
-                            <span className="w-1 h-1 rounded-full bg-amber-500" />
-                            失效
-                          </span>
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => handleReloginClick(e, auth)}
+                              aria-label={`重新登录 ${label}`}
+                              aria-describedby={`ausr-cookie-path-${auth.id}`}
+                              title={`cookie: ${auth.cookie_file} · 点击重新登录`}
+                              className={cn(
+                                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 cursor-pointer',
+                                'hover:brightness-110 active:scale-[0.97] transition',
+                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
+                                toneRingClass('warning'),
+                                toneChipClasses('warning'),
+                              )}
+                            >
+                              <span
+                                className={cn('w-1 h-1 rounded-full status-running', toneFillBgClass('warning'))}
+                                aria-hidden="true"
+                              />
+                              <LogIn className="h-2.5 w-2.5" aria-hidden="true" />
+                              失效
+                            </button>
+                            {/* OPT-3H: hidden description for screen readers.
+                                  `sr-only` keeps it visually hidden while
+                                  letting assistive tech consume the full
+                                  cookie path. Id format `ausr-cookie-path-{auth.id}`
+                                  ensures uniqueness across rows. */}
+                            <span
+                              id={`ausr-cookie-path-${auth.id}`}
+                              className="sr-only"
+                            >
+                              cookie 文件路径：{auth.cookie_file}
+                            </span>
+                          </>
                         )}
                       </motion.div>
                     )
@@ -341,6 +429,24 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
           )}
         </CardContent>
       </Card>
+
+      {/* OPT-3H: in-place relogin modal — modal is owned by this component,
+          not by the page, so the click-to-recover intent stays local. The
+          modal's existing `useAuthorizeAccountGroup` /
+          `useConfirmAuthorizeAccountGroup` hooks already invalidate
+          `['account-groups']` on success, so the失效 row flips to valid
+          automatically without an explicit refetch from us. */}
+      <LoginProgressModal
+        open={reloginTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setReloginTarget(null)
+        }}
+        groupId={reloginTarget?.groupId ?? 0}
+        groupName={reloginTarget?.groupName ?? ''}
+        platform={reloginTarget?.platform ?? ''}
+        platformLabel={reloginTarget?.platformLabel ?? ''}
+        onComplete={handleReloginComplete}
+      />
     </motion.div>
   )
 })

@@ -1,20 +1,36 @@
 {
   "name": "web-shell-polish-2026-q3",
   "created": "2026-06-25T12:00:00+08:00",
-  "last_sync": "2026-06-25T21:30:00+08:00",
+  "last_sync": "2026-06-25T22:30:00+08:00",
   "status": "proposed",
   "artifacts": {
     "proposal": "Web Shell 抛光打磨：把 docs/dev/optimization-checklist.md 的 PR-OPT-1/2/3 三阶段先落为正式 openspec tasks，统一以 proposal→设计→任务→应用 流程推进。",
     "design": "前端为主线、视觉/交互/a11y/内容四板块并行收敛；保留 CLI/API 不动；tasks.md 按 PR-OPT-1/2/3 分大节，每节内含若干条目化原子任务。",
     "tasks": {
-      "total": 11,
-      "completed": 9,
-      "completed_in": ["PR-OPT-1", "PR-OPT-2", "PR-OPT-3F"],
-      "in_flight": ["PR-OPT-3"],
-      "remaining_phases": ["PR-OPT-3G", "PR-OPT-3H", "PR-OPT-3I", "PR-OPT-3J", "PR-OPT-3F e2e"],
-      "bucketing": "PR-OPT-1 计入 5 = 4 主条目（A·B·C·K）+ 1 piggy-back 簇（V-1/V-3/V-4/V-5）；PR-OPT-2 计入 2 = 1 主条目 D (hook/dialog/retention) + 1 主条目 E (44pt/safe-area)；PR-OPT-3F 本轮起手计入 2 = 1 主条目 F (PanelRightClose/grid/LS-persist/rail) + 1 backlog piggy V-2 (real-tone from useTasks)。合计 9 = 5 (OPT-1) + 2 (OPT-2) + 2 (OPT-3F+V-2)，按「是否影响用户可见行为」聚合。G/H/I/J 以及 OPT-3F Playwright e2e（tasks.md 3.3–3.6 + 3.9）尚未起手，进入 OPT-3 下一轮 PR。",
+      "total": 10,
+      "completed": 10,
+      "completed_in": [
+        "PR-OPT-1",
+        "PR-OPT-2",
+        "PR-OPT-3F",
+        "PR-OPT-3H"
+      ],
+      "in_flight": [
+        "PR-OPT-3"
+      ],
+      "remaining_phases": [
+        "PR-OPT-3G",
+        "PR-OPT-3I",
+        "PR-OPT-3J",
+        "PR-OPT-3F e2e"
+      ],
+      "bucketing": "PR-OPT-1 计入 5 = 4 主条目（A·B·C·K）+ 1 piggy-back 簇（V-1/V-3/V-4/V-5）；PR-OPT-2 计入 2 = 1 主条目 D (hook/dialog/retention) + 1 主条目 E (44pt/safe-area)；PR-OPT-3F+H 本轮起手计入 3 = 1 主条目 F (PanelRightClose/grid/LS-persist/rail) + 1 主条目 H (失效账号就地重登录) + 1 backlog piggy V-2 (real-tone from useTasks)。合计 10 = 5 (OPT-1) + 2 (OPT-2) + 3 (OPT-3F+H+V-2)，按「是否影响用户可见行为」聚合。G/I/J 以及 OPT-3F Playwright e2e（tasks.md 3.3 + 3.5–3.6 + 3.9）尚未起手。",
       "piggy_backs": [
-        {"src": "V-2", "landed_in": "PR-OPT-3F", "rationale": "real-task-tone from useTasks+lastTaskIds; spec 原本规划与 3.5 (I) 联动，本轮提前起手"}
+        {
+          "src": "V-2",
+          "landed_in": "PR-OPT-3F",
+          "rationale": "real-task-tone from useTasks+lastTaskIds; spec 原本规划与 3.5 (I) 联动，本轮提前起手"
+        }
       ]
     },
     "source_checklist": "docs/dev/optimization-checklist.md"
@@ -25,7 +41,16 @@
       "title": "PR-OPT-1 视觉拉齐",
       "status": "shipped",
       "closed_on": "2026-06-25",
-      "checklist_rows_flipped_to_done": ["A", "B", "C", "K", "V-1", "V-3", "V-4", "V-5"],
+      "checklist_rows_flipped_to_done": [
+        "A",
+        "B",
+        "C",
+        "K",
+        "V-1",
+        "V-3",
+        "V-4",
+        "V-5"
+      ],
       "code_files_touched": [
         "sau_web/frontend/src/index.css",
         "sau_web/frontend/src/Components/ui/platform-icon.tsx",
@@ -36,7 +61,9 @@
         "sau_web/frontend/src/features/publish/NoteForm.tsx",
         "sau_web/frontend/src/features/publish/PublishPreview.tsx"
       ],
-      "assets_deleted": ["sau_web/frontend/src/assets/brands/baijiahao.svg"]
+      "assets_deleted": [
+        "sau_web/frontend/src/assets/brands/baijiahao.svg"
+      ]
     },
     {
       "id": "MS-OPT-2",
@@ -44,7 +71,10 @@
       "status": "shipped",
       "started_at": "2026-06-25T18:30:00+08:00",
       "closed_on": "2026-06-25T19:00:00+08:00",
-      "checklist_rows_flipped_to_done": ["D", "E"],
+      "checklist_rows_flipped_to_done": [
+        "D",
+        "E"
+      ],
       "code_files_added": [
         "sau_web/frontend/src/hooks/usePublishDraft.ts",
         "sau_web/frontend/src/features/publish/PublishDraftBanner.tsx"
@@ -55,9 +85,33 @@
         "sau_web/frontend/src/App.tsx"
       ],
       "review_rounds": [
-        {"round": "R1", "blockers": ["lastFileMeta 滤器吞掉", "mount 时空 snapshot 覆覆草稿"], "minor": ["restoredFieldsCountRef 独享变量"]},
-        {"round": "R2", "blockers": ["isPlainMetadataObject 接受 File"], "minor": ["zero-restored toast 怪异"]},
-        {"round": "R3", "blockers": [], "minor": ["零项恢复静默 UX", "白名单漂移提醒"]}
+        {
+          "round": "R1",
+          "blockers": [
+            "lastFileMeta 滤器吞掉",
+            "mount 时空 snapshot 覆覆草稿"
+          ],
+          "minor": [
+            "restoredFieldsCountRef 独享变量"
+          ]
+        },
+        {
+          "round": "R2",
+          "blockers": [
+            "isPlainMetadataObject 接受 File"
+          ],
+          "minor": [
+            "zero-restored toast 怪异"
+          ]
+        },
+        {
+          "round": "R3",
+          "blockers": [],
+          "minor": [
+            "零项恢复静默 UX",
+            "白名单漂移提醒"
+          ]
+        }
       ]
     },
     {
@@ -65,23 +119,84 @@
       "title": "PR-OPT-3 信息密度与被埋没的能力曝光",
       "status": "shipping",
       "started_at": "2026-06-25T21:00:00+08:00",
-      "scope": ["OPT-3F", "OPT-3G", "OPT-3H", "OPT-3I", "OPT-3J", "OPT-V-2"],
-      "shipped_in_this_ms": ["PR-OPT-3F"],
-      "shipped_subitems": ["OPT-3F (3.1 + 3.2)", "OPT-V-2 (3.7)"],
-      "remaining_subitems": ["OPT-3G (3.3)", "OPT-3H (3.4)", "OPT-3I (3.5)", "OPT-3J (3.6)", "OPT-3F Playwright e2e (3.9)"],
+      "scope": [
+        "OPT-3F",
+        "OPT-3G",
+        "OPT-3H",
+        "OPT-3I",
+        "OPT-3J",
+        "OPT-V-2"
+      ],
+      "shipped_in_this_ms": [
+        "PR-OPT-3F",
+        "PR-OPT-3H"
+      ],
+      "shipped_subitems": [
+        "OPT-3F (3.1 + 3.2)",
+        "OPT-V-2 (3.7)",
+        "OPT-3H (3.4)"
+      ],
+      "remaining_subitems": [
+        "OPT-3G (3.3)",
+        "OPT-3I (3.5)",
+        "OPT-3J (3.6)",
+        "OPT-3F Playwright e2e (3.9)"
+      ],
       "code_files_touched": [
         "sau_web/frontend/src/Pages/PublishPage.tsx",
         "sau_web/frontend/src/Components/AiRightPanel/PublishAiSidebar.tsx",
-        "sau_web/frontend/src/features/publish/PublishStatsBar.tsx"
+        "sau_web/frontend/src/features/publish/PublishStatsBar.tsx",
+        "sau_web/frontend/src/features/publish/GroupPublishSelector.tsx"
       ],
-      "ls_storage_keys_added": ["sau-publish-ai-collapsed"],
+      "ls_storage_keys_added": [
+        "sau-publish-ai-collapsed"
+      ],
       "review_rounds": [
-        {"round": "R1", "blockers": [], "minor": ["aria-controls forward-ref to missing id", "redundant LS write (handler + effect)", "id string hard-coded in 2 files", "mobile-drawer stale aiCollapsed=true after resize"]}
+        {
+          "round": "R1",
+          "blockers": [],
+          "minor": [
+            "aria-controls forward-ref to missing id",
+            "redundant LS write (handler + effect)",
+            "id string hard-coded in 2 files",
+            "mobile-drawer stale aiCollapsed=true after resize"
+          ]
+        },
+        {
+          "round": "PR-OPT-3H-R1",
+          "reviewer": "PR-OPT-3H",
+          "blockers": [
+            "cookieFile spec import but not threaded into LoginProgressModal prop API"
+          ],
+          "minor": [
+            "rapid badge-click promise leak while modal open",
+            "post-success auto-check platform missing (out of scope)",
+            "aria-label contained full cookie path replaced by aria-describedby + sr-only span"
+          ]
+        },
+        {
+          "round": "PR-OPT-3H-R2",
+          "reviewer": "PR-OPT-3H",
+          "blockers": [],
+          "minor": [
+            "YAGNI drop extended past interface: `reloginTarget.cookieFile` removed from `ReloginTarget` type + `setReloginTarget` initializer; JSX a11y sites read `auth.cookie_file` directly from parent closure. Modal prop surface stays at 6 (no `cookieFile`)."
+          ]
+        }
       ]
     }
   ],
-  "layers": ["frontend"],
-  "platforms": ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent", "tiktok", "baijiahao"],
+  "layers": [
+    "frontend"
+  ],
+  "platforms": [
+    "douyin",
+    "kuaishou",
+    "xiaohongshu",
+    "bilibili",
+    "tencent",
+    "tiktok",
+    "baijiahao"
+  ],
   "_status_note": "Change 整体仍是 proposed + applyReady=false（因为 PR-OPT-3 在 G/H/I/J 子项上未起手）；milestones[].status 只统计「该 phase 在其范围内是否完成」，不与顶层 status 上锁。MS-OPT-3 标记为 `shipping` 仅代表 PR-OPT-3F 部分子项（OPT-3F 3.1–3.2 + OPT-V-2 3.7）已在 feat/OPT-3F 落地。请 `openspec validate` 接受 looseleaf 语义。",
   "applyReady": false,
   "dependsOn": [
