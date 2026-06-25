@@ -1,23 +1,27 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { RefObject } from 'react'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/Components/ui/textarea'
+import { Label } from '@/Components/ui/label'
+import { Badge } from '@/Components/ui/badge'
+import { Button } from '@/Components/ui/button'
+import { Input } from '@/Components/ui/input'
+import { Alert, AlertDescription } from '@/Components/ui/alert'
+import { Separator } from '@/Components/ui/separator'
 import { Tip } from '@/lib/tip'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+} from '@/Components/ui/alert-dialog'
+import {
+  Popover, PopoverTrigger, PopoverContent,
+} from '@/Components/ui/popover'
 import {
   Sparkles, Info, History, Save, Wand2, Trash2,
   ChevronDown, ChevronUp, Settings, Key, Eye, EyeOff,
   Check, X, Paperclip, Image as ImageIcon, Zap, BookOpen,
-  Copy, RotateCcw, Upload, Pencil, CheckCheck, AlertTriangle,
+  Copy, RotateCcw, Upload, Pencil, CheckCheck, AlertTriangle, Loader2,
+  Plus,
 } from 'lucide-react'
 import { ModelSelector } from './ModelSelector'
 import { GenerateButton } from './GenerateButton'
@@ -25,18 +29,68 @@ import { useAiStore } from '@/stores/useAiStore'
 import { useAiHistoryStore, type HistoryEntry } from '@/stores/useAiHistory'
 import { useAiTemplatesStore } from '@/stores/useAiTemplates'
 import { useChatStore } from '@/stores/useChatStore'
-import { ChatArea } from '@/components/AiPanel/ChatArea'
-import { MarkdownContent } from '@/components/AiPanel/ChatArea'
+import { ChatArea } from '@/Components/AiPanel/ChatArea'
+import { MarkdownContent } from '@/Components/AiPanel/ChatArea'
 import { useChatActions } from '@/lib/chat/useChatActions'
 import { useAiConfig, useSetAiConfig, useDeleteAiConfig, useAiKeys } from '@/hooks/useAiConfig'
-import { useToast } from '@/components/ui/toast'
+import { useToast } from '@/Components/ui/toast'
 import { api } from '@/api/client'
 import type { FormHandle } from '@/lib/chat/chatFormBridge'
+import { cn } from '@/lib/utils'
 
 export type AiGenerationResult = {
   title: string
   desc: string
   tags: string
+}
+
+/**
+ * OPT-3J: helper for items inside the API Key management Popover.
+ * Lives in-module rather than `@/Components/ui` because the layout
+ * (text-only with optional icon + optional numeric badge) is specific
+ * to this surface and we don't expect to reuse it elsewhere yet.
+ *
+ * Behavioural contract:
+ *   - `role="menuitem"` puts each row inside the parent
+ *     `role="menu"` for AT navigation. Without the role pair, screen
+ *     readers treat the list as unrelated buttons.
+ *   - `tone='destructive'` paints the entire row (icon + label) red,
+ *     matching the existing 'delete-all' affordance in the prior
+ *     inline cluster.
+ *   - `badge`: rendered on the right when supplied and > 0. Today
+ *     only the "查看 Key 列表" item passes one (the live `aiKeys.length`).
+ */
+function KeyMenuItem({
+  icon,
+  label,
+  onClick,
+  tone,
+  badge,
+}: {
+  icon?: React.ReactNode
+  label: string
+  onClick: () => void
+  tone?: 'destructive'
+  badge?: number
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-2 px-2 py-1.5 text-xs transition-colors text-left rounded',
+        'hover:bg-muted focus-visible:bg-muted focus-visible:outline-none',
+        tone === 'destructive' && 'text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10',
+      )}
+    >
+      {icon && <span className="shrink-0 [&_svg]:shrink-0 text-current">{icon}</span>}
+      <span className="flex-1">{label}</span>
+      {typeof badge === 'number' && badge > 0 && (
+        <Badge variant="outline" className="ml-auto h-4 px-1 text-[9px]">{badge}</Badge>
+      )}
+    </button>
+  )
 }
 
 interface AiSidebarProps {
@@ -97,6 +151,10 @@ export function AiSidebar({ mode, platform, onGenerated, formRef }: AiSidebarPro
   const [batchImporting, setBatchImporting] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [showKeyList, setShowKeyList] = useState(false)
+  // OPT-3J: controlled state for the Key-management Popover (replaces
+  // what used to be 4 standalone Tip-button affordances packed into
+  // the right-hand cluster of the status bar).
+  const [manageOpen, setManageOpen] = useState(false)
   const [currentKeyInfo, setCurrentKeyInfo] = useState<{ id: number; masked: string } | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; dataUrl: string; type: string; poster?: string; frames?: string[] }>>([])
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
@@ -566,38 +624,101 @@ export function AiSidebar({ mode, platform, onGenerated, formRef }: AiSidebarPro
               </span>
             )}
           </div>
-          <div className="flex items-center gap-0.5 opacity-70 transition-opacity group-hover/keybar:opacity-100">
-            {configLoading || keysLoading ? (
-              <div className="h-6 w-6 animate-pulse rounded-md bg-muted-foreground/20" />
-            ) : aiConfig?.configured ? (
-              <>
-                <Tip text="添加 Key">
-                  <Button variant="ghost" size="sm" className="h-7 w-7 rounded-md p-0 hover:bg-primary/10 hover:text-primary" onClick={() => { setShowKeyInput(!showKeyInput); setShowBatchImport(false) }}>
-                    <Settings className="h-3.5 w-3.5" />
-                  </Button>
-                </Tip>
-                <Tip text="批量导入 Key">
-                  <Button variant="ghost" size="sm" className="h-7 rounded-md px-1.5 text-[10px] font-medium hover:bg-primary/10 hover:text-primary" onClick={() => { setShowBatchImport(!showBatchImport); setShowKeyInput(false) }}>
-                    批量
-                  </Button>
-                </Tip>
-                <Tip text="查看 Key 列表">
-                  <Button variant="ghost" size="sm" className="h-7 w-7 rounded-md p-0" onClick={() => setShowKeyList(!showKeyList)}>
-                    {showKeyList ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                  </Button>
-                </Tip>
-                <Tip text="删除全部 Key">
-                  <Button variant="ghost" size="sm" className="h-7 w-7 rounded-md p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => setDeleteTarget({ type: 'key' })}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </Tip>
-              </>
-            ) : (
-              <Button variant="outline" size="sm" className="h-7 rounded-md px-2.5 text-[10px] font-medium" onClick={() => setShowKeyInput(true)}>
-                设置 Key
-              </Button>
-            )}
-          </div>
+          {configLoading || keysLoading ? (
+            // OPT-3J R1: keep the same loading shimmer-gate that the
+            // pre-Popover cluster had. Without it, clicking `管理`
+            // during the brief load window opens the UNCONFIGURED
+            // branch (`aiConfig?.configured` is undefined while
+            // loading) even when the user has keys configured —
+            // offering the wrong primary CTA.
+            <div className="h-6 w-16 animate-pulse rounded-md bg-muted-foreground/20" aria-hidden />
+          ) : (
+          <Popover open={manageOpen} onOpenChange={setManageOpen}>
+            <PopoverTrigger asChild>
+              <Tip text="API Key 管理">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 gap-1 text-[10px] font-medium hover:bg-primary/10 hover:text-primary"
+                  aria-label={aiConfig?.configured ? `管理 ${aiConfig.key_count || 0} 个 API Key` : '设置 API Key'}
+                >
+                  <Settings className="h-3.5 w-3.5" aria-hidden />
+                  管理
+                  <ChevronDown className={`h-3 w-3 transition-transform ${manageOpen ? 'rotate-180' : ''}`} aria-hidden />
+                </Button>
+              </Tip>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-56 p-1.5" sideOffset={6}>
+              <div className="space-y-0.5" role="menu" aria-label="API Key 管理">
+                {aiConfig?.configured ? (
+                  <>
+                    <KeyMenuItem
+                      icon={<Plus className="h-3.5 w-3.5" />}
+                      label="添加 Key"
+                      onClick={() => {
+                        setShowKeyInput(true)
+                        setShowBatchImport(false)
+                        setShowKeyList(false)
+                        setManageOpen(false)
+                      }}
+                    />
+                    <KeyMenuItem
+                      icon={<Upload className="h-3.5 w-3.5" />}
+                      label="批量导入"
+                      onClick={() => {
+                        setShowBatchImport(true)
+                        setShowKeyInput(false)
+                        setShowKeyList(false)
+                        setManageOpen(false)
+                      }}
+                    />
+                    <KeyMenuItem
+                      icon={showKeyList ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      label="查看 Key 列表"
+                      onClick={() => {
+                        setShowKeyList(!showKeyList)
+                        setShowKeyInput(false)
+                        setShowBatchImport(false)
+                        setManageOpen(false)
+                      }}
+                      badge={aiKeys?.length ?? 0}
+                    />
+                    <div className="my-1 h-px bg-border/60" role="separator" />
+                    <KeyMenuItem
+                      icon={<Trash2 className="h-3.5 w-3.5" />}
+                      label="删除全部 Key"
+                      tone="destructive"
+                      onClick={() => {
+                        setDeleteTarget({ type: 'key' })
+                        setManageOpen(false)
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <KeyMenuItem
+                      icon={<Plus className="h-3.5 w-3.5" />}
+                      label="设置 Key"
+                      onClick={() => {
+                        setShowKeyInput(true)
+                        setManageOpen(false)
+                      }}
+                    />
+                    <KeyMenuItem
+                      icon={<Upload className="h-3.5 w-3.5" />}
+                      label="批量导入"
+                      onClick={() => {
+                        setShowBatchImport(true)
+                        setShowKeyInput(false)
+                        setManageOpen(false)
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+          )}
         </div>
 
         {showKeyInput && (
