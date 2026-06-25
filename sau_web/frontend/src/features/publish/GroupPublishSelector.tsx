@@ -21,6 +21,7 @@ import { Layers, CheckCircle2, Users, ChevronRight, Sparkles, LogIn } from 'luci
 import type { AccountGroup } from '@/api/client'
 import { PLATFORMS, NOTE_PLATFORMS } from '@/api/client'
 import { LoginProgressModal } from '@/Components/LoginProgressModal'
+import type { PlatformSpecificSection } from './VideoForm'
 
 export type PlatformAccountMapping = {
   platform: string
@@ -53,7 +54,7 @@ type GroupPublishSelectorProps = {
    * today the UI prioritises one section at a time so the ring
    * is unambiguous.
    */
-  onExpandAdvanced?: (platform: 'douyin' | 'bilibili' | 'tencent') => void
+  onExpandAdvanced?: (platform: PlatformSpecificSection) => void
 }
 
 /** Platforms that support note uploads. */
@@ -229,10 +230,10 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
   // match what is actually queued. Note: 只在 video 模式下计数 —
   // NoteForm 上没有 advanced Accordion 接口，点击也不会起作用。
   const pendingPlatformConfigs = useMemo<
-    Array<'douyin' | 'bilibili' | 'tencent'>
+    PlatformSpecificSection[]
   >(() => {
     if (mode !== 'video') return []
-    const items: Array<'douyin' | 'bilibili' | 'tencent'> = []
+    const items: PlatformSpecificSection[] = []
     const checked = value?.platforms ?? []
     if (checked.includes('douyin')) items.push('douyin')
     if (checked.includes('bilibili')) items.push('bilibili')

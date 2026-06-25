@@ -10,7 +10,7 @@ import { usePublishStore } from '../stores/publishStore'
 import { PublishAiSidebar, MobileAiDrawer } from '@/Components/AiRightPanel'
 import { useMobileDrawer } from '@/hooks/useMobileDrawer'
 import { Image as ImageIcon, Send, Video, Sparkles } from 'lucide-react'
-import { VideoForm, type VideoFormHandle } from '../features/publish/VideoForm'
+import { VideoForm, type VideoFormHandle, type PlatformSpecificSection } from '../features/publish/VideoForm'
 import { NoteForm, type NoteFormHandle } from '../features/publish/NoteForm'
 import { PublishSuccessBanner } from '../features/publish/PublishSuccessBanner'
 import { PublishStatsBar } from '../features/publish/PublishStatsBar'
@@ -223,7 +223,7 @@ export default function PublishPage() {
   //         tree that owns BOTH children at the same time.
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [highlightedSection, setHighlightedSection] = useState<
-    'douyin' | 'bilibili' | 'tencent' | null
+    PlatformSpecificSection | null
   >(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -237,7 +237,7 @@ export default function PublishPage() {
    */
   const HIGHLIGHT_MS = 3000
   const handleExpandAdvanced = useCallback(
-    (platform: 'douyin' | 'bilibili' | 'tencent') => {
+    (platform: PlatformSpecificSection) => {
       setAdvancedOpen(true)
       setHighlightedSection(platform)
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)

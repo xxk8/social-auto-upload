@@ -98,6 +98,21 @@ const BILIBILI_TIDS = [
  */
 export type VideoFormHandle = FormHandle
 
+/**
+ * OPT-3G R1 leftover: type union for the THREE platforms that have
+ * dedicated, conditional gen-fields inside VideoForm's advanced
+ *  Accordion (商品链接 for 抖音 / 分区 for Bilibili / 短标题 for 视频号).
+ *
+ * Exported once here so the cross-component coordination in
+ * PublishPage (`highlightedSection` state + `handleExpandAdvanced`
+ * callback) and GroupPublishSelector (`onExpandAdvanced` prop +
+ * pendingPlatformConfigs memo) can reference a single source of
+ * truth. Before this export the union was triplicated across the
+ * three sites; adding a 4th platform-specific field later (e.g.
+ * 十ian tiktok voice prefill) was a 3-place chore.
+ */
+export type PlatformSpecificSection = 'douyin' | 'bilibili' | 'tencent'
+
 type VideoFormProps = {
   /**
    * Pre-resolved group selection from GroupPublishSelector.
@@ -135,7 +150,7 @@ type VideoFormProps = {
    * supported because they are the only ones with conditional gen-fields
    * in this form: 抖音 / Bilibili / 视频号.
    */
-  highlightedSection?: 'douyin' | 'bilibili' | 'tencent' | null
+  highlightedSection?: PlatformSpecificSection | null
 }
 
 /**
