@@ -1,10 +1,18 @@
 import { useState } from 'react'
 import type { RefObject } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { Loader2, Sparkles, ChevronRight, Eye } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { AiSidebar, type AiGenerationResult } from '@/components/AiSidebar/AiSidebar'
+import {
+  Loader2,
+  Sparkles,
+  ChevronRight,
+  Eye,
+  PanelRightClose,
+  PanelRightOpen,
+} from 'lucide-react'
+import { Badge } from '@/Components/ui/badge'
+import { Button } from '@/Components/ui/button'
+import { cn } from '@/lib/utils'
+import { AiSidebar, type AiGenerationResult } from '@/Components/AiSidebar/AiSidebar'
 import { PublishPreview, type FormPreviewData } from '@/features/publish/PublishPreview'
 import { useAiStore } from '@/stores/useAiStore'
 import { useAiConfig } from '@/hooks/useAiConfig'
@@ -25,6 +33,25 @@ interface PublishAiSidebarProps {
    * both VideoForm and NoteForm via `useImperativeHandle`.
    */
   formRef: RefObject<FormHandle | null>
+  /**
+   * OPT-3F: rail-vs-full-panel state. Defaults to `false` (full panel).
+   * When `true`, the side widget renders a 60px-wide vertical rail with
+   * the Sparkles affordance + an expand button, mirroring the main
+   * AppShell sidebar's collapsed-rail pattern.
+   *
+   * The mobile-drawer call site deliberately omits this prop so the
+   * drawer always renders the full panel — the rail design is desktop-only.
+   */
+  collapsed?: boolean
+  /**
+   * OPT-3F: handler to flip the `collapsed` state. Required by
+   * <PublishAiSidebar/> when `collapsed` is `true` (rail needs the
+   * "open" handler). Optional in the full-panel branch (the close
+   * button sits in the panel header; omitting the prop there hides
+   * the close button if a future caller mistakenly wires both branches
+   * into the same contract).
+   */
+  onToggleCollapsed?: () => void
 }
 
 // Compact model-name display: take last segment after `/` and cap length.
@@ -36,15 +63,22 @@ function shortModel(id: string): string {
 /**
  * Right-side AI assistant panel for the publish page.
  *
- * Layout (desktop, lg+):
- *   ┃ [Sparkles] AI 助手 · model-name          ← hairline-top header (secondary chrome)
+ * Two layout shapes (OPT-3F):
+ *
+ *   Full panel (`collapsed === false`, used on `<lg` mobile drawer + desktop
+ *   when user has not collapsed the rail):
+ *   ┃ [Sparkles] AI 助手 · model-name [×]        ← header with close button
  *   ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ┃
- *   ┃                                          ┃
- *   ┃  AiSidebar (input, generate…)            ┃  ← page-bg, no Card wrapper
- *   ┃                                          ┃
+ *   ┃  AiSidebar (input, generate…)             ┃
  *   ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ┃
- *   ┃ ▸ 内容预览  [视频]                        ┃ ← disclosure toggle (collapsed default)
- *   ┃   └─ PublishPreview                      ┃
+ *   ┃ ▸ 内容预览  [视频]                         ┃ ← disclosure
+ *
+ *   Rail (`collapsed === true`, desktop only):
+ *   ┃                                          ┃
+ *   ┃   ✨                                     ┃ ← primary affordance
+ *   ┃                                          ┃
+ *   ┃   [▢]                                    ┃ ← expand button
+ *   ┃                                          ┃
  *
  * **Hierarchy**: the form on the left is wrapped in its own Card chrome
  * (primary surface). This right column intentionally has NO outer Card —
@@ -53,7 +87,9 @@ function shortModel(id: string): string {
  *
  * **Status**: AiSidebar already surfaces API-key status with full management
  * actions at the top of its own content. We deliberately do NOT duplicate
- * that here — the header only carries label + model identity.
+ * that here — the header only carries label + model identity. The rail
+ * strips everything except the Sparkles affordance + an expand button so
+ * the collapsed state is a single-glance signal, not a noisy chrome slab.
  */
 export function PublishAiSidebar({
   mode,
@@ -62,6 +98,8 @@ export function PublishAiSidebar({
   previewMode,
   previewData,
   formRef,
+  collapsed = false,
+  onToggleCollapsed,
 }: PublishAiSidebarProps) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const selectedModel = useAiStore((s) => s.selectedModel)
@@ -70,16 +108,55 @@ export function PublishAiSidebar({
   const hasPreviewContent =
     previewData.title || previewData.desc || previewData.tags || previewData.fileUrls.length > 0
 
+  // ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──
+  // OPT-3F rail: vertical 60px-wide strip with Sparkles + PanelRightOpen.
+  // Mirrors the main AppShell sidebar's collapsed-icon-rail pattern.
+  // `aria-expanded` on the open button ties screen readers to the
+  // panel's visibility; `aria-controls` references the parent grid
+  // (caller-appointed id "publish-ai-panel-region").
+  // ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ── ──
+  if (collapsed) {
+    return (
+      <div
+        className="flex h-full w-full flex-col items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/50 px-1.5 py-3 shadow-sm"
+        data-state="collapsed"
+      >
+        <div
+          className={cn(
+            'flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary',
+            'select-none',
+          )}
+          aria-hidden="true"
+        >
+          <Sparkles className="h-4 w-4" />
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleCollapsed}
+          aria-label="打开 AI 助手"
+          aria-expanded={false}
+          className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+        >
+          <PanelRightOpen className="h-4 w-4" />
+        </Button>
+      </div>
+    )
+  }
+
   return (
-    <div className="h-full flex flex-col rounded-xl border border-border/60 bg-card/50 shadow-sm">
-      {/* ── Header: single refined row, no decorative chrome ─────────── */}
+    <div
+      className="h-full flex flex-col rounded-xl border border-border/60 bg-card/50 shadow-sm"
+      id="publish-ai-panel-region"
+      data-state="expanded"
+    >
+      {/* ── Header: single refined row + OPT-3F close button ────── */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 h-11 border-b border-border/40">
         <div className="flex items-center gap-1.5 text-foreground">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <span className="text-[13px] font-semibold tracking-tight">AI 助手</span>
-        </div>
-        <span className="text-border/80" aria-hidden="true">·</span>
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+        </div>            <span className="text-border/60" aria-hidden="true">·</span>
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0 flex-1">
           {configLoading ? (
             <>
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -91,6 +168,19 @@ export function PublishAiSidebar({
             </span>
           )}
         </div>
+        {onToggleCollapsed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapsed}
+            aria-label="收起 AI 助手"
+            aria-expanded={true}
+            aria-controls="publish-ai-panel-region"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0"
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {/* ── Scrollable AI sidebar content ───────────────────────────── */}
