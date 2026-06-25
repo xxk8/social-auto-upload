@@ -139,28 +139,81 @@ export default function PublishPage() {
 
   const videoFormRef = useRef<VideoFormHandle>(null)
   const noteFormRef = useRef<NoteFormHandle>(null)
-  const navigateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // OPT-3I: cancellable auto-navigate. Replaces the previous 1500 ms
+  // one-shot `setTimeout` with a per-second tick so the banner can
+  // surface a countdown ("Xs 后跳转") and a user-clickable 取消
+  // escape hatch. The interval is held in a ref because unmount
+  // cleanup must reach the live setInterval handle; state alone
+  // can't reliably reach into a stale interval.
+  const [navigateCountdown, setNavigateCountdown] = useState<number | null>(null)
+  const navigateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const NAVIGATE_AFTER_MS = 4000
+  const NAVIGATE_TICK_MS = 1000
 
   // Mobile bottom-drawer toggle. Above the md breakpoint the inline
   // PublishAiSidebar takes over and the hook auto-closes the drawer.
   const { isMobile, isOpen, open, close } = useMobileDrawer()
 
-  // Clear pending auto-navigate on unmount.
+  /**
+   * Stop the auto-navigate countdown — clear interval, drop the ref,
+   * reset visible countdown to null. Called by the manual-navigate
+   * path AND the cancel button; the navigation itself (when countdown
+   * reaches 0) is handled by a separate useEffect so the setState
+   * updater stays pure.
+   */
+  const stopAutoNavigate = useCallback(() => {
+    if (navigateIntervalRef.current) {
+      clearInterval(navigateIntervalRef.current)
+      navigateIntervalRef.current = null
+    }
+    setNavigateCountdown(null)
+  }, [])
+
+  // OPT-3I: when the countdown reaches zero, fire the navigation.
+  // Lives in a useEffect (rather than inside the interval callback)
+  // so the setState updater stays pure and there's exactly one place
+  // that decides "jump to /tasks now". Cancel + manual-navigate both
+  // short-circuit by setting `navigateCountdown` to null first, so
+  // this branch only fires on natural expiry.
+  useEffect(() => {
+    if (navigateCountdown === 0) {
+      stopAutoNavigate()
+      navigate('/tasks')
+    }
+  }, [navigateCountdown, navigate, stopAutoNavigate])
+
+  // Clear pending interval on unmount.
   useEffect(() => {
     return () => {
-      if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current)
+      if (navigateIntervalRef.current) clearInterval(navigateIntervalRef.current)
     }
   }, [])
 
   const handleGoToTasks = useCallback(() => {
-    if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current)
+    stopAutoNavigate()
     navigate('/tasks')
-  }, [navigate])
+  }, [navigate, stopAutoNavigate])
 
   const scheduleNavigateAfterSubmit = useCallback(() => {
-    if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current)
-    navigateTimerRef.current = setTimeout(() => navigate('/tasks'), 1500)
-  }, [navigate])
+    stopAutoNavigate()
+    const initialCountdown = Math.round(NAVIGATE_AFTER_MS / NAVIGATE_TICK_MS) // 4
+    setNavigateCountdown(initialCountdown)
+    navigateIntervalRef.current = setInterval(() => {
+      setNavigateCountdown((prev) => (prev !== null && prev > 0 ? prev - 1 : prev))
+    }, NAVIGATE_TICK_MS)
+  }, [stopAutoNavigate])
+
+  /**
+   * OPT-3I: 取消 button handler. Clears the interval + drops
+   * `navigateCountdown` to null, which causes the banner pill to
+   * disappear (`cancelCountdown === null` ⇒ pill hidden). Banner
+   * itself stays because `submitSuccess` is untouched — the user
+   * can still click "查看任务状态" to navigate manually.
+   */
+  const handleCancelAutoNavigate = useCallback(() => {
+    stopAutoNavigate()
+  }, [stopAutoNavigate])
 
   const handleSubmitSuccess = useCallback(
     (info: { count: number; taskIds: string[]; failedCount: number; mode: '视频' | '图文' }) => {
@@ -193,7 +246,12 @@ export default function PublishPage() {
         icon={<Send className="h-5 w-5 text-muted-foreground" />}
       />
 
-      <PublishSuccessBanner info={submitSuccess} onGoToTasks={handleGoToTasks} />
+      <PublishSuccessBanner
+        info={submitSuccess}
+        onGoToTasks={handleGoToTasks}
+        cancelCountdown={navigateCountdown}
+        onCancelAutoNavigate={handleCancelAutoNavigate}
+      />
 
       <PublishStatsBar
         accountCount={accountOptions.length}

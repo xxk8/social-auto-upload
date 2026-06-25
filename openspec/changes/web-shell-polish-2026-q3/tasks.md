@@ -50,7 +50,7 @@
 - [x] 3.2 **OPT-3F** collapse 状态持久化到 `localStorage[sau-publish-ai-collapsed]`，mount 时回读。
 - [ ] 3.3 **OPT-3G** `GroupPublishSelector` summary chip 旁加 "💡 N 项平台专属待配置" 快捷按钮；点击时通过 `Accordion` controlled `value` 把 `advanced` 展开并高亮对应 platform 区块（`hasDouyin` / `hasBilibili` / `hasTencent`）。
 - [x] 3.4 **OPT-3H** `GroupPublishSelector` 失效 badge 点击触发 `LoginProgressModal`：传入 `platform + cookie_file`，复用现有 modal 流程。
-- [ ] 3.5 **OPT-3I** `PublishPage.scheduleNavigateAfterSubmit` 改为可取消 timer：banner 上"4s 后跳转到任务列表 · 取消"按钮，点击清 timer。
+- [x] 3.5 **OPT-3I** `PublishPage.scheduleNavigateAfterSubmit` 改为可取消 timer：banner 上"4s 后跳转到任务列表 · 取消"按钮，点击清 timer。
 - [ ] 3.6 **OPT-3J** `AiSidebar` 头部 Key 状态栏：把"添加 / 批量 / 列表 / 删除全部"折叠成单齿轮 `Popover`；状态行只剩 "已配置 · N 个 Key · 2 个限速中"。
 - [x] 3.7 **OPT-V-2** `PublishStatsBar` "最近提交" 卡片：从 `usePublishStore + useTasks` 读最新任务状态，用 `@/lib/tone::toneTextClass(tone)` 配色（success / warning / muted-foreground）。*(本 PR 3.1–3.2 中同步落地)*
 - [x] 3.8 **OPT-3V-5** *(piggy-back, PR-OPT-1R2 提前落地)* `PublishPreview` 0 张图 fallback 用 `<ImageIcon className="h-6 w-6 text-muted-foreground/80">` 替代 `bg-muted-foreground/20` 占位。
