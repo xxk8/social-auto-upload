@@ -1,41 +1,95 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render } from '@testing-library/react'
-import { Profiler } from 'react'
+import {
+  fireEvent,
+  render as rtlRender,
+  type RenderOptions,
+} from '@testing-library/react'
+import { Profiler, type ComponentProps, type HTMLAttributes, type ReactNode } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 
-vi.mock('@/components/ui/index', () => {
-  const Tag = (tag: string) => (props: any) => {
-    const { children, className, ...rest } = props ?? {}
-    return (
-      <div data-tag={tag} className={className} {...rest}>
-        {children}
-      </div>
-    )
-  }
+// TaskTableRow calls useNavigate() inside its source. Vitest's bare
+// `render()` doesn't provide a Router context, so we wrap every render
+// through this local helper that injects a `<MemoryRouter key="render-root">`
+// around the test JSX. Tests that bypass `renderRow` (the few direct
+// `<TaskTableRow .../>` sites below) route through this helper
+// automatically. TaskDrawer tests get the same coverage via the central
+// `<MemoryRouter>` added to `TestProviders`.
+//
+// `key="render-root"` is explicit (vs. relying on positional inference)
+// so React's reconciler deterministically reuses the same component slot
+// across `render()` and the wrapped `rerender()` below — the persistent
+// Router context is what stops useNavigate() from throwing on the second
+// render.
+//
+// We ALSO wrap the resulting `rerender` so the memo-stability tests
+// below (`rerender(<Profiler><TaskTableRow .../></Profiler>)`) keep the
+// same MemoryRouter ancestor across the second render. Without the
+// wrapped rerender, RTL's internal rerender replaces the container's
+// root content (without the wrapper), which unmounts the existing Router
+// context and re-throws `useNavigate() may be used only in the context
+// of a <Router> component` on the second render.
+//
+// TODO: promote `renderWithRouter` to `src/test/render-harness.helpers.ts`
+// once a second test file needs it — DRY the wrapper out.
+function render(ui: React.ReactNode, options?: RenderOptions) {
+  const result = rtlRender(
+    <MemoryRouter key="render-root">{ui}</MemoryRouter>,
+    options,
+  )
   return {
-    AlertDialog: ({ children }: any) => <>{children}</>,
-    AlertDialogAction: ({ children, onClick }: any) => (
+    ...result,
+    rerender(nextUi: React.ReactNode) {
+      result.rerender(<MemoryRouter key="render-root">{nextUi}</MemoryRouter>)
+    },
+  }
+}
+
+// ── shared mock prop shapes ────────────────────────────────────
+//
+// The vi.mock factory below builds Radix-style wrappers that forward
+// every intrinsic DOM prop to a <* data-tag="..."> shell. `MockProps`
+// covers HTMLAttributes + children + a permissive index signature so
+// data-* / aria-* flow through `{...rest}` without dropping. Sub-types
+// layer Radix-specific callbacks (Button's disabled, Checkbox's
+// onCheckedChange) on top, each opened only where the corresponding
+// vi.mock component would otherwise need its own `any`.
+type MockProps = HTMLAttributes<HTMLElement> & {
+  children?: ReactNode
+  [key: string]: unknown
+}
+type MockButtonProps = MockProps & { disabled?: boolean }
+type MockCheckboxProps = MockProps & {
+  checked?: boolean | 'indeterminate'
+  onCheckedChange?: (checked: boolean) => void
+}
+type TaskTableRowProps = ComponentProps<typeof TaskTableRow>
+
+vi.mock('@/Components/ui/index', () => {
+  return {
+    AlertDialog: ({ children }: MockProps) => <>{children}</>,
+    AlertDialogAction: ({ children, onClick }: MockProps) => (
       <button data-tag="alert-action" onClick={onClick}>
         {children}
       </button>
     ),
-    AlertDialogCancel: ({ children }: any) => <button data-tag="alert-cancel">{children}</button>,
-    AlertDialogContent: ({ children }: any) => <div data-tag="alert-content">{children}</div>,
-    AlertDialogDescription: ({ children }: any) => <div data-tag="alert-desc">{children}</div>,
-    AlertDialogFooter: ({ children }: any) => <div data-tag="alert-footer">{children}</div>,
-    AlertDialogHeader: ({ children }: any) => <div data-tag="alert-header">{children}</div>,
-    AlertDialogTitle: ({ children }: any) => <div data-tag="alert-title">{children}</div>,
-    AlertDialogTrigger: ({ children }: any) => <>{children}</>,
-    Badge: ({ children, variant, ...rest }: any) => (
+    AlertDialogCancel: ({ children }: MockProps) => <button data-tag="alert-cancel">{children}</button>,
+    AlertDialogContent: ({ children }: MockProps) => <div data-tag="alert-content">{children}</div>,
+    AlertDialogDescription: ({ children }: MockProps) => <div data-tag="alert-desc">{children}</div>,
+    AlertDialogFooter: ({ children }: MockProps) => <div data-tag="alert-footer">{children}</div>,
+    AlertDialogHeader: ({ children }: MockProps) => <div data-tag="alert-header">{children}</div>,
+    AlertDialogTitle: ({ children }: MockProps) => <div data-tag="alert-title">{children}</div>,
+    AlertDialogTrigger: ({ children }: MockProps) => <>{children}</>,
+    Badge: ({ children, variant, ...rest }: MockProps) => (
       <span data-tag="badge" data-variant={variant} {...rest}>
         {children}
       </span>
     ),
-    Button: ({ children, onClick, disabled, ...rest }: any) => (
+    Button: ({ children, onClick, disabled, ...rest }: MockButtonProps) => (
       <button onClick={onClick} disabled={disabled} {...rest}>
         {children}
       </button>
     ),
-    Checkbox: ({ checked, onCheckedChange, ...rest }: any) => (
+    Checkbox: ({ checked, onCheckedChange, ...rest }: MockCheckboxProps) => (
       <input
         type="checkbox"
         checked={!!checked}
@@ -43,20 +97,20 @@ vi.mock('@/components/ui/index', () => {
         {...rest}
       />
     ),
-    Skeleton: ({ className }: any) => <div data-tag="skeleton" className={className} />,
-    TableCell: ({ children, className }: any) => (
+    Skeleton: ({ className }: MockProps) => <div data-tag="skeleton" className={className} />,
+    TableCell: ({ children, className }: MockProps) => (
       <td data-tag="td" className={className}>
         {children}
       </td>
     ),
-    TableRow: ({ children, className }: any) => (
+    TableRow: ({ children, className }: MockProps) => (
       <tr data-tag="tr" className={className}>
         {children}
       </tr>
     ),
-    Tooltip: ({ children }: any) => <>{children}</>,
-    TooltipContent: ({ children }: any) => <span data-tag="tooltip">{children}</span>,
-    TooltipTrigger: ({ children }: any) => <>{children}</>,
+    Tooltip: ({ children }: MockProps) => <>{children}</>,
+    TooltipContent: ({ children }: MockProps) => <span data-tag="tooltip">{children}</span>,
+    TooltipTrigger: ({ children }: MockProps) => <>{children}</>,
   }
 })
 
@@ -65,11 +119,12 @@ import { makeTask } from '@/test/fixtures'
 import {
   makeProfilerCounter,
   type ProfilerCounter,
-} from '@/test/render-harness'
+} from '@/test/render-harness.helpers'
+import type { TaskItem } from '../../api/client'
 
 function renderRow(
-  taskOverrides: any = {},
-  propOverrides: any = {},
+  taskOverrides: Partial<TaskItem> = {},
+  propOverrides: Partial<Omit<TaskTableRowProps, 'task'>> = {},
   innerCounter?: ProfilerCounter,
 ) {
   const task = makeTask(taskOverrides)

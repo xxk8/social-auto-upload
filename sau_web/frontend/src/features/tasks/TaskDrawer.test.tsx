@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/react'
-import { Profiler } from 'react'
+import { Profiler, type HTMLAttributes, type ReactNode } from 'react'
 import { QueryClient } from '@tanstack/react-query'
 
 vi.mock('@/api/client', () => ({
@@ -54,66 +54,64 @@ vi.mock('@/hooks/useTasks', () => ({
   }),
 }))
 
-vi.mock('@/components/ui/index', () => {
-  const Tag = (tag: string) => (props: any) => {
-    const { children, className, ...rest } = props ?? {}
-    return (
-      <div data-tag={tag} className={className} {...rest}>
-        {children}
-      </div>
-    )
-  }
+// ── shared mock prop shapes (see TaskTableRow.test.tsx for rationale) ──
+type MockProps = HTMLAttributes<HTMLElement> & {
+  children?: ReactNode
+  [key: string]: unknown
+}
+
+vi.mock('@/Components/ui/index', () => {
   return {
-    Accordion: ({ children }: any) => <div data-tag="accordion">{children}</div>,
-    AccordionContent: ({ children }: any) => <div data-tag="accordion-content">{children}</div>,
-    AccordionItem: ({ children, value }: any) => (
+    Accordion: ({ children }: MockProps) => <div data-tag="accordion">{children}</div>,
+    AccordionContent: ({ children }: MockProps) => <div data-tag="accordion-content">{children}</div>,
+    AccordionItem: ({ children, value }: MockProps) => (
       <div data-tag="accordion-item" data-value={value}>
         {children}
       </div>
     ),
-    AccordionTrigger: ({ children }: any) => (
+    AccordionTrigger: ({ children }: MockProps) => (
       <button data-tag="accordion-trigger">{children}</button>
     ),
-    Badge: ({ children, variant, ...rest }: any) => (
+    Badge: ({ children, variant, ...rest }: MockProps) => (
       <span data-tag="badge" data-variant={variant} {...rest}>
         {children}
       </span>
     ),
-    Button: ({ children, onClick, ...rest }: any) => (
+    Button: ({ children, onClick, ...rest }: MockProps) => (
       <button data-tag="button" onClick={onClick} {...rest}>
         {children}
       </button>
     ),
     Separator: () => <hr />,
-    Sheet: ({ children, open }: any) => (
+    Sheet: ({ children, open }: MockProps) => (
       <div data-tag="sheet" data-open={open ? '1' : '0'}>
         {children}
       </div>
     ),
-    SheetContent: ({ children, className }: any) => (
+    SheetContent: ({ children, className }: MockProps) => (
       <div data-tag="sheet-content" className={className}>
         {children}
       </div>
     ),
-    SheetDescription: ({ children }: any) => <p data-tag="sheet-description">{children}</p>,
-    SheetHeader: ({ children }: any) => <header data-tag="sheet-header">{children}</header>,
-    SheetTitle: ({ children }: any) => <h3 data-tag="sheet-title">{children}</h3>,
+    SheetDescription: ({ children }: MockProps) => <p data-tag="sheet-description">{children}</p>,
+    SheetHeader: ({ children }: MockProps) => <header data-tag="sheet-header">{children}</header>,
+    SheetTitle: ({ children }: MockProps) => <h3 data-tag="sheet-title">{children}</h3>,
   }
 })
 
-vi.mock('@/components/CliCommand', () => ({
-  CliCommandBlock: ({ command }: any) => (
+vi.mock('@/Components/CliCommand', () => ({
+  CliCommandBlock: ({ command }: MockProps) => (
     <pre data-tag="cli-command">{command}</pre>
   ),
 }))
 
 import { TaskDrawer } from './TaskDrawer'
 import { makeTask } from '@/test/fixtures'
+import { TestProviders } from '@/test/render-harness'
 import {
-  TestProviders,
   makeProfilerCounter,
   type ProfilerCounter,
-} from '@/test/render-harness'
+} from '@/test/render-harness.helpers'
 
 const TASKS_QUERY_KEY = ['tasks'] as const
 
@@ -182,6 +180,10 @@ describe('TaskDrawer — prop surface', () => {
       queryKey: TASKS_QUERY_KEY,
       queryFn: async () => {
         const { api } = await import('@/api/client')
+        // vi.mock factory returns `api` as a plain object; tsc can't see its
+        // runtime methods (uploadVideo/uploadNoteMultipart/getAccounts stubs
+        // leak through @/api/client index as `unknown`) so we widen here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res = await (api as any).getTasks()
         return res.data ?? []
       },
@@ -211,6 +213,10 @@ describe('TaskDrawer — prop surface', () => {
       queryKey: TASKS_QUERY_KEY,
       queryFn: async () => {
         const { api } = await import('@/api/client')
+        // vi.mock factory returns `api` as a plain object; tsc can't see its
+        // runtime methods (uploadVideo/uploadNoteMultipart/getAccounts stubs
+        // leak through @/api/client index as `unknown`) so we widen here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res = await (api as any).getTasks()
         return res.data ?? []
       },
@@ -237,6 +243,10 @@ describe('TaskDrawer — prop surface', () => {
       queryKey: TASKS_QUERY_KEY,
       queryFn: async () => {
         const { api } = await import('@/api/client')
+        // vi.mock factory returns `api` as a plain object; tsc can't see its
+        // runtime methods (uploadVideo/uploadNoteMultipart/getAccounts stubs
+        // leak through @/api/client index as `unknown`) so we widen here.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res = await (api as any).getTasks()
         return res.data ?? []
       },

@@ -1,6 +1,42 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
-import type { AiGenerationResult } from '@/components/AiSidebar/AiSidebar'
+// ── shared mock prop shapes (see TaskTableRow.test.tsx for rationale) ──
+//
+// `MockProps` is the common denominator covering HTMLAttributes + children
+// + an open index signature `[key: string]: unknown` so data-* / aria-*
+// still flow through `{...rest}` without dropping. Sub-types narrowly
+// extend with the Radix-style callbacks that particular vi.mock components
+// need.
+type MockProps = HTMLAttributes<HTMLElement> & {
+  children?: ReactNode
+  [key: string]: unknown
+}
+type MockCheckboxProps = MockProps & {
+  checked?: boolean | 'indeterminate'
+  onCheckedChange?: (checked: boolean) => void
+}
+type MockSelectProps = MockProps & {
+  value?: string | number
+  onValueChange?: (value: string) => void
+}
+type MockSelectItemProps = MockProps & {
+  value?: string | number
+}
+type MockMultiSelectProps = MockProps & {
+  value?: string[]
+  options?: Array<{ value: string; label?: string }>
+  onChange?: (value: string[]) => void
+  placeholder?: string
+}
+type MockMultiSelectOption = { value: string; label?: string }
+type MockPlatformIconProps = MockProps & { platform?: string }
+type MockTagInputProps = MockProps & {
+  value?: string
+  onChange?: (value: string) => void
+}
+
+import type { AiGenerationResult } from '@/Components/AiSidebar/AiSidebar'
+import type { HTMLAttributes, ReactNode } from 'react'
 
 // Imperative-handle tests below use the render-spy pattern (assert that
 // applyAiResult triggers a re-render via `cardRenderSpy` incrementing) rather
@@ -23,14 +59,22 @@ const cardRenderSpy = vi.hoisted(() => vi.fn())
 // ── mocks (must precede under-test imports) ─────────────────────────────
 
 vi.mock('motion/react', () => {
+  // Dynamic JSX Tag (string-keyed) and Proxy target type can't be cleanly
+  // typed — disable no-explicit-any on the three sites annotated below.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const motionCache = new Map<string, (props: any) => any>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const motion: any = new Proxy(
     {},
     {
       get: (_t, tag: string) => {
         if (!motionCache.has(tag)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           motionCache.set(tag, (props: any) => {
-            const { children, ...rest } = props ?? {}
+            const { children, ...rest } = (props ?? {}) as Record<string, unknown>
+            // Dynamic JSX tag from a string key — `as any` is required for
+            // <Tag {...rest}> where rest keys aren't statically known.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const Tag = ((tag as string) || 'div') as any
             return <Tag {...rest}>{children}</Tag>
           })
@@ -41,20 +85,20 @@ vi.mock('motion/react', () => {
   )
   return {
     motion,
-    AnimatePresence: ({ children }: any) => <>{children}</>,
+    AnimatePresence: ({ children }: MockProps) => <>{children}</>,
   }
 })
 
-vi.mock('@/components/ui/index', () => {
-  const Tag = (tag: string) => (props: any) => {
-    const { children, className, ...rest } = props ?? {}
+vi.mock('@/Components/ui/index', () => {
+  const Tag = (tag: string) => (props: MockProps) => {
+    const { children, className, ...rest } = props
     return (
       <div data-tag={tag} className={className} {...rest}>
         {children}
       </div>
     )
   }
-  function Select({ value, onValueChange, children }: any) {
+  function Select({ value, onValueChange, children }: MockSelectProps) {
     return (
       <select
         data-testid="select"
@@ -65,7 +109,7 @@ vi.mock('@/components/ui/index', () => {
       </select>
     )
   }
-  function Checkbox({ checked, onCheckedChange, ...rest }: any) {
+  function Checkbox({ checked, onCheckedChange, ...rest }: MockCheckboxProps) {
     return (
       <input
         type="checkbox"
@@ -75,13 +119,13 @@ vi.mock('@/components/ui/index', () => {
       />
     )
   }
-  function Input({ className, ...rest }: any) {
+  function Input({ className, ...rest }: MockProps) {
     return <input className={className} {...rest} />
   }
-  function Textarea({ className, ...rest }: any) {
+  function Textarea({ className, ...rest }: MockProps) {
     return <textarea className={className} {...rest} />
   }
-  function MultiSelect({ options, value, onChange, placeholder }: any) {
+  function MultiSelect({ options, value, onChange, placeholder }: MockMultiSelectProps) {
     return (
       <select
         data-testid="multi-select"
@@ -97,7 +141,7 @@ vi.mock('@/components/ui/index', () => {
         }
         data-placeholder={placeholder}
       >
-        {(options ?? []).map((o: any) => (
+        {(options ?? []).map((o: MockMultiSelectOption) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
@@ -109,13 +153,13 @@ vi.mock('@/components/ui/index', () => {
     Alert: Tag('alert'),
     AlertDescription: Tag('alert-description'),
     Badge: Tag('badge'),
-    Button: ({ children, className, ...rest }: any) => (
+    Button: ({ children, className, ...rest }: MockProps) => (
       <button className={className} {...rest}>
         {children}
       </button>
     ),
     // Card spy — fires when NoteForm's function body executes.
-    Card: (props: any) => {
+    Card: (props: MockProps) => {
       cardRenderSpy()
       return <Tag data-tag="card" {...props} />
     },
@@ -127,8 +171,8 @@ vi.mock('@/components/ui/index', () => {
     Label: Tag('label'),
     MultiSelect,
     Select,
-    SelectContent: ({ children }: any) => <>{children}</>,
-    SelectItem: ({ value, children }: any) => <option value={value}>{children}</option>,
+    SelectContent: ({ children }: MockProps) => <>{children}</>,
+    SelectItem: ({ value, children }: MockSelectItemProps) => <option value={value}>{children}</option>,
     SelectTrigger: Tag('select-trigger'),
     SelectValue: Tag('select-value'),
     Separator: () => <hr />,
@@ -136,19 +180,29 @@ vi.mock('@/components/ui/index', () => {
   }
 })
 
-vi.mock('@/components/ui/toast', () => ({
+vi.mock('@/Components/ui/toast', () => ({
   useToast: () => ({ addToast: vi.fn() }),
 }))
 
-vi.mock('@/components/ui/platform-icon', () => ({
-  PlatformIcon: ({ platform, className }: any) => (
+// OPT-followup-3-b: OPT-follow-up-3-sweep-2 moved the non-component value
+// exports out of `toast.tsx` into `toast.helpers.ts`, so NoteForm.tsx
+// imports `useToast` from `@/Components/ui/toast.helpers` (not from
+// `@/Components/ui/toast`). Without a parallel mock, the test hits
+// `useToast must be used within a ToastProvider`. Same-shape stub on
+// the new path closes that gap.
+vi.mock('@/Components/ui/toast.helpers', () => ({
+  useToast: () => ({ addToast: vi.fn() }),
+}))
+
+vi.mock('@/Components/ui/platform-icon', () => ({
+  PlatformIcon: ({ platform, className }: MockPlatformIconProps) => (
     <span data-platform={platform} className={className} />
   ),
   PLATFORM_COLORS: {},
 }))
 
-vi.mock('@/components/ui/tag-input', () => ({
-  TagInput: ({ value, onChange, ...rest }: any) => (
+vi.mock('@/Components/ui/tag-input', () => ({
+  TagInput: ({ value, onChange, ...rest }: MockTagInputProps) => (
     <input
       aria-label="tag-input"
       value={value ?? ''}
@@ -184,7 +238,8 @@ vi.mock('./ImageLightbox', () => ({
 
 import { NoteForm, type NoteFormHandle } from './NoteForm'
 import { sampleAccounts } from '@/test/fixtures'
-import { TestProviders, makeQueryClient } from '@/test/render-harness'
+import { TestProviders } from '@/test/render-harness'
+import { makeQueryClient } from '@/test/render-harness.helpers'
 
 // ── imperative-handle tests (render-spy based) ─────────────────────────
 // NoteForm's applyAiResult maps result.desc → internal 'content' state.
@@ -372,7 +427,12 @@ describe('NoteForm — React.memo + callback stability (render-spy)', () => {
   })
 
   it('memo contract: NoteForm is React.memo wrapped', () => {
+    // $$typeof is Symbol.for('react.memo') when React.memo wraps the component.
+    // The symbol isn't on MemoExoticComponent's public type — assert via the
+    // lossy `unknown → { $$typeof }` bridge so we don't need `as any`.
     const memoSymbol = Symbol.for('react.memo')
-    expect((NoteForm as any)?.$$typeof).toBe(memoSymbol)
+    expect(
+      (NoteForm as unknown as { $$typeof: symbol } | undefined)?.$$typeof,
+    ).toBe(memoSymbol)
   })
 })
