@@ -56,11 +56,10 @@ import pytest_asyncio
 pytest.importorskip("patchright.async_api")
 pytest.importorskip("PIL")
 
-from PIL import Image  # noqa: E402 (after importorskip, intentional)
 from patchright.async_api import async_playwright  # noqa: E402
+from PIL import Image  # noqa: E402 (after importorskip, intentional)
 
 from uploader.common import _cdp_capture_screenshot  # noqa: E402
-
 
 # Stub HTML page with a 200x200 `<canvas>` at known coords (50, 100).
 # Tests paint the canvas via a Python helper (``_canvas_paint``) wrapping
@@ -92,7 +91,10 @@ STUB_HTML = """
 
 
 async def _canvas_paint(
-    page, color: str, *, top: int | None = None,
+    page,
+    color: str,
+    *,
+    top: int | None = None,
 ) -> None:
     """Paint the test canvas (and optionally reposition it below the fold).
 
@@ -104,8 +106,7 @@ async def _canvas_paint(
     canvas below the 600px viewport fold and exercises the
     ``capture_beyond_viewport=True`` invariant.
     """
-    js_body = (
-        """([color, top]) => {
+    js_body = """([color, top]) => {
             if (top !== null) {
                 document.querySelector('.login-card-double-Gtywl8').style.top = top + 'px';
             }
@@ -114,7 +115,6 @@ async def _canvas_paint(
             ctx.fillStyle = color;
             ctx.fillRect(0, 0, 200, 200);
         }"""
-    )
     await page.evaluate(js_body, [color, top])
 
 
@@ -146,9 +146,7 @@ def _hint_browsers_path() -> None:
     if override:
         candidates.append(override)
     if sys.platform == "darwin":
-        candidates.append(
-            os.path.expanduser("~/Library/Caches/ms-playwright")
-        )
+        candidates.append(os.path.expanduser("~/Library/Caches/ms-playwright"))
     candidates.append(os.path.expanduser("~/.cache/ms-playwright"))
     for candidate in candidates:
         if os.path.isdir(candidate):
@@ -175,6 +173,7 @@ async def chromium_page():
     # the ``try/except`` below which surfaces a clean SKIP.
     try:
         from patchright._impl._driver import compute_driver_executable
+
         compute_driver_executable()
     except Exception:
         pass
@@ -213,14 +212,10 @@ def _decode_png(data_url: str) -> Image.Image:
     a future refactor that replaces the format with ``image/jpeg``
     or strips the ``base64`` token.
     """
-    assert data_url.startswith("data:image/png;base64,"), (
-        f"non-canonical data URL prefix: {data_url[:60]!r}"
-    )
+    assert data_url.startswith("data:image/png;base64,"), f"non-canonical data URL prefix: {data_url[:60]!r}"
     payload = data_url.split(",", 1)[1]
     png_bytes = base64.b64decode(payload, validate=True)
-    assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n", (
-        f"data URL payload is not a valid PNG signature: {png_bytes[:8]!r}"
-    )
+    assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n", f"data URL payload is not a valid PNG signature: {png_bytes[:8]!r}"
     return Image.open(io.BytesIO(png_bytes))
 
 
@@ -246,8 +241,7 @@ async def test_cdp_capture_screenshot_paints_canvas_state_into_png(chromium_page
     # Byte-level: PNGs must change across paints. A stale-frame regression
     # would short-circuit here.
     assert red_url != blue_url, (
-        "red/blue canvas paints produced byte-identical PNGs — "
-        "Page.captureScreenshot is returning a STALE FRAME"
+        "red/blue canvas paints produced byte-identical PNGs — " "Page.captureScreenshot is returning a STALE FRAME"
     )
 
     red_img = _decode_png(red_url).convert("RGB")
@@ -263,12 +257,12 @@ async def test_cdp_capture_screenshot_paints_canvas_state_into_png(chromium_page
     for x, y in sample_points:
         red_px = red_img.getpixel((x, y))
         blue_px = blue_img.getpixel((x, y))
-        assert red_px[0] > 200 and red_px[1] < 50 and red_px[2] < 50, (
-            f"expected dominant RED at ({x},{y}), got {red_px}"
-        )
-        assert blue_px[2] > 200 and blue_px[0] < 50 and blue_px[1] < 50, (
-            f"expected dominant BLUE at ({x},{y}), got {blue_px}"
-        )
+        assert (
+            red_px[0] > 200 and red_px[1] < 50 and red_px[2] < 50
+        ), f"expected dominant RED at ({x},{y}), got {red_px}"
+        assert (
+            blue_px[2] > 200 and blue_px[0] < 50 and blue_px[1] < 50
+        ), f"expected dominant BLUE at ({x},{y}), got {blue_px}"
         assert red_px != blue_px
 
 
@@ -283,9 +277,7 @@ async def test_cdp_capture_screenshot_clip_bounds_match(chromium_page):
     return either full-viewport PNGs (size > 200x200) or malformed
     ``Page.captureScreenshot`` errors.
     """
-    img = _decode_png(
-        await _cdp_capture_screenshot(chromium_page, clip=_CANVAS_CLIP)
-    )
+    img = _decode_png(await _cdp_capture_screenshot(chromium_page, clip=_CANVAS_CLIP))
     assert img.size == (200, 200), (
         f"clip={_CANVAS_CLIP['width']}x{_CANVAS_CLIP['height']} returned "
         f"PNG of size {img.size} — clip bounds not honored"
@@ -304,8 +296,7 @@ async def test_cdp_capture_screenshot_data_url_prefix_is_canonical(chromium_page
     """
     data_url = await _cdp_capture_screenshot(chromium_page, clip=_CANVAS_CLIP)
     assert data_url.startswith("data:image/png;base64,"), (
-        f"data URL prefix must be canonical for SSE inline <img>, "
-        f"got: {data_url[:60]!r}"
+        f"data URL prefix must be canonical for SSE inline <img>, " f"got: {data_url[:60]!r}"
     )
 
 
@@ -328,13 +319,14 @@ async def test_cdp_capture_screenshot_capture_beyond_viewport_honors_offcanvas(
     offclip = {"x": 50, "y": 650, "width": 200, "height": 200, "scale": 1}
     img = _decode_png(
         await _cdp_capture_screenshot(
-            chromium_page, clip=offclip, capture_beyond_viewport=True,
+            chromium_page,
+            clip=offclip,
+            capture_beyond_viewport=True,
         )
     ).convert("RGB")
 
     assert img.size == (200, 200), (
-        f"capture_beyond_viewport=True should still honor clip dimensions, "
-        f"got {img.size}"
+        f"capture_beyond_viewport=True should still honor clip dimensions, " f"got {img.size}"
     )
     px = img.getpixel((100, 100))
     assert px[1] > 200 and px[0] < 50 and px[2] < 50, (
