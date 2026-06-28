@@ -2,8 +2,11 @@
 from datetime import datetime
 
 import asyncio
+import base64
 import inspect
+import json
 import os
+import random
 from pathlib import Path
 
 from patchright.async_api import Page
@@ -12,10 +15,15 @@ from patchright.async_api import async_playwright
 
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
+from utils.anti_detect import (
+    apply_anti_detect,
+    build_browser_context_options,
+    build_browser_launch_kwargs,
+    human_type,
+    obfuscate_video,
+)
 from utils.base_social_media import set_init_script
 from utils.login_qrcode import build_login_qrcode_path
-from utils.login_qrcode import decode_qrcode_from_path
-from utils.login_qrcode import print_terminal_qrcode
 from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
 from utils.log import douyin_logger
@@ -52,12 +60,13 @@ async def cookie_auth(account_file):
     async with async_playwright() as playwright:
         # 抖音无头会撞反爬墙→content/upload 跳登录→误判 cookie 失效（间歇性）。校验必须有头。
         browser = await playwright.chromium.launch(
-            headless=False, channel="chrome",
-            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+            **build_browser_launch_kwargs(headless=False),
         )
         try:
-            context = await browser.new_context(storage_state=account_file)
-            context = await set_init_script(context)
+            context = await browser.new_context(
+                **build_browser_context_options("douyin", account_file=account_file, headless=False),
+            )
+            context = await apply_anti_detect(context)
             page = await context.new_page()
             await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
             try:
@@ -86,48 +95,144 @@ async def douyin_setup(account_file, handle=False, return_detail=False, qrcode_c
     return result if return_detail else True
 
 
+async def _cdp_capture_screenshot(page: Page, clip: dict | None = None, capture_beyond_viewport: bool = False) -> str:
+    """Capture at CDP level (Page.captureScreenshot), returning a data: URL.
+
+    Returns ``"data:image/png;base64,<...>"`` ready for inline ``<img>`` rendering
+    in the Web Shell or for PNG-on-disk writes. CDP's ``Page.captureScreenshot``
+    already returns the image as a base64 string in ``result["data"]`` — no
+    second ``b64encode`` needed — saving a CPU pass on a hot path that fires on
+    every login flow.
+
+    We open a fresh CDP session per call (~50-200 ms overhead) because the
+    login flow captures at most twice (initial + QR refresh on expiry);
+    carrying a long-lived session across plugin/script iterations adds
+    detaching bookkeeping that isn't worth the marginal speedup.
+
+    Args:
+        page: patchright async ``Page``.
+        clip: Optional CDP clip dict ``{x, y, width, height, scale}``.
+            When omitted, takes the full viewport.
+        capture_beyond_viewport: When ``True`` + ``clip`` is set, CDP will
+            paint content outside the viewport to satisfy the clip region.
+            Use this when the captured region (e.g. a centered login modal)
+            may extend below the document fold on smaller viewports. Default
+            ``False`` keeps viewport-bound semantics for the implicit
+            full-viewport fallback path.
+    """
+    cdp = await page.context.new_cdp_session(page)
+    try:
+        params: dict = {"format": "png", "captureBeyondViewport": capture_beyond_viewport}
+        if clip is not None:
+            params["clip"] = {
+                "x": clip["x"], "y": clip["y"],
+                "width": clip["width"], "height": clip["height"],
+                "scale": clip.get("scale", 1),
+            }
+        result = await cdp.send("Page.captureScreenshot", params)
+        return "data:image/png;base64," + result["data"]
+    finally:
+        await cdp.detach()
+
+
 async def _extract_douyin_qrcode_src(page: Page) -> str:
-    scan_login_tab = page.get_by_text("扫码登录", exact=True).first
-    await scan_login_tab.wait_for(timeout=30000)
+    # Strategy 1: poll for async data:image <img> inside login modal.
+    # Douyin 2026 落地页→模态框的登录流程里，二维码是异步从后端
+    # 拉取后以 base64 data:image 渲染到 <img> 上的，不是 canvas。
+    # 轮询 10s（1s 步进），匹配 100-400px 方块 shape 的 data:image img。
+    # 限定在模态框容器内搜索，避免落地页其他 data:image 元素误伤。
+    for _ in range(10):
+        try:
+            modal_imgs = page.locator(
+                ".login-card-double-Gtywl8 img, .douyin-login-container-sl0M7z img"
+            )
+            for i in range(await modal_imgs.count()):
+                try:
+                    img = modal_imgs.nth(i)
+                    src = await img.get_attribute("src") or ""
+                    if not src.startswith("data:image"):
+                        continue
+                    bbox = await img.bounding_box()
+                    if bbox and 100 <= bbox.get("width", 0) <= 400 and 100 <= bbox.get("height", 0) <= 400:
+                        return src
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        await asyncio.sleep(1)
 
-    qrcode_img = (
-        scan_login_tab
-        .locator("..")
-        .locator("xpath=following-sibling::div[1]")
-        .locator('img[aria-label="二维码"]')
-        .first
-    )
-
-    if not await qrcode_img.count():
-        qrcode_img = page.get_by_role("img", name="二维码").first
-
-    await qrcode_img.wait_for(state="visible", timeout=30000)
-    src = await qrcode_img.get_attribute("src")
-    if not src:
-        raise RuntimeError("未获取到抖音登录二维码地址")
-
-    return src
+    # Strategy 3: CDP-level screenshot fallback — 全模态框内的 <canvas>绘制缓冲区是 Page.captureScreenshot
+    # 原生拍住的（拍到的就是 CDP-shot 那一瞬已合成的画面，可能落后 0–30 s 于最新旋转但仍属 30–60 s 扫描有效期内，无需单独的旋转/活性检查），所以任何遗留的 `<canvas>`-rendered QR 已被合并到本套小模态截图里。 uc-secure-sdk 可能阻止 DOM
+    # 读取（不可见元素、CDP 拦截），但有头浏览器窗口里二维码肉眼可见。
+    # CDP-level Page.captureScreenshot 绕开 Playwright 的高阶 wrapper，直接拿
+    # 到 PNG base64；并裁剪到模态框区域。配合 ``_cdp_capture_screenshot`` 实现
+    # 单点切换——这张图会以``image_data_url``走 SSE inline 流而不是 cookies/ 落盘。
+    #
+    # ``capture_beyond_viewport=True`` 防小视口（CI 默认 1280×720 / 移动 UA）
+    # 上登录模态框下半截被裁剪——clip 坐标以 CSS px 计，但 CDP 默认仅渲染
+    # viewport 区域，超出 viewport 的像素会返回空白。
+    try:
+        modal = page.locator(
+            ".douyin-login-container-sl0M7z, .login-card-double-Gtywl8, .login-Wl0dx0"
+        ).first
+        if await modal.count():
+            bbox = await modal.bounding_box()
+            if bbox:
+                return await _cdp_capture_screenshot(
+                    page,
+                    clip={
+                        "x": bbox["x"], "y": bbox["y"],
+                        "width": bbox["width"], "height": bbox["height"],
+                    },
+                    capture_beyond_viewport=True,
+                )
+    except Exception:
+        pass
+    # 最终兜底：CDP-level 全视口截图（viewport-only 是这里正确的语义）
+    return await _cdp_capture_screenshot(page)
 
 
 async def _save_douyin_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None = None, qrcode_callback=None) -> dict:
+    """Extract QR via Strategy 0/1/2/3 and emit SSE/direct-path payload.
+
+    Disk-write policy:
+      * ``qrcode_callback`` set (SSE flow used by the Web Shell) → bytes
+        flow through ``image_data_url`` only — **no PNG written to cookies/**.
+        Web Shell consumes the ``data:image/png;base64,...`` value via inline
+        ``<img src=...>``, so on-disk persistence adds cleanup burden and
+        stale-file risk for zero UX gain.
+      * No callback (CLI direct-path user) → save PNG to cookies/ so the
+        user can open it with a file viewer and scan with the Douyin app.
+
+    We deliberately do NOT run ``decode_qrcode_from_path`` /
+    ``print_terminal_qrcode`` anymore: zxing-based QR-content decode was
+    unreliable for cropped screenshots (see tests/test_login_qrcode.py for
+    the zxing-then-pyzbar fallback chain we'd otherwise need), and ASCII
+    render in the terminal is replaced by inline ``<img>`` rendering on the
+    Web Shell side. CLI direct-path users get a clear "open the PNG" hint
+    instead of an ASCII rewrite attempt — this is the
+    "zxing-ascii-render-broke path" the user asked us to sidestep.
+    """
     # 提取二维码 src 仅为了保存/终端显示；定位不到时不致命——有头浏览器里二维码可见，直接扫码即可
     try:
         qrcode_src = await _extract_douyin_qrcode_src(page)
     except Exception as exc:
         douyin_logger.warning(_msg("😵", f"没定位到二维码元素（{str(exc)[:50]}）——请直接在弹出的浏览器里扫码，小人继续等登录跳转"))
         return {"image_path": "", "image_data_url": ""}
-    qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+
+    qrcode_path: Path | None = None
+    if qrcode_callback is None:
+        # CLI direct-path: write PNG so the user can scan via file viewer.
+        qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+        douyin_logger.info(_msg("🖼️", f"二维码已存到本地：{qrcode_path}"))
+        douyin_logger.info(_msg("📲", f"请用抖音APP扫码，或打开：file://{qrcode_path}"))
+
     if previous_qrcode_path and previous_qrcode_path != qrcode_path:
         if remove_qrcode_file(previous_qrcode_path):
             douyin_logger.info(_msg("🧹", f"临时二维码文件已清理: {previous_qrcode_path}"))
-    douyin_logger.info(_msg("🖼️", f"二维码已经准备好啦，已保存到: {qrcode_path}"))
-    qrcode_content = decode_qrcode_from_path(qrcode_path)
-    if qrcode_content:
-        print_terminal_qrcode(qrcode_content, qrcode_path, "抖音APP")
-    else:
-        douyin_logger.warning(_msg("😵", f"终端没法完整显示二维码，请打开 {qrcode_path} 扫码"))
-    qrcode_info = {
-        "image_path": str(qrcode_path),
+
+    qrcode_info: dict = {
+        "image_path": str(qrcode_path) if qrcode_path else "",
         "image_data_url": qrcode_src,
     }
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
@@ -185,16 +290,154 @@ async def douyin_cookie_gen(
     max_checks: int = 100,
     headless: bool = LOCAL_CHROME_HEADLESS,
 ):
+    # Douyin 反爬在 headless 下会拦截登录页 → 二维码元素永远等不到。
+    # cookie_auth 已经强制有头；登录流程也必须保持一致。
+    if headless:
+        douyin_logger.warning(
+            _msg("🎭", "Douyin 扫码登录不支持 headless，强制切换到有头浏览器")
+        )
+        headless = False
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=headless, channel="chrome")
-        context = await browser.new_context()
-        context = await set_init_script(context)
+        browser = await playwright.chromium.launch(
+            **build_browser_launch_kwargs(headless=headless),
+        )
+        context = await browser.new_context(
+            **build_browser_context_options("douyin", headless=headless),
+        )
+        context = await apply_anti_detect(context)
         qrcode_path = None
         result = _build_login_result(False, "failed", "抖音登录失败", account_file)
+        # Strategy 0: network interception — CDP 层面 route 拦截 Douyin get_qrcode API。
+        # page.on("response") 事件回调在 patchright async API 下对
+        # 某些请求类型可能不触发；page.route() 在 CDP 层面工作，
+        # handler 是 async 可以正确 await response.json()。
+        captured_qrcode_b64: list[str] = []
+
+        async def _handle_get_qrcode_route(route):
+            douyin_logger.info(_msg("📡", f"路由拦截到 get_qrcode 请求: {route.request.url[:120]}..."))
+            response = await route.fetch()
+            try:
+                body = await response.json()
+                qr = body.get("data", {}).get("qrcode", "")
+                if qr:
+                    captured_qrcode_b64.append(qr)
+                    douyin_logger.info(_msg("📡", "路由拦截到 Douyin get_qrcode 响应，已捕获二维码"))
+            except Exception as exc:
+                douyin_logger.warning(_msg("📡", f"路由拦截解析出错: {exc}"))
+            await route.fulfill(response=response)
+
         try:
             page = await context.new_page()
-            await page.goto("https://creator.douyin.com/")
-            qrcode_info = await _save_douyin_qrcode(page, account_file, qrcode_callback=qrcode_callback)
+            await page.route("**/passport/web/get_qrcode*", _handle_get_qrcode_route)
+            # domcontentloaded not load: Douyin page has hundreds of
+            # tracking / ad scripts; "load" event typically >30 s on
+            # patchright first-run, which burned our default page.goto
+            # timeout.
+            await page.goto(
+                "https://creator.douyin.com/",
+                wait_until="domcontentloaded",
+                timeout=60000,
+            )
+            # 显式点「创作者登录」进登录页 — Douyin 2026 的 creator.douyin.com/
+            # 默认展示的是落地页（产品介绍），不再是直出登录 form。domcontentloaded
+            # 只代表 HTML 解析完，JS 渲染的按钮还要 3-5s 才出现——先等页面就绪。
+            # force=True 绕过 Semi modal 遮罩对 pointer-events 的拦截。
+            await asyncio.sleep(5)
+            landing_page_clicked = False
+            try:
+                creator_login_btn = page.locator("text=创作者登录").first
+                if await creator_login_btn.count():
+                    landing_page_clicked = True
+                    douyin_logger.info(_msg("🚪", "侦测到落地页，小人点击「创作者登录」进入登录页"))
+                    await creator_login_btn.click(force=True, timeout=5000)
+                    await asyncio.sleep(3)
+                    # 防御：若 click 打开了新标签/窗口（target=_blank）或模态框未弹出，
+                    # URL 不变且登录 UI 不可见——此时直导到 content/upload 触发登录重定向。
+                    if page.url.rstrip("/") == "https://creator.douyin.com":
+                        login_visible = await page.locator(
+                            ".douyin-login-container-sl0M7z, .login-card-double-Gtywl8"
+                        ).first.count() > 0
+                        if not login_visible:
+                            douyin_logger.warning(
+                                _msg("🪟", "点击「创作者登录」后 URL 未变化且登录 UI 不可见（可能弹出新窗口或模态框未渲染），小人直接导航到登录页")
+                            )
+                            await page.goto(
+                                "https://creator.douyin.com/creator-micro/content/upload",
+                                wait_until="domcontentloaded",
+                                timeout=60000,
+                            )
+                            await asyncio.sleep(3)
+            except Exception:
+                pass
+            # 扫码登录 tab 默认已选中（class="selected-w_E01s"），force=True
+            # 绕过模态框内其他元素对 pointer-events 的拦截，避免 TimeoutError。
+            try:
+                qr_tab = page.locator("text=扫码登录").first
+                if await qr_tab.count():
+                    await qr_tab.click(force=True, timeout=5000)
+                    await asyncio.sleep(2)
+            except Exception:
+                pass
+            # 优先使用网络拦截到的二维码（策略 0），其次走 DOM/截图提取。
+            # 短轮询等待 API 响应——Douyin 的 get_qrcode 可能比点击稍慢返回。
+            #
+            # Bug fix: 原写法在 captured_qrcode_b64 已经非空（route handler
+            # 在前序 ``await asyncio.sleep(2)`` 期间已被填入，例如 SSE 扫码
+            # fast path）下，iter 0 顶端的 break 跳过内层
+            # ``if captured_qrcode_b64: build+emit`` 块。for/else-exit 处
+            # qrcode_info 仍然 unbound，下一行的
+            # ``if not qrcode_info.get(...)`` 直接 UnboundLocalError 把 SSE
+            # worker 整条崩掉。
+            #
+            # 修复：把 captured-build 块平移到 for/else 之后单点处理，同时
+            # 把 qrcode_info 初始化为 ``dict | None = None``（带类型注解）使
+            # exit 处不论走 captured 分支还是 else 分支都是 bound。这是 user
+            # 提示的 “Either move the captured-payload build into an
+            # else: on the top check, or initialize qrcode_info = None
+            # before the loop” 的合并方案（实际效果是 init + else 后单点
+            # build，等价于"init + ensure-bind-after-loop"）。
+            qrcode_info: dict | None = None
+            for _ in range(4):
+                if captured_qrcode_b64:
+                    break
+                await asyncio.sleep(1)
+                if captured_qrcode_b64:
+                    break  # Captured during this iter's sleep; consolidated build below.
+            else:
+                # 4 次轮询都返回空（route handler 未触发 or API 超时）：
+                # 退回 DOM 提取路径。
+                qrcode_info = await _save_douyin_qrcode(page, account_file, qrcode_callback=qrcode_callback)
+
+            # 单点 captured-build：统一处理 (a) 循环开始前 captured_qrcode_b64
+            # 已非空（fast path 上 iter 0 break，未进原内层 build 块），
+            # 以及 (b) 轮询期间某次 sleep 内被 route handler 填入（iter 内层
+            # 现在改为显式 break，也未进 build，落到这里来）。两种 Path 走
+            # 同一个 build 路径，修复 UnboundLocalError 的 fast-path 崩。
+            if qrcode_info is None and captured_qrcode_b64:
+                qrcode_src = "data:image/png;base64," + captured_qrcode_b64[0]
+                qrcode_path_obj: Path | None = None
+                if qrcode_callback is None:
+                    # CLI direct-path: write PNG so the user can scan via file viewer.
+                    # SSE/Web Shell flow: skip disk write — bytes already flow through
+                    # ``image_data_url`` and the Web Shell renders inline.
+                    qrcode_path_obj = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+                    douyin_logger.info(_msg("🖼️", f"二维码已存到本地（网络拦截）：{qrcode_path_obj}"))
+                    douyin_logger.info(_msg("📲", f"请用抖音APP扫码，或打开：file://{qrcode_path_obj}"))
+                qrcode_info = {"image_path": str(qrcode_path_obj) if qrcode_path_obj else "", "image_data_url": qrcode_src}
+                await _emit_qrcode_callback(qrcode_callback, qrcode_info)
+            # 落地页→模态框路径若二维码提取失败且登录 UI 从未出现
+            # （可能页面受限没渲染按钮），fallback：导航到 upload 页，
+            # 未登录时 Douyin 会重定向到登录页。仅在没有登录 UI 时
+            # 才跳转——如果模态框已打开只是 QR 加载慢，不触发 fallback。
+            if not qrcode_info.get("image_data_url") and not landing_page_clicked:
+                douyin_logger.info(_msg("🔄", "落地页未拿到二维码，尝试导航到内容上传页触发登录重定向"))
+                await page.goto(
+                    "https://creator.douyin.com/creator-micro/content/upload",
+                    wait_until="domcontentloaded",
+                    timeout=60000,
+                )
+                await asyncio.sleep(3)
+                qrcode_info = await _save_douyin_qrcode(page, account_file, qrcode_callback=qrcode_callback)
             qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
             douyin_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
             result = await _wait_for_douyin_login(
@@ -277,7 +520,7 @@ class DouYinBaseUploader(BaseVideoUploader):
         # version_2(post/video) 发布页要等视频上传完才渲染表单（实测约 40s），故等待超时给到 120s
         title_input = page.locator('input[placeholder*="填写作品标题"]').first
         await title_input.wait_for(state="visible", timeout=120000)
-        await title_input.fill(title[:30])
+        await human_type(page, title[:30], min_delay_ms=40, max_delay_ms=150)
 
         description_editor = page.locator('div.zone-container[contenteditable="true"]').first
         await description_editor.wait_for(state="visible", timeout=120000)
@@ -286,7 +529,7 @@ class DouYinBaseUploader(BaseVideoUploader):
         await page.keyboard.press("Delete")
 
         for tag in tags or []:
-            await page.keyboard.type(" #" + tag)
+            await page.keyboard.type(" #" + tag, delay=random.randint(30, 80))
             await page.keyboard.press("Space")
         await page.keyboard.press("Escape")  # 收起话题下拉，避免浮层拦截后续点击
 
@@ -508,6 +751,14 @@ class DouYinVideo(DouYinBaseUploader):
             raise ValueError("视频模式下，title 是必须的")
 
         self.file_path = str(self.validate_video_file(self.file_path))
+
+        # ── Content fingerprint obfuscation (anti-duplicate-detection) ────────
+        obf_path = str(Path(self.file_path).with_suffix("")) + ".obf" + Path(self.file_path).suffix
+        obfuscated = obfuscate_video(self.file_path, obf_path)
+        if obfuscated.exists():
+            self.file_path = str(obfuscated)
+            douyin_logger.info(_msg("🎭", "视频指纹已混淆，用于对抗平台重复检测"))
+
         if self.thumbnail_landscape_path:
             self.thumbnail_landscape_path = str(self.validate_image_file(self.thumbnail_landscape_path))
         if self.thumbnail_portrait_path:
@@ -589,12 +840,17 @@ class DouYinVideo(DouYinBaseUploader):
         await self.validate_upload_args()
         douyin_logger.info(_msg("🥳", "上传前检查通过"))
 
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
-            storage_state=f"{self.account_file}",
-            permissions=["geolocation"],
+        browser = await playwright.chromium.launch(
+            **build_browser_launch_kwargs(headless=self.headless),
         )
-        context = await set_init_script(context)
+        context = await browser.new_context(
+            **build_browser_context_options(
+                "douyin",
+                account_file=self.account_file,
+                headless=self.headless,
+            ),
+        )
+        context = await apply_anti_detect(context)
 
         page = await context.new_page()
         await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
@@ -807,12 +1063,17 @@ class DouYinNote(DouYinBaseUploader):
         await self.validate_upload_args()
         douyin_logger.info(_msg("🥳", "图文上传前检查通过"))
 
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
-            storage_state=f"{self.account_file}",
-            permissions=["geolocation"],
+        browser = await playwright.chromium.launch(
+            **build_browser_launch_kwargs(headless=self.headless),
         )
-        context = await set_init_script(context)
+        context = await browser.new_context(
+            **build_browser_context_options(
+                "douyin",
+                account_file=self.account_file,
+                headless=self.headless,
+            ),
+        )
+        context = await apply_anti_detect(context)
 
         upload_success = False
         try:
