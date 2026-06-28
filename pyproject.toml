@@ -18,6 +18,7 @@ dependencies = [
   "qrcode==8.2",
   "requests==2.32.3",
   "segno>=1.6.6",
+  "yt-dlp>=2024.10.7",
 ]
 
 [project.scripts]
@@ -28,9 +29,34 @@ web = [
   "Flask[async]==3.1.1",
   "aiohttp>=3.9.5",
   "aiohttp-cors>=0.8.1",
+  "duckduckgo-search>=7.0.0",
   "flask-cors==6.0.0",
   "websocket-client>=1.8.0",
+]# Enables PostgreSQL as the Web backend's persistent store.
+# Used by openspec/changes/migrate-sqlite-to-postgresql-19 (PR2/PR3+).
+# The `web` extra remains SQLite-only (legacy dev path). Install only one of:
+#   uv pip install -e ".[web]"        # SQLite only
+#   uv pip install -e ".[web,web-pg]" # both during the migration window
+# Cap <3.4 matches the locally-tested psycopg 3.3.4 + psycopg-pool 3.3.1 builds;
+# if openspec/changes/migrate-sqlite-to-postgresql-19/tasks.md §2.1 is amended,
+# update this cap in the same PR.
+web-pg = [
+  "psycopg[binary]>=3.2,<3.4",
+  "psycopg-pool>=3.2,<3.4",
 ]
+# Optional secondary QR decoder used by ``utils/login_qrcode.py::decode_qrcode_from_path``.
+# When this extra is installed, pyzbar catches cropped / scaled / partly-occluded QR
+# screenshots that the bundled OpenCV zxing-wrapper misses. Without it, the decode
+# function silently degrades to OpenCV-only via an ``ImportError`` guard — login
+# keeps working, just without the secondary decoder. Enable with:
+#   uv pip install -e .[login-fallback]
+# (libzbar comes preinstalled on most Linux distros; macOS users typically need
+# ``brew install zbar`` first. The runtime layer handles both cases.)
+login-fallback = [
+  # pyzbar has had no new release since 2019; upper cap is defensive against
+  # a hypothetical 0.2 with breaking API changes.
+  "pyzbar>=0.1.9,<0.2",
+] 
 
 [tool.uv]
 package = true
@@ -50,10 +76,27 @@ dev = [
   "pytest>=9.1.1",
   "pytest-asyncio>=0.24",
   "social-auto-upload[web]",
+  "social-auto-upload[web-pg]",
   "black>=24.0.0",
   "isort>=5.13.0",
   "ruff>=0.4.0",
+  # Dev-only hot-reload: drives scripts/dev_watch.py. Not required at
+  # runtime — production uses supervisord / podman / k8s instead. This
+  # row lives in ``dev`` (not ``dependencies``) so prod installs don't
+  # pull watchdog.
+  "watchdog>=4.0",
 ]
+
+# ── pytest config ───────────────────────────────────────────────────
+# pytest-asyncio 0.24+ defaults: BOTH async fixtures AND async tests
+# inherit ``loop_scope="module"`` here, so future async authors
+# don't have to remember explicit ``loop_scope`` args. Per pytest-asyncio
+# 0.24 docs the explicit ``@pytest.mark.asyncio(loop_scope=\u2026)`` form
+# still beats the default for tests that need a different scope.
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "module"
+asyncio_default_test_loop_scope = "module"
+
 
 [tool.black]
 line-length = 120
