@@ -93,6 +93,9 @@ dev = [
 # don't have to remember explicit ``loop_scope`` args. Per pytest-asyncio
 # 0.24 docs the explicit ``@pytest.mark.asyncio(loop_scope=\u2026)`` form
 # still beats the default for tests that need a different scope.
+# NOTE: pytest-asyncio 0.24 strict mode (the default) still requires every
+# ``async def test_…`` to carry a ``@pytest.mark.asyncio`` marker — the
+# loop_scope defaults above do not remove that requirement.
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "module"
 asyncio_default_test_loop_scope = "module"
