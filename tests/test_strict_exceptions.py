@@ -17,6 +17,7 @@ The AST walker correctly ignores:
   * narrow ``ast.Attribute`` references like ``patchright.async_api.Error``
   * the rewriter tool itself scanning ``tools/strict_exceptions.py`` docstrings
 """
+
 from __future__ import annotations
 
 import ast
@@ -24,7 +25,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 
 # Source paths to enforce. ``tests/`` is intentionally included so the rule
 # is repo-wide per the project owner's explicit ask.
@@ -123,6 +123,7 @@ def _find_broad_excepts(
 
 # ---------- Detector self-tests --------------------------------------------
 
+
 def test_detects_bare_except() -> None:
     # Top-level bare ``except:`` (column 0): ``except`` keyword starts at col 0.
     src = "try:\n    pass\nexcept:\n    pass\n"
@@ -132,13 +133,7 @@ def test_detects_bare_except() -> None:
 
 def test_detects_bare_except_indented() -> None:
     # Indented bare ``except:`` (column 4): inside a function body.
-    src = (
-        "def f():\n"
-        "    try:\n"
-        "        pass\n"
-        "    except:\n"
-        "        pass\n"
-    )
+    src = "def f():\n" "    try:\n" "        pass\n" "    except:\n" "        pass\n"
     rows = _find_broad_excepts(src, "fake.py")
     assert len(rows) == 1
     line, col, kind, snippet = rows[0]
@@ -180,23 +175,13 @@ def test_narrow_attribute_exceptions_not_flagged() -> None:
 
 
 def test_allowlist_comment_suppresses_detection() -> None:
-    src = (
-        "try:\n    pass\n"
-        "except Exception:  # strict-exceptions: allow\n"
-        "    pass\n"
-    )
+    src = "try:\n    pass\n" "except Exception:  # strict-exceptions: allow\n" "    pass\n"
     assert _find_broad_excepts(src, "fake.py") == []
 
 
 def test_docstring_with_exception_text_ignored() -> None:
     """docstring text like 'except Exception: ...' is parse-safe and must not be flagged."""
-    src = (
-        '"""\n'
-        "Example of bad code:\n"
-        "    except Exception:\n"
-        "        pass\n"
-        '"""\n'
-    )
+    src = '"""\n' "Example of bad code:\n" "    except Exception:\n" "        pass\n" '"""\n'
     assert _find_broad_excepts(src, "fake.py") == []
 
 
@@ -225,6 +210,7 @@ def test_allowlist_marker_is_specific() -> None:
 
 # ---------- The PR regression guard itself ---------------------------------
 
+
 def test_repo_has_no_broad_except() -> None:
     """Fail the PR if any source file introduces a bare ``except:`` or
     ``except Exception`` / ``except BaseException`` clause.
@@ -234,9 +220,7 @@ def test_repo_has_no_broad_except() -> None:
     """
     root = _repo_root()
     files = _iter_python_files(root)
-    assert files, (
-        "scan returned 0 files — TARGET_PATHS may be stale relative to repo layout"
-    )
+    assert files, "scan returned 0 files — TARGET_PATHS may be stale relative to repo layout"
 
     all_rows: list[tuple[Path, int, int, str, str]] = []
     for path in files:
@@ -257,10 +241,7 @@ def test_repo_has_no_broad_except() -> None:
     if not all_rows:
         return
 
-    body = "\n".join(
-        f"  - {p}:{line}:{col}  [{kind}]  {snippet}"
-        for p, line, col, kind, snippet in all_rows
-    )
+    body = "\n".join(f"  - {p}:{line}:{col}  [{kind}]  {snippet}" for p, line, col, kind, snippet in all_rows)
     pytest.fail(
         f"\n\nFound {len(all_rows)} broad exception handler(s):\n\n"
         f"{body}\n\n"

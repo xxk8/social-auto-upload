@@ -81,8 +81,8 @@ class RecordingPage:
         self.locators = {
             'input[placeholder*="填写标题"]': RecordingLocator("title"),
             'p[data-placeholder*="输入正文描述"]': RecordingLocator("desc"),
-            '#creator-editor-topic-container': RecordingLocator("topic-container"),
-            '#creator-editor-topic-container .item': RecordingLocator("topic-item"),
+            "#creator-editor-topic-container": RecordingLocator("topic-container"),
+            "#creator-editor-topic-container .item": RecordingLocator("topic-item"),
         }
 
     def locator(self, selector):
@@ -107,9 +107,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
                 "https://creator.rednote.com/login",
             )
             self.assertEqual(
-                xhs_main._build_xhs_creator_url(
-                    "/publish/publish?from=homepage&target=video"
-                ),
+                xhs_main._build_xhs_creator_url("/publish/publish?from=homepage&target=video"),
                 "https://creator.rednote.com/publish/publish?from=homepage&target=video",
             )
 
@@ -205,7 +203,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         self.assertTrue(app.thumbnail_path.endswith("demo.png"))
 
     def test_note_uploader_exists_and_validates_required_fields(self):
-        note_cls = getattr(xhs_main, "XiaoHongShuNote")
+        note_cls = xhs_main.XiaoHongShuNote
         app = note_cls(
             image_paths=[],
             note="",
@@ -242,7 +240,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         self.assertIn(("type", "描述内容", None), page.keyboard.actions)
         self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
         self.assertEqual(
-            page.locators['#creator-editor-topic-container .item'].actions,
+            page.locators["#creator-editor-topic-container .item"].actions,
             [("wait_for", {"state": "visible", "timeout": 4000}), ("click",)],
         )
 

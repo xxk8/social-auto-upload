@@ -38,7 +38,10 @@ class BilibiliCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_login_bilibili_account_uses_playwright(self):
-        with patch("cli.platforms.bilibili.bilibili_setup", new=AsyncMock(return_value={"success": True, "message": "ok"})):
+        with patch(
+            "cli.platforms.bilibili.bilibili_setup", new=AsyncMock(return_value={"success": True, "message": "ok"})
+        ):
             from cli.platforms.bilibili import login
+
             result = asyncio.run(login("creator"))
         self.assertTrue(result["success"])
