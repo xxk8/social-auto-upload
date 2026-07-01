@@ -43,3 +43,76 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run build
+
+  # ── vitest gate (PR-time invariant lock) ──
+  # Runs only the 5 core specs that lock the post-merge routing table, the
+  # auth-router redirect invariant, the Page-level chrome (PageHeader +
+  # action-data-testid substrate + AuthGuard bounce), and the
+  # concurrent-downloads contract on /app/inbox: parallel-download
+  # cleanup, per-row retry independence, batch-retry double-defense, and
+  # the handleRemove / handleBatchRemove / handleClearAll cleanup paths
+  # (which collectively lock the in-flight chip invariant — no phantom
+  # counts after removing in-flight rows). Total runtime ~5 s.
+  # NOT a full-suite gate: the other 12 test files have 26 pre-existing
+  # failures (AlertDialog mock gap, react-markdown 10.x className drop,
+  # React 19 strict-mode memo count drift) that are tracked separately and
+  # intentionally not gating merges today. See docs/vitest-suite.md §4.4
+  # for the per-file failure inventory + migration plan.
+  frontend-vitest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sau_web/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sau_web/frontend/package-lock.json
+      - run: npm ci
+      - name: Run vitest on the 5 core specs (routing + auth-router + page-level chrome + concurrent-download chip contract)
+        run: |
+          npx vitest run \
+            --reporter=default \
+            --reporter=json --outputFile=sau_web/frontend/vitest-summary.json \
+            src/App.test.tsx \
+            src/features/auth/LoginPage.test.tsx \
+            src/Pages/AccountsPage.test.tsx \
+            src/Pages/PublishPage.test.tsx \
+            src/Pages/InboxPage.test.tsx
+      - name: Upload vitest JSON summary on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-summary
+          path: sau_web/frontend/vitest-summary.json
+          if-no-files-found: ignore
+
+  # ── docs discoverability contract audit ──
+  # Enforces the 4-rule contract documented in `docs/dev/INDEX.md` § '
+  # Discoverability-on-arrival contract' so a future PR can't regress either
+  # the README 详细文档 table ordering (运营 Cron Runbook + 开发文档枢纽 must sit
+  # directly after Web Shell), the INDEX.md sub-doc cross-references, the
+  # CLAUDE.md/README.md/docs/install.md triangulation, or the canonical
+  # template sections (Why this exists / Prereqs / Cross-references) in any
+  # docs/dev/ sub-doc. Pure stdlib, < 100 ms runtime; no extra deps required.
+  docs-discoverability-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit 4-rule discoverability-on-arrival contract
+        run: python scripts/dev_docs_audit.py
+      - name: Run pytest locks for the audit script
+        run: |
+          python -m pytest tests/test_dev_docs_audit.py -q
+      - name: Upload contract-violations log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discoverability-audit-violations
+          path: artifacts/discoverability-audit.log
+          if-no-files-found: ignore
