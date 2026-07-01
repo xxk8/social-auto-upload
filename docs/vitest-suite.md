@@ -42,14 +42,14 @@ URL → 组件映射，`AuthGuard` 包裹下的 redirect 行为。
 
 | File | Tests | Pass | Fail | 覆盖 |
 |---|---:|---:|---:|---|
-| `src/Pages/AccountsPage.test.tsx` | 8 | 8 | 0 | PageHeader chrome + AuthGuard 匿名 bounce + BodyArea 三分支（loading / empty / search-filtered）+ 头部 action 通过 `within(page-header-actions).getByRole` 锁定 PageHeader 自己 |
+| `src/Pages/AccountsPage.test.tsx` | 8 | 1 | **7** | PageHeader chrome + AuthGuard 匿名 bounce + BodyArea 三分支（loading / empty / search-filtered）+ 头部 action 通过 `within(page-header-actions).getByRole` 锁定 PageHeader 自己 — **7 fail**（2026-07-01 re-audit 浮现）: 渲染 AccountsShell 时 `useAccountsState must be used inside <AccountsProvider>` 抛出，Provider context wrap 回归；详见 §4.2 |
 | `src/Pages/PublishPage.test.tsx` | 10 | 10 | 0 | PageHeader + Tabs + 桌面 PublishAiSidebar + 移动 AI trigger + mobile drawer 开/闭 (`within(mobile-ai-drawer)` 锁定抽屉内的 sidebar) |
 | `src/Components/AiPanel/AiPanel.test.tsx` | 29 | 29 | 0 | 折叠/展开状态机 + children 始终挂载 + drag-handle |
 | `src/Components/AiPanel/AiPanelToolbar.test.tsx` | 23 | 18 | **5** | 渲染、key count、quick-generate、移动 viewport (375 px) — 5 失败：模型名 + key-count 的文本匹配需要 `within()` 收窄，见 §4.2 |
 | `src/Components/AiPanel/ChatArea.test.tsx` | 11 | 7 | **4** | 空态、消息渲染、streaming draft、错误块 — 4 失败：react-markdown 10.x 移除了 `<Markdown className=...>` 形态，需迁到 `components={{ p: ... }}` 形式 |
 | `src/features/accounts/AccountsProvider.test.tsx` | 27 | 27 | 0 | Provider state machine + dispatch surface + filter logic + `getPlatformLabel` |
 | `src/features/publish/NoteForm.test.tsx` | 7 | 1 | **6** | imperative handle (applyAiResult) + React.memo 稳定性 — 6 失败：表 `@/Components/ui/index` 的 `vi.mock` 工厂缺少 `AlertDialog` 导出，需补齐 |
-| `src/features/publish/VideoForm.test.tsx` | 9 | 1 | **8** | 同 NoteForm，imperative handle + memo 稳定性 — 8 失败：同 `AlertDialog` mock gap |
+| `src/features/publish/VideoForm.test.tsx` | 9 | 9 | 0 | imperative handle (applyAiResult) + React.memo 稳定性 — 之前 8 失败由 `AlertDialog` mock gap 引起，prior round 已修复（mock factory 加 `AlertDialog: ({ children }) => <>{children}</>`）;现状 9/9 pass |
 | `src/features/tasks/TaskDrawer.test.tsx` | 10 | 8 | **2** | drawer prop surface + React.memo + 运行日志 accordion — 2 失败：memo HIT 计数跳变（React 19 strict-mode 双 render）+ accordion 触发器查询 |
 | `src/features/tasks/TaskTableRow.test.tsx` | 12 | 11 | **1** | 行渲染 + 回调稳定性 + memo HIT — 1 失败：同 memo HIT 计数跳变 |
 | `src/Pages/InboxPage.test.tsx` | 59 | 59 | 0 | `/app/inbox` 路由表 + AuthGuard + PageHeader chrome + Concurrent-downloads chip contract（4 条 lock test — 详见 §4.5） |
@@ -153,11 +153,9 @@ within(screen.getByTestId('mobile-ai-drawer'))
 | `AiPanelToolbar.test.tsx` | 5 | `getByText('gpt-4o-mini')` 在 `hidden md:flex` 块外侧 match 不到 desktop-only 文本 | 用 `within('.hidden.md\\:flex').getByText(...)` 收窄 |
 | `ChatArea.test.tsx` | 4 | react-markdown 10.x 移除了 `<Markdown className=...>` 形态 | 迁到 `components={{ p: (props) => <p {...props} /> }}` 形式 |
 | `NoteForm.test.tsx` | 6 | `vi.mock('@/Components/ui/index')` 工厂未返回 `AlertDialog` 导出 | 在 mock 对象加 `AlertDialog: ({ children }) => <>{children}</>` |
-| `VideoForm.test.tsx` | 8 | 同 NoteForm | 同上 |
 | `TaskDrawer.test.tsx` | 2 | React 19 strict-mode 双 render → `inner.phases.length === 2 !== 1`；accordion 触发器查询为空 | `act + waitFor` 包裹 + 同步 anchor 关键字 |
 | `TaskTableRow.test.tsx` | 1 | 同 React 19 strict-mode | 同上 |
-
-> 这 26 失败与本轮 e2e→vitest 迁移无关，是 vitest-results 历史遗留。已纳入 suggestion queue。
+| `AccountsPage.test.tsx` | 7 | AccountsProvider context wrap 缺失：AccountsShell 顶层直接 `useAccountsState()` 而测试 render 时未包 `<AccountsProvider>` wrapper → `useAccountsState must be used inside <AccountsProvider>` 抛出 | 用 `render(ui, { wrapper: ({ children }) => <AccountsProvider initialState={...}>{children}</AccountsProvider> })` 包裹；或拆 AccountsShell / AccountsBody 后单独测，前者用 stub mockProviders |
 
 ### 4.3 vitest ↔ e2e 加一条简单判定
 
@@ -222,7 +220,7 @@ cd sau_web/frontend && pnpm exec playwright test --config ../../tests/playwright
 
 - **作用**：锁定 post-merge 三类不变式——routing table、auth-router redirect、PageHeader + action-data-testid substrate
 - **选 spec 范围**：只用 **5 个 core spec**（`App.test.tsx` + `LoginPage.test.tsx` + `AccountsPage.test.tsx` + `PublishPage.test.tsx` + `InboxPage.test.tsx`）。后者覆盖 `/app/inbox` 的 concurrent-download chip contract（详见 §4.5）。完整套件另 **12 个文件**含 26 个 pre-existing failure（未在本轮 work 内），需分批修才能引入完整 gate。详见 §4.2 。
-- **运行时间**：本地 ~5.5 s · **99/99 PASS**（17 routing + 5 LoginPage + 8 AccountsPage + 10 PublishPage + 59 InboxPage = 99）——远低于 `frontend-build` 的 npx tsc + vite build。runtime 上升主要来自 InboxPage.test.tsx 单文件（59 test）；4-spec 时代的 ~1 s 基线已经扩容。如果 InboxPage 继续加 spec，runtime 会进一步上升，建议 future work 把 InboxPage 拆为多个 narrow spec 以稳定 CI 时间预算。
+- **运行时间**：本地 ~5.5 s · **92/99 PASS**（17 routing + 5 LoginPage + **1** AccountsPage + 10 PublishPage + 59 InboxPage = 92）。AccountsPage 7 fail 来自 AccountsProvider context wrap 回归 — 不在本 PR 的 diff 内，详见 §4.2 清单。本 gate 7 fail 不属于本轮 InboxPage 4-lock-test 优化，且 InboxPage.test.tsx 59/59 pass 单独 clean。runtime 远低于 `frontend-build` 的 npx tsc + vite build;runtime 上升主要来自 InboxPage.test.tsx 单文件（59 test);4-spec 时代的 ~1 s 基线已经扩容.如果 InboxPage 继续加 spec，runtime 会进一步上升，建议 future work 把 InboxPage 拆为多个 narrow spec 以稳定 CI 时间预算。
 - **依赖**：仅 `setup-node@v4` + `npm ci`（用 package-lock.json 作 cache dependency path），**不需** Postgres 服务、chromium、live backend
 - **触发条件**：push 到 main + pull_request 到 main，与 `frontend-build` 同 trigger；互相不依赖，可并发跑。
 - **失败时**：`if: failure() 上传 `vitest-summary` 构件，供调试。
