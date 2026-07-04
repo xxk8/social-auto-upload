@@ -45,19 +45,41 @@ jobs:
       - run: npm run build
 
   # ── vitest gate (PR-time invariant lock) ──
-  # Runs only the 5 core specs that lock the post-merge routing table, the
-  # auth-router redirect invariant, the Page-level chrome (PageHeader +
-  # action-data-testid substrate + AuthGuard bounce), and the
+  # Runs the 5 Page-level chrome specs that lock the post-merge routing
+  # table, the auth-router redirect invariant, the PageHeader /
+  # action-data-testid substrate + AuthGuard bounce, and the
   # concurrent-downloads contract on /app/inbox: parallel-download
   # cleanup, per-row retry independence, batch-retry double-defense, and
   # the handleRemove / handleBatchRemove / handleClearAll cleanup paths
   # (which collectively lock the in-flight chip invariant — no phantom
-  # counts after removing in-flight rows). Total runtime ~5 s.
-  # NOT a full-suite gate: the other 12 test files have 26 pre-existing
-  # failures (AlertDialog mock gap, react-markdown 10.x className drop,
-  # React 19 strict-mode memo count drift) that are tracked separately and
-  # intentionally not gating merges today. See docs/vitest-suite.md §4.4
-  # for the per-file failure inventory + migration plan.
+  # counts after removing in-flight rows).
+  #
+  # Also runs the two publish-wizard regression suites that lock the
+  # store tag-array helper contract (idempotency of addTag / toggleTag /
+  # removeTag / setTags, canonical-hash collapse, full-width comma
+  # boundaries) and the SchedulePicker 「下周一 18:00」preset's
+  # Monday-edge math (vi.setSystemTime fixtures across Sunday / Monday
+  # pre/post 18:00 / Tuesday / the rest of the week).
+  #
+  # Also runs the two ai-sidebar-material-search specs that lock the
+  # §6 store contract (searchImages / recommendByTitle /
+  # addImageToForm with form-mode-aware dispatch — video routes to
+  # `{thumbnail: image.full}`, note routes to `{images: [file]}` /
+  # recentQueries LRU / reset / 429 / 503 surfaces) and the
+  # MaterialSection §7-9 + §11 surface (Accordion cap +
+  # manual/recommend slot coexistence + §9 single-source-of-truth
+  # click toast UX via the form-side veto so the grid awaits
+  # ApplyAttempt and toasts once per click + URL form envelope-
+  # failure inline error surface). Both specs are referenced by
+  # openspec/changes/ai-sidebar-material-search/tasks.md §12.
+  #
+  # Total runtime added: ~6 s (~3 s publish-wizard + ~3 s ai-sidebar-
+  # material-search). NOT a full-suite gate: the other 12 test files
+  # have 26 pre-existing failures (AlertDialog mock gap, react-
+  # markdown 10.x className drop, React 19 strict-mode memo count
+  # drift) that are tracked separately and intentionally not gating
+  # merges today. See docs/vitest-suite.md §4.4 for the per-file
+  # failure inventory and migration plan.
   frontend-vitest:
     runs-on: ubuntu-latest
     defaults:
@@ -71,7 +93,7 @@ jobs:
           cache: npm
           cache-dependency-path: sau_web/frontend/package-lock.json
       - run: npm ci
-      - name: Run vitest on the 5 core specs (routing + auth-router + page-level chrome + concurrent-download chip contract)
+      - name: Run vitest on the 9 core specs (5 page-level chrome + 2 publish-wizard regression + 2 ai-sidebar-material-search)
         run: |
           npx vitest run \
             --reporter=default \
@@ -80,7 +102,13 @@ jobs:
             src/features/auth/LoginPage.test.tsx \
             src/Pages/AccountsPage.test.tsx \
             src/Pages/PublishPage.test.tsx \
-            src/Pages/InboxPage.test.tsx
+            src/Pages/InboxPage.test.tsx \
+            # ── publish-wizard regression suites (store tag-array contract + SchedulePicker Monday-edge math)
+            src/stores/publishWizardStore.test.tsx \
+            src/features/publish/SchedulePicker.test.tsx \
+            # ── ai-sidebar-material-search specs (§6 store contract + §7-9 + §11 MaterialSection surface)
+            src/stores/materialPanelStore.test.tsx \
+            src/Components/AiRightPanel/MaterialSection.test.tsx
       - name: Upload vitest JSON summary on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -88,6 +116,70 @@ jobs:
           name: vitest-summary
           path: sau_web/frontend/vitest-summary.json
           if-no-files-found: ignore
+
+  # ── Playwright E2E gate (PR-time browser-level invariant lock) ──
+  # Boots its own backend + frontend shell via the webServer block in
+  # tests/playwright.config.ts (E2E_BOOT_SERVER=1). Covers the 7 specs
+  # under tests/e2e/:
+  #   · OPT-3F  AI sidebar collapse + LS persistence
+  #   · OPT-3G  chip → controlled Accordion + platform ring
+  #   · OPT-3I  cancel post-submit auto-navigate
+  #   · OPT-3L  engineering-tool aesthetic locks
+  #   · OPT-3M  auth dialog drag-proof + select-none/select-text
+  #   · landing-pricing  visitor-surface attribution rhythm
+  #   · marketing-routing  marketing + shell routing split
+  # Total runtime ~5 min (install + boot + run). Runs in parallel with
+  # the faster gates; a slow E2E failure doesn't block the fast feedback
+  # loop (lint / pytest / vitest / build) from reporting first.
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: sau_web/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sau_web/frontend/package-lock.json
+
+      # The Playwright webServer block boots `bash ../sau_web/start.sh`
+      # which in turn runs `python run.py` (Flask backend). Install
+      # Python deps so the boot is self-contained.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python deps (Flask backend)
+        run: pip install -e '.[dev]'
+        working-directory: ${{ github.workspace }}
+
+      - name: Install Node deps (frontend)
+        run: npm ci
+
+      - name: Install Playwright Chromium + system deps
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E (server boots via webServer block)
+        run: E2E_BOOT_SERVER=1 npm run test:e2e
+        env:
+          CI: true
+          SAU_MOCK_AUTHORIZE: true
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            sau_web/frontend/playwright-report
+            sau_web/frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 7
 
   # ── docs discoverability contract audit ──
   # Enforces the 4-rule contract documented in `docs/dev/INDEX.md` § '
