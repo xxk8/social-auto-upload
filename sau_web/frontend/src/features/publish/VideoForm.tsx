@@ -8,9 +8,9 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { FormPreviewData } from './PublishPreview'
-import type { GroupSelection } from './GroupPublishSelector'
-import type { FormHandle } from '@/lib/chat/chatFormBridge'
+import type { FormPreviewData } from './previewTypes'
+import type { GroupSelection, PlatformSpecificSection } from './GroupPublishSelector'
+import type { ApplyAttempt, FormHandle } from '@/lib/chat/chatFormBridge'
 import {
   Accordion,
   AccordionContent,
@@ -38,16 +38,12 @@ import {
   Textarea,
 } from '@/Components/ui/index'
 import { cn } from '@/lib/utils'
-import { PlatformIcon } from '@/Components/ui/platform-icon'
-import { TagInput } from '@/Components/ui/tag-input'
+import {PlatformIcon} from '@/Components/ui/platform-icon';import { TagInput } from '@/Components/ui/tag-input'
 import { motion } from 'motion/react'
 import { useToast } from '@/Components/ui/toast'
 import { usePublishDraft } from '@/hooks/usePublishDraft'
 import { PublishDraftBanner } from './PublishDraftBanner'
-import {
-  api,
-  PLATFORMS,
-} from '../../api/client'
+import { api } from '../../api/client'
 import {
   FilePlus,
   Inbox,
@@ -56,12 +52,8 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
-import {
-  effectiveMaxTags,
-  platformTagLabel,
-  SectionHeader,
-} from './shared'
-import { cardVariants, springTransition } from './animations'
+import {SectionHeader} from './shared';
+import {effectiveMaxTags, platformTagLabel} from './shared.helpers';import { cardVariants, springTransition } from './animations'
 import { SchedulePicker } from './SchedulePicker'
 import { formatFileSize } from '@/lib/features'
 import { Tip } from '@/lib/tip'
@@ -99,19 +91,14 @@ const BILIBILI_TIDS = [
 export type VideoFormHandle = FormHandle
 
 /**
- * OPT-3G R1 leftover: type union for the THREE platforms that have
- * dedicated, conditional gen-fields inside VideoForm's advanced
- *  Accordion (商品链接 for 抖音 / 分区 for Bilibili / 短标题 for 视频号).
- *
- * Exported once here so the cross-component coordination in
- * PublishPage (`highlightedSection` state + `handleExpandAdvanced`
- * callback) and GroupPublishSelector (`onExpandAdvanced` prop +
- * pendingPlatformConfigs memo) can reference a single source of
- * truth. Before this export the union was triplicated across the
- * three sites; adding a 4th platform-specific field later (e.g.
- * 十ian tiktok voice prefill) was a 3-place chore.
+ * OPT-3G type re-export — union lives in GroupPublishSelector.tsx
+ * (where the producer — chip + pendingPlatformConfigs memo — sits)
+ * and is re-exported here so existing `import type { PlatformSpecificSection }
+ * from '../VideoForm'` paths keep type-checking without changes to
+ * the legacy PublishPage wiring. Add a 4th platform later by editing
+ * only GroupPublishSelector.
  */
-export type PlatformSpecificSection = 'douyin' | 'bilibili' | 'tencent'
+export type { PlatformSpecificSection } from './GroupPublishSelector'
 
 type VideoFormProps = {
   /**
@@ -181,7 +168,9 @@ export const VideoForm = memo(
 
     const [title, setTitle] = useState('')
     const [desc, setDesc] = useState('')
-    const [tags, setTags] = useState('')
+    /** Path C: native `string[]` (canonical `#tag`). Wire-format join
+     *  happens only at the api.uploadVideo call site in `submit()`. */
+    const [tags, setTags] = useState<string[]>([])
     const [schedule, setSchedule] = useState('')
     const [headless, setHeadless] = useState(true)
     const [thumbnail, setThumbnail] = useState('')
@@ -254,11 +243,12 @@ export const VideoForm = memo(
     const filledFieldCount = useMemo(() => {
       let n = 0
       const textKeys = [
-        title, desc, tags, schedule,
+        title, desc, schedule,
         thumbnail, thumbnailLandscape, thumbnailPortrait,
         productLink, productTitle, shortTitle, category,
       ] as const
       for (const v of textKeys) if (v.trim()) n++
+      if (tags.length > 0) n++
       if (tid != null) n++
       if (isDraft) n++
       return n
@@ -279,7 +269,13 @@ export const VideoForm = memo(
       let restored = 0
       if (d.title) { setTitle(d.title); restored++ }
       if (d.desc) { setDesc(d.desc); restored++ }
-      if (typeof d.tags === 'string') { setTags(d.tags); if (d.tags) restored++ }
+      if (Array.isArray(d.tags)) { setTags(d.tags); if (d.tags.length > 0) restored++ }
+      else if (typeof d.tags === 'string' && d.tags) {
+        // Legacy pre-Path-C draft: comma-joined string. Parse and re-set.
+        const parsed = d.tags.split(/[,，]+/).map((t) => t.trim().replace(/^#+/, '#').replace(/#+/, '#')).filter(Boolean)
+        setTags(parsed)
+        if (parsed.length > 0) restored++
+      }
       if (typeof d.schedule === 'string') { setSchedule(d.schedule); if (d.schedule) restored++ }
       if (typeof d.headless === 'boolean') { setHeadless(d.headless); if (d.headless) restored++ }
       if (typeof d.thumbnail === 'string') { setThumbnail(d.thumbnail); if (d.thumbnail) restored++ }
@@ -317,7 +313,7 @@ export const VideoForm = memo(
       const filled: string[] = []
       if (typeof d.title === 'string' && d.title.trim()) filled.push('标题')
       if (typeof d.desc === 'string' && d.desc.trim()) filled.push('简介')
-      if (typeof d.tags === 'string' && d.tags.trim()) filled.push('标签')
+      if (Array.isArray(d.tags) ? d.tags.length > 0 : typeof d.tags === 'string' && d.tags.trim()) filled.push('标签')
       if (typeof d.schedule === 'string' && d.schedule.trim()) filled.push('定时')
       if (d.lastFileMeta) filled.push('视频元信息')
       return filled.length > 0
@@ -330,18 +326,15 @@ export const VideoForm = memo(
       if (!pendingDraft) return 0
       const d = pendingDraft as Record<string, unknown>
       let n = 0
-      for (const k of ['title', 'desc', 'tags', 'schedule', 'thumbnail', 'thumbnailLandscape', 'thumbnailPortrait', 'productLink', 'productTitle', 'shortTitle', 'category']) {
+      for (const k of ['title', 'desc', 'schedule', 'thumbnail', 'thumbnailLandscape', 'thumbnailPortrait', 'productLink', 'productTitle', 'shortTitle', 'category']) {
         const v = d[k]
         if (typeof v === 'string' && v.trim()) n++
       }
+      if (Array.isArray(d.tags) && d.tags.length > 0) n++
+      else if (typeof d.tags === 'string' && d.tags.trim()) n++
       if (d.tid != null) n++
       return n
     }, [pendingDraft])
-
-    const platformLabelMap = useMemo(
-      () => Object.fromEntries(PLATFORMS.map((p) => [p.value, p.label])),
-      [],
-    )
 
     /** Currently selected/active platforms for conditional field rendering. */
     const activePlatforms = useMemo(
@@ -408,11 +401,51 @@ export const VideoForm = memo(
         applyAiResult(result) {
           if (result.title) setTitle(result.title)
           if (result.desc) setDesc(result.desc)
-          if (result.tags) setTags(result.tags)
+          if (result.tags && result.tags.length > 0) setTags(result.tags)
         },
+        // ai-sidebar-material-search §4.1 + spec.md §"URL one-click fetch":
+        // VideoForm accepts TWO media keys:
+        //   1. `{file}` — REPLACES the main video File slot (URL-fetched
+        //      Inbox download). Spec invariant: "VideoForm's file slot
+        //      SHALL be replaced (not appended, since this is the main
+        //      media)". This adds the spec.md-mandated `{file}` key that
+        //      tasks.md §3 omitted (spec gap fix).
+        //   2. `{thumbnail}` — updates the single main cover URL string.
+        //      Locked by §4.1 originally.
+        //
+        // Both write to local useState; on success the caller (MaterialSection's
+        // onClick / AddUrlForm's onDownload) is told `applied: true` and a
+        // success toast surfaces. `{images}` is rejected with `no-media-slot`
+        // because video mode structurally has no image-file list — the user
+        // must switch to mode='note' to use the AI sidebar's image grid.
+        // Per spec §4.1 acceptance: video-mode cap is 0 (not 11), so any
+        // silently-accept path is a regression.
+        applyMedia(media) {
+          const { file, thumbnail, images } = media
+          if (images && images.length > 0) {
+            // Note-mode media rejected (no image-list slot in video mode).
+            // Caller toasts the no-media-slot hint — see
+            // MaterialImageGrid's switch on Attempt.reason. Keeping the
+            // form SILENT here closes Part A of the §6-9 双 toast wart.
+            return { applied: false, reason: 'no-media-slot' as const }
+          }
+          if (file) {
+            fileRef.current = file
+            setFileInfo({ name: file.name, size: file.size })
+            return { applied: true }
+          }
+          if (thumbnail) {
+            setThumbnail(thumbnail)
+            return { applied: true }
+          }
+          // Empty media object — no key matched. Treat as no-media-slot
+          // (semantically identical UX from the caller's perspective).
+          return { applied: false, reason: 'no-media-slot' as const }
+        },
+        // Path C: tags is string[] — bridge sees array form directly.
         getFormSnapshot: () => ({ title, desc, tags }),
       }),
-      [setTitle, setDesc, setTags, title, desc, tags],
+      [setTitle, setDesc, setTags, setThumbnail, setFileInfo, title, desc, tags],
     )
 
     /**
@@ -470,7 +503,7 @@ export const VideoForm = memo(
     const clearEverything = useCallback(() => {
       setTitle('')
       setDesc('')
-      setTags('')
+      setTags([])
       setSchedule('')
       setThumbnail('')
       setThumbnailLandscape('')
@@ -528,7 +561,8 @@ export const VideoForm = memo(
                 title,
                 file: fileRef.current!,
                 desc: desc || undefined,
-                tags: tags || undefined,
+                // Wire-boundary: join is the only place string[] → string.
+                tags: tags.length > 0 ? tags.join(',') : undefined,
                 schedule: schedule || undefined,
                 headless: String(headless),
                 thumbnail: thumbnail || undefined,
@@ -605,6 +639,7 @@ export const VideoForm = memo(
               <SectionHeader icon={<FilePlus className="h-4 w-4" />} title="内容素材" />
               <div className="space-y-4">
                 <div className="space-y-2">
+                  {/* eslint-disable-next-line sau/label-html-for -- 装饰标签·div作为click-target + 隐藏 <input id="video-file-input"> */}
                   <Label>视频文件</Label>
                   <div
                     className={cn(
@@ -707,6 +742,7 @@ export const VideoForm = memo(
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
+                    {/* eslint-disable-next-line sau/label-html-for -- 装饰标签·行内布局 (AI 优化按钮 + 0/100 计数器同行) */}
                     <Label>标题</Label>
                     <div className="flex items-center gap-1.5">
                       <Tip text="AI 优化标题">
@@ -730,6 +766,8 @@ export const VideoForm = memo(
                     </div>
                   </div>
                   <Input
+                    id="video-title"
+                    name="title"
                     placeholder="请输入视频标题（建议 6-20 字）"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
@@ -768,6 +806,7 @@ export const VideoForm = memo(
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
+                      {/* eslint-disable-next-line sau/label-html-for -- 装饰分组·TagInput 当前调用未挂 id (后续 PR 跟随 ContentStep 修复补) */}
                       <Label>标签</Label>
                       <span className="text-[11px] text-muted-foreground">
                         {platformTagLabel([...activePlatforms])}
@@ -776,7 +815,7 @@ export const VideoForm = memo(
                     <TagInput
                       placeholder="按 Enter 添加标签（# 可省略）"
                       value={tags}
-                      onChange={(val) => setTags(val)}
+                      onChange={setTags}
                       maxTags={effectiveMaxTags([...activePlatforms])}
                     />
                   </div>
@@ -835,8 +874,10 @@ export const VideoForm = memo(
                   {/* ── 通用封面字段 ── */}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mt-4">
                     <div className="space-y-1.5">
-                      <Label className="text-xs">封面地址</Label>
+                      <Label htmlFor="video-thumbnail" className="text-xs">封面地址</Label>
                       <Input
+                        id="video-thumbnail"
+                        name="thumbnail"
                         placeholder="URL 或 Data URI"
                         value={thumbnail}
                         onChange={(e) => setThumbnail(e.target.value)}
@@ -844,8 +885,10 @@ export const VideoForm = memo(
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">横版封面 (4:3)</Label>
+                      <Label htmlFor="video-thumbnail-landscape" className="text-xs">横版封面 (4:3)</Label>
                       <Input
+                        id="video-thumbnail-landscape"
+                        name="thumbnail_landscape"
                         placeholder="URL 或 Data URI"
                         value={thumbnailLandscape}
                         onChange={(e) => setThumbnailLandscape(e.target.value)}
@@ -853,8 +896,10 @@ export const VideoForm = memo(
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">竖版封面 (3:4)</Label>
+                      <Label htmlFor="video-thumbnail-portrait" className="text-xs">竖版封面 (3:4)</Label>
                       <Input
+                        id="video-thumbnail-portrait"
+                        name="thumbnail_portrait"
                         placeholder="URL 或 Data URI"
                         value={thumbnailPortrait}
                         onChange={(e) => setThumbnailPortrait(e.target.value)}
@@ -881,8 +926,11 @@ export const VideoForm = memo(
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
-                          <Label className="text-xs">商品链接</Label>
+                          <Label htmlFor="video-product-link" className="text-xs">商品链接</Label>
                           <Input
+                            id="video-product-link"
+                            name="product_link"
+                            type="url"
                             placeholder="https://"
                             value={productLink}
                             onChange={(e) => setProductLink(e.target.value)}
@@ -890,8 +938,10 @@ export const VideoForm = memo(
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <Label className="text-xs">商品标题</Label>
+                          <Label htmlFor="video-product-title" className="text-xs">商品标题</Label>
                           <Input
+                            id="video-product-title"
+                            name="product_title"
                             placeholder="可选"
                             value={productTitle}
                             onChange={(e) => setProductTitle(e.target.value)}
@@ -920,12 +970,12 @@ export const VideoForm = memo(
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
-                          <Label className="text-xs">分区分类</Label>
+                          <Label htmlFor="video-bilibili-tid" className="text-xs">分区分类</Label>
                           <Select
                             value={String(tid || '')}
                             onValueChange={(v) => setTid(v ? Number(v) : undefined)}
                           >
-                            <SelectTrigger className="h-8 text-xs">
+                            <SelectTrigger id="video-bilibili-tid" className="h-8 text-xs" aria-label="分区分类">
                               <SelectValue placeholder="选择分区" />
                             </SelectTrigger>
                             <SelectContent>
@@ -959,8 +1009,10 @@ export const VideoForm = memo(
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
-                          <Label className="text-xs">短标题</Label>
+                          <Label htmlFor="video-tencent-short-title" className="text-xs">短标题</Label>
                           <Input
+                            id="video-tencent-short-title"
+                            name="short_title"
                             placeholder="可选"
                             value={shortTitle}
                             onChange={(e) => setShortTitle(e.target.value)}
@@ -968,8 +1020,10 @@ export const VideoForm = memo(
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <Label className="text-xs">原创分类</Label>
+                          <Label htmlFor="video-tencent-category" className="text-xs">原创分类</Label>
                           <Input
+                            id="video-tencent-category"
+                            name="category"
                             placeholder="可选"
                             value={category}
                             onChange={(e) => setCategory(e.target.value)}

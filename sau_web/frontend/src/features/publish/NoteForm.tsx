@@ -8,27 +8,32 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { FormPreviewData } from './PublishPreview'
+import type { FormPreviewData } from './previewTypes'
 import type { GroupSelection } from './GroupPublishSelector'
-import type { FormHandle } from '@/lib/chat/chatFormBridge'
+import type { ApplyAttempt, FormHandle } from '@/lib/chat/chatFormBridge'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Card,
   CardContent,
   Checkbox,
   Input,
   Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Textarea,
-} from '@/components/ui/index'
+} from '@/Components/ui/index'
 import { cn } from '@/lib/utils'
-import { TagInput } from '@/components/ui/tag-input'
+import { TagInput } from '@/Components/ui/tag-input'
 import { motion } from 'motion/react'
-import { useToast } from '@/components/ui/toast'
+import {useToast} from '@/Components/ui/toast.helpers';import { toneTextClass } from '@/lib/tone'
+import { usePublishDraft } from '@/hooks/usePublishDraft'
+import { PublishDraftBanner } from './PublishDraftBanner'
 import {
   api,
   getNoteImageLimit,
@@ -40,36 +45,10 @@ import {
   Maximize,
   X,
 } from 'lucide-react'
-import {
-  effectiveMaxTags,
-  platformTagLabel,
-  SectionHeader,
-} from './shared'
+import {SectionHeader} from './shared';
+import {effectiveMaxTags, platformTagLabel} from './shared.helpers';import { cardVariants, thumbVariants } from './animations'
 import { SchedulePicker } from './SchedulePicker'
 import { ImageLightbox } from './ImageLightbox'
-
-const cardVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      type: 'spring' as const,
-      stiffness: 320,
-      damping: 28,
-      delay: i * 0.06,
-    },
-  }),
-}
-
-const thumbVariants = {
-  hidden: { opacity: 0, scale: 0.5 },
-  visible: (i: number) => ({
-    opacity: 1,
-    scale: 1,
-    transition: { type: 'spring' as const, stiffness: 400, damping: 25, delay: i * 0.04 },
-  }),
-}
 
 /** Imperative handle: parent (PublishPage) routes AI generations here.
  *  Aliased to `FormHandle` from the chat bridge. `getFormSnapshot` exposes
@@ -105,7 +84,9 @@ export const NoteForm = memo(
 
     const [title, setTitle] = useState('')
     const [content, setContent] = useState('')
-    const [tags, setTags] = useState('')
+    /** Path C: native `string[]` (canonical `#tag`). Wire-format join
+     *  happens only at the api.uploadNoteMultipart call site in `submit()`. */
+    const [tags, setTags] = useState<string[]>([])
     const [schedule, setSchedule] = useState('')
     const [headless, setHeadless] = useState(true)
 
@@ -116,6 +97,104 @@ export const NoteForm = memo(
     const [dropTarget, setDropTarget] = useState<number | null>(null)
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
     const [submitting, setSubmitting] = useState(false)
+    const [confirmClearOpen, setConfirmClearOpen] = useState(false)
+
+    // ── PR-OPT-2D: draft auto-save + restore + clear-confirmation ────────
+    // imageFiles are intentionally NOT in the snapshot (File is not
+    // serializable). `imageMetas` records file metadata so the banner can
+    // hint how many images will need re-uploading.
+    const imageMetas = useMemo(
+      () =>
+        imageFiles.map((f) => ({
+          name: f.name,
+          size: f.size,
+          lastModified: f.lastModified,
+        })),
+      [imageFiles],
+    )
+    const draftSnapshot = useMemo(
+      () => ({ title, content, tags, schedule, headless, imageCount: imageMetas.length }),
+      [title, content, tags, schedule, headless, imageMetas.length],
+    )
+
+    const {
+      pendingDraft,
+      draftSavedAt,
+      acknowledge,
+      clearDraftStorage,
+    } = usePublishDraft('note', draftSnapshot)
+
+    const filledFieldCount = useMemo(() => {
+      let n = 0
+      if (title.trim()) n++
+      if (content.trim()) n++
+      if (tags.length > 0) n++
+      if (schedule.trim()) n++
+      if (imageMetas.length > 0) n++
+      return n
+    }, [title, content, tags, schedule, imageMetas.length])
+
+    const restoreDraft = useCallback(() => {
+      if (!pendingDraft) return
+      const d = pendingDraft as Record<string, unknown>
+      let restored = 0
+      if (typeof d.title === 'string') { setTitle(d.title); if (d.title) restored++ }
+      if (typeof d.content === 'string') { setContent(d.content); if (d.content) restored++ }
+      if (Array.isArray(d.tags)) { setTags(d.tags); if (d.tags.length > 0) restored++ }
+      else if (typeof d.tags === 'string' && d.tags) {
+        // Legacy pre-Path-C draft: comma-joined string. Parse and re-set.
+        const parsed = d.tags.split(/[,，]+/).map((t) => t.trim().replace(/^#+/, '#').replace(/#+/, '#')).filter(Boolean)
+        setTags(parsed)
+        if (parsed.length > 0) restored++
+      }
+      if (typeof d.schedule === 'string') { setSchedule(d.schedule); if (d.schedule) restored++ }
+      if (typeof d.headless === 'boolean') { setHeadless(d.headless); if (d.headless) restored++ }
+      acknowledge()
+      // Guard zero-restored: only emit toast when there's something to
+      // recover beyond the default `headless: true` toggle.
+      if (restored > 0) {
+        const hadImages = typeof d.imageCount === 'number' && d.imageCount > 0
+        addToast(
+          `已恢复 ${restored} 项字段；${hadImages ? `需重新上传 ${d.imageCount} 张图片` : '无图片需重传'}`,
+          'success',
+        )
+      } else {
+        addToast('草稿内容全部为空，未应用', 'info')
+      }
+    }, [pendingDraft, acknowledge, addToast])
+
+    const discardDraft = useCallback(() => {
+      clearDraftStorage()
+      acknowledge()
+    }, [clearDraftStorage, acknowledge])
+
+    const draftBannerFieldsHint = useMemo(() => {
+      if (!pendingDraft) return undefined
+      const d = pendingDraft as Record<string, unknown>
+      const filled: string[] = []
+      if (typeof d.title === 'string' && d.title.trim()) filled.push('标题')
+      if (typeof d.content === 'string' && d.content.trim()) filled.push('正文')
+      if (Array.isArray(d.tags) ? d.tags.length > 0 : typeof d.tags === 'string' && d.tags.trim()) filled.push('标签')
+      if (typeof d.schedule === 'string' && d.schedule.trim()) filled.push('定时')
+      const imgs = typeof d.imageCount === 'number' ? d.imageCount : 0
+      if (imgs > 0) filled.push(`${imgs} 张图片元信息（需重传）`)
+      return filled.length > 0
+        ? `将恢复：${filled.join(' · ')}`
+        : '草稿不含可恢复字段'
+    }, [pendingDraft])
+
+    const draftFieldCountForBanner = useMemo(() => {
+      if (!pendingDraft) return 0
+      const d = pendingDraft as Record<string, unknown>
+      let n = 0
+      for (const k of ['title', 'content', 'schedule']) {
+        const v = d[k]
+        if (typeof v === 'string' && v.trim()) n++
+      }
+      if (Array.isArray(d.tags) && d.tags.length > 0) n++
+      else if (typeof d.tags === 'string' && d.tags.trim()) n++
+      return n
+    }, [pendingDraft])
 
     /** When multiple platforms are selected, use the most restrictive image limit. */
     const activePlatforms = groupSelection?.platforms ?? []
@@ -147,12 +226,48 @@ export const NoteForm = memo(
         applyAiResult(result) {
           if (result.title) setTitle(result.title)
           if (result.desc) setContent(result.desc)
+          if (result.tags && result.tags.length > 0) setTags(result.tags)
         },
-        // Map NoteForm's internal `content` field to the unified `desc`
-        // shape so the chat pipeline sees a consistent FormSnapshot.
+        // ai-sidebar-material-search §4.2: NoteForm accepts ONLY the
+        // `images` media key (File[]). `{ file }` is rejected with
+        // `'no-media-slot'` (NoteForm has no single-file slot — its
+        // main media is the images[] array itself). `{ thumbnail }`
+        // is also rejected — NoteForm has no dedicated cover URL input
+        // (its cover IS one of the images[] entries via submit-time
+        // ordering). Caller (MaterialImageGrid / AddUrlForm) toasts the
+        // no-slot hint.
+        //
+        // CRITICAL: delegates to `addImagesWithinLimit(images)` so the
+        // platform-specific MAX (xiaohongshu=9 / douyin=30 / etc.)
+        // and the inline-truncation toast path remain DRY — a future
+        // PR raising one limit MUST update both the AI-apply and the
+        // user-drop entry points via this single helper.
+        applyMedia(media) {
+          const { file, thumbnail, images } = media
+          if (file || thumbnail) {
+            // NoteForm has no single-file OR cover-URL slot — its cover
+            // IS one of the `images[]` entries via submit-time ordering.
+            // Caller toasts the no-media-slot hint (single-source-of-truth).
+            // Part B of the §6-9 双 toast wart fix: stripping the inner
+            // "图文模式不支持单文件/封面 URL" warning so the caller is the
+            // sole owner of rejection copy.
+            return { applied: false, reason: 'no-media-slot' as const }
+          }
+          if (images && images.length > 0) {
+            // addImagesWithinLimit itself toasts truncated-vs-accepted;
+            // REMAINING-IMAGE success is announced by the caller (grid
+            // / AddUrlForm) which fires one toast per click.
+            addImagesWithinLimit(images)
+            return { applied: true }
+          }
+          // No key matched — treat as no-media-slot.
+          return { applied: false, reason: 'no-media-slot' as const }
+        },
+        // NoteForm internal `content` ↔ FormSnapshot `desc` mapping preserved.
+        // Path C: tags is string[] — bridge sees array form directly.
         getFormSnapshot: () => ({ title, desc: content, tags }),
       }),
-      [setTitle, setContent, title, content, tags],
+      [setTitle, setContent, setTags, title, content, tags, addImagesWithinLimit],
     )
 
     /**
@@ -232,13 +347,28 @@ export const NoteForm = memo(
       })
     }, [])
 
-    const clearAll = useCallback(() => {
+    // PR-OPT-2D: split user-cleared vs post-submit-clear.
+    const clearEverything = useCallback(() => {
       setTitle('')
       setContent('')
-      setTags('')
+      setTags([])
       setSchedule('')
       setImageFiles([])
+      clearDraftStorage()
+    }, [clearDraftStorage])
+
+    const clearFilesAndReset = useCallback(() => {
+      setImageFiles([])
+      // Title/content/tags/schedule preserved for re-submit to another group.
     }, [])
+
+    const handleClearClick = useCallback(() => {
+      if (filledFieldCount >= 2) {
+        setConfirmClearOpen(true)
+      } else {
+        clearEverything()
+      }
+    }, [filledFieldCount, clearEverything])
 
     const submit = useCallback(async () => {
       if (!groupSelection?.platforms.length) {
@@ -265,7 +395,8 @@ export const NoteForm = memo(
                 account: mapping.cookieFile,
                 title,
                 note: content || undefined,
-                tags: tags || undefined,
+                // Wire-boundary: join is the only place string[] → string.
+                tags: tags.length > 0 ? tags.join(',') : undefined,
                 schedule: schedule || undefined,
                 headless: String(headless),
                 images: imageFiles,
@@ -290,7 +421,7 @@ export const NoteForm = memo(
         } else {
           addToast(`已提交 ${results.length} 个图文上传任务`, 'success')
         }
-        clearAll()
+        clearFilesAndReset()
         onSuccess({ count: results.length, taskIds: ids, failedCount: failed.length, mode: '图文' })
       } catch {
         addToast('图文请求失败，请检查后端连接', 'error')
@@ -298,26 +429,26 @@ export const NoteForm = memo(
       } finally {
         setSubmitting(false)
       }
-    }, [groupSelection, title, content, tags, schedule, headless, imageFiles, addToast, clearAll, onSuccess, onError])
+    }, [groupSelection, title, content, tags, schedule, headless, imageFiles, addToast, clearFilesAndReset, onSuccess, onError])
 
     return (
       <>
-        <Card>
-          <CardContent className="space-y-4 pt-4">
-            {/* 内容素材 */}
-            <motion.div
-              className="rounded-xl border border-border/30 bg-card/40 p-5"
-              custom={0}
-              variants={cardVariants}
-              initial="hidden"
-              animate="visible"
-            >
+        {/* ── 内容素材 ─────────────────────────────────────────── */}
+        <motion.div
+          custom={0}
+          variants={cardVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          <Card className="card-refined">
+            <CardContent className="p-5 space-y-4">
               <SectionHeader
                 icon={<FilePlus className="h-4 w-4" />}
                 title="内容素材"
               />
               <div className="space-y-4">
                 <div className="space-y-2">
+                  {/* eslint-disable-next-line sau/label-html-for -- 装饰标签·div作为click-target + 隐藏 <input id="note-image-input"> */}
                   <Label>图片</Label>
                   <div
                     className={cn(
@@ -354,7 +485,7 @@ export const NoteForm = memo(
                       }
                     }}
                   >
-                    <ImageIcon className="h-8 w-8 text-purple-600 mb-2" />
+                    <ImageIcon className="h-8 w-8 text-primary mb-2" />
                     <p className="text-sm text-muted-foreground">点击添加图片</p>
                   </div>
                   <input
@@ -377,7 +508,7 @@ export const NoteForm = memo(
                           {imageFiles.length > 1 && ' · 拖拽可调整顺序'}
                         </p>
                         {imageFiles.length >= imageLimit && (
-                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          <span className={cn('text-[10px] font-medium', toneTextClass('warning'))}>
                             已达上限
                           </span>
                         )}
@@ -409,8 +540,10 @@ export const NoteForm = memo(
                 </div>
 
                 <div className="space-y-2">
-                  <Label>标题</Label>
+                  <Label htmlFor="note-title">标题</Label>
                   <Input
+                    id="note-title"
+                    name="title"
                     placeholder="请输入图文标题"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
@@ -432,6 +565,7 @@ export const NoteForm = memo(
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
+                      {/* eslint-disable-next-line sau/label-html-for -- 装饰分组·TagInput 当前调用未挂 id */}
                       <Label>标签</Label>
                       <span className="text-[11px] text-muted-foreground">
                         {platformTagLabel(activePlatforms)}
@@ -440,7 +574,7 @@ export const NoteForm = memo(
                     <TagInput
                       placeholder="按 Enter 添加标签（# 可省略）"
                       value={tags}
-                      onChange={(val) => setTags(val)}
+                      onChange={setTags}
                       maxTags={effectiveMaxTags(activePlatforms)}
                     />
                     <SchedulePicker
@@ -460,25 +594,57 @@ export const NoteForm = memo(
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
+        {/* ── 草稿恢复条 ─────────────────────────────────────────── */}
+        <PublishDraftBanner
+          visible={pendingDraft !== null}
+          savedAt={draftSavedAt}
+          fieldsHint={draftBannerFieldsHint}
+          fieldCount={draftFieldCountForBanner}
+          onRestore={restoreDraft}
+          onDiscard={discardDraft}
+        />
 
+        {/* ── 提交按钮 ─────────────────────────────────────────── */}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={handleClearClick}>
+            清空
+          </Button>
+          <Button
+            onClick={submit}
+            disabled={submitting}
+            className="btn-elegant"
+          >
+            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            提交图文
+          </Button>
+        </div>
 
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={clearAll}>
-                清空
-              </Button>
-              <Button
-                onClick={submit}
-                disabled={submitting}
-                className="bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-600/90 hover:to-pink-500/90 text-primary-foreground shadow-md shadow-purple-500/20"
+        {/* ── 清空二次确认对话框 (≥2 字段时由 handleClearClick 触发) ──────── */}
+        <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认清空表单？</AlertDialogTitle>
+              <AlertDialogDescription>
+                当前已填写 {filledFieldCount} 项字段。清空后会同时删除本地草稿，操作不可撤销。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setConfirmClearOpen(false)
+                  clearEverything()
+                }}
               >
-                {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                提交图文
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+                清空
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <ImageLightbox
           imageUrls={imageUrls}
@@ -542,13 +708,15 @@ const ThumbnailTile = memo(function ThumbnailTile({
       draggable
       onDragStart={(e) => {
         e.stopPropagation()
-        e.dataTransfer.effectAllowed = 'move'
+        const de = e as unknown as React.DragEvent<HTMLDivElement>
+        de.dataTransfer.effectAllowed = 'move'
         onDragStart?.()
       }}
       onDragOver={(e) => {
         e.preventDefault()
         e.stopPropagation()
-        e.dataTransfer.dropEffect = 'move'
+        const de = e as unknown as React.DragEvent<HTMLDivElement>
+        de.dataTransfer.dropEffect = 'move'
         onDragOver?.()
       }}
       onDrop={(e) => {
