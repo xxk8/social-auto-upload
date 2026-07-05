@@ -221,27 +221,29 @@ describe('PublishPage · AuthGuard + chrome (post-merge routing)', () => {
     expect(screen.getByTestId('publish-ai-sidebar')).toBeInTheDocument()
   })
 
-  // ── Layout invariant — 40/60 grid ratio ──────────────────────────
+  // ── Layout invariant — default collapsed grid ratio ─────────────
 
-  it('locks the publish-page grid container to the 40/60 wizard/sidebar ratio (lg:grid-cols-[2fr_3fr])', () => {
+  it('defaults to collapsed AI-sidebar grid (lg:grid-cols-[1fr_60px]) for first-time visitors', () => {
     setAuth({ isAuthenticated: true })
-    // Default desktop state: isMobile=false + vitest-localStorage
-    // has no `sau-publish-ai-collapsed=true` value at the start of
-    // each spec → `aiCollapsed` initialises to false → the cn(...)
-    // expression resolves to the 40/60 expanded branch.
+    // Default: vitest-localStorage has no `sau-publish-ai-collapsed`
+    // → `aiCollapsed` initialises to true (collapsed) → the cn(...)
+    // expression resolves to the collapsed branch with a 60px rail.
     mountPublishPage()
     const grid = screen.getByTestId('publish-grid-container')
-    // Primary invariant: 40% wizard / 60% AI sidebar — matches the
-    // block comment at PublishPage.tsx:147.
+    expect(grid.className).toContain('lg:grid-cols-[1fr_60px]')
+    // The expanded-state branch MUST NOT leak into the default render.
+    expect(grid.className).not.toContain('lg:grid-cols-[2fr_3fr]')
+  })
+
+  it('switches to expanded AI-sidebar grid (lg:grid-cols-[2fr_3fr]) when localStorage says false', () => {
+    // Simulate a returning visitor who previously expanded the sidebar.
+    if (typeof window !== 'undefined') {
+      try { window.localStorage.setItem('sau-publish-ai-collapsed', 'false') } catch {}
+    }
+    setAuth({ isAuthenticated: true })
+    mountPublishPage()
+    const grid = screen.getByTestId('publish-grid-container')
     expect(grid.className).toContain('lg:grid-cols-[2fr_3fr]')
-    // Belt-and-suspenders against a typo that would make the AI
-    // sidebar dominate the page even more.
-    expect(grid.className).not.toContain('lg:grid-cols-[2fr_5fr]')
-    expect(grid.className).not.toContain('lg:grid-cols-[3fr_7fr]')
-    // Side-channel: the collapsed-state branch
-    // (`lg:grid-cols-[1fr_60px]`) MUST NOT leak into the
-    // expanded-mode class string in this default render — a
-    // regression in `cn(...)`'s ternary would surface here.
     expect(grid.className).not.toContain('lg:grid-cols-[1fr_60px]')
   })
 

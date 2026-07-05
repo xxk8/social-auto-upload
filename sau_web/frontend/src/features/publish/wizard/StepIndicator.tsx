@@ -39,12 +39,21 @@ interface StepIndicatorProps {
   onStepClick?: (step: WizardStep) => void
   /** Steps the user has already visited (enables click-back). */
   maxVisitedStep: WizardStep
+  /**
+   * Whether the CURRENT step's requirements are met — when true, the
+   * active step's number is replaced with a ✓ checkmark so the user
+   * can see at a glance that the current step is ready to advance.
+   * (Completed past steps already show ✓; this fills the gap for the
+   * in-progress step.)
+   */
+  stepReady?: boolean
 }
 
 export const StepIndicator = memo(function StepIndicator({
   currentStep,
   onStepClick,
   maxVisitedStep,
+  stepReady = false,
 }: StepIndicatorProps) {
   return (
     <div
@@ -91,13 +100,13 @@ export const StepIndicator = memo(function StepIndicator({
               <span
                 className={cn(
                   'inline-flex items-center justify-center min-w-[14px] text-[11px] tracking-tight tabular-nums',
-                  isCurrent && 'text-primary',
-                  isCompleted && 'text-primary/80',
+                  isCurrent && !stepReady && 'text-primary',
+                  (isCompleted || (isCurrent && stepReady)) && 'text-primary/80',
                   !isCurrent && !isCompleted && 'text-muted-foreground/40',
                 )}
                 aria-hidden={isCurrent ? undefined : 'true'}
               >
-                {isCompleted ? (
+                {isCompleted || (isCurrent && stepReady) ? (
                   <Check className="h-3 w-3" strokeWidth={3} />
                 ) : (
                   stepLabel

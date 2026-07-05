@@ -1,4 +1,5 @@
 import { memo, useCallback, useId, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import {
   Button,
@@ -99,6 +100,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
   onChange,
   onExpandAdvanced,
 }: GroupPublishSelectorProps) {
+  const navigate = useNavigate()
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(
     value?.groupId ?? null,
   )
@@ -320,12 +322,20 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
               </SelectTrigger>
               <SelectContent>
                 {groupsWithAuths.length === 0 ? (
-                  <div className="px-2 py-4 text-sm text-muted-foreground text-center">
-                    暂无可用分组，请先在账号管理中创建
+                  <div className="px-2 py-6 text-sm text-muted-foreground text-center space-y-3">
+                    <p>暂无可用分组，请先在账号管理中创建</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate('/app/accounts')}
+                    >
+                      前往账号管理 →
+                    </Button>
                   </div>
                 ) : (
                   groupsWithAuths.map((group) => {
                     const pValues = group.authorizations.map((a) => a.platform)
+                    const invalidCount = group.authorizations.filter((a) => !a.valid).length
                     return (
                       <SelectItem key={group.id} value={String(group.id)}>
                         <span className="flex items-center gap-2">
@@ -342,6 +352,21 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                           <span className="text-muted-foreground text-[11px]">
                             ({group.authorizations.length})
                           </span>
+                          {invalidCount > 0 && (
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0',
+                                toneChipClasses('warning'),
+                              )}
+                              aria-label={`${invalidCount} 个平台 cookie 已失效`}
+                            >
+                              <span
+                                className={cn('w-1 h-1 rounded-full', toneFillBgClass('warning'))}
+                                aria-hidden="true"
+                              />
+                              {invalidCount} 失效
+                            </span>
+                          )}
                         </span>
                       </SelectItem>
                     )

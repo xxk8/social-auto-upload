@@ -174,11 +174,15 @@ export default function PublishPage() {
   // renders re-write `localStorage[...] = 'true' | 'false'` whenever
   // the user toggles, so reload restores their last choice exactly.
   const [aiCollapsed, setAiCollapsed] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
+    if (typeof window === 'undefined') return true
     try {
-      return window.localStorage.getItem(PUBLISH_AI_COLLAPSED_KEY) === 'true'
+      // Default collapsed for first-time visitors (no saved preference).
+      // Once the user toggles, the explicit bool is persisted so reload
+      // restores their choice exactly.
+      const saved = window.localStorage.getItem(PUBLISH_AI_COLLAPSED_KEY)
+      return saved === null ? true : saved === 'true'
     } catch {
-      return false
+      return true
     }
   })
 

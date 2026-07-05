@@ -182,6 +182,7 @@ export const PublishWizard = memo(function PublishWizard({
         currentStep={currentStep}
         onStepClick={handleStepClick}
         maxVisitedStep={maxVisitedStep}
+        stepReady={canProceed}
       />
 
       {/* ── Step content (animated transitions) ───────────────── */}
