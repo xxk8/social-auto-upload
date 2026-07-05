@@ -8,6 +8,19 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
 import { type ProfilerCounter } from './render-harness.helpers'
+import { ThemeProvider } from '@/Components/ThemeProvider'
+import { ToastProvider } from '@/Components/ui/toast'
+
+// A lightweight "no-op" provider for global context that many components
+// depend on. Tests that need specific setup (e.g. custom initialEntries)
+// can still wrap in their own providers on top of <TestProviders>.
+//
+// Includes:
+//   - QueryClientProvider     (TanStack Query — required by most hooks)
+//   - MemoryRouter            (react-router — for useNavigate / useLocation)
+//   - ThemeProvider           (dark/light mode context)
+//   - ToastProvider           (toast notifications)
+//   - ProfilerWrap            (optional — for render-count assertions)
 
 export function ProfilerWrap({
   id,
@@ -55,7 +68,13 @@ export function TestProviders({
 }) {
   return (
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
+        <ThemeProvider>
+          <ToastProvider>
+            {children}
+          </ToastProvider>
+        </ThemeProvider>
+      </MemoryRouter>
     </QueryClientProvider>
   )
 }

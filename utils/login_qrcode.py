@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
-from datetime import datetime
 import base64
-from pathlib import Path
 import sys
+from datetime import datetime
+from pathlib import Path
 
 import cv2
 import segno
@@ -35,13 +34,57 @@ def remove_qrcode_file(qrcode_path: Path | None) -> bool:
 
 
 def decode_qrcode_from_path(qrcode_path: Path) -> str | None:
+    """Decode a QR code PNG with a two-layer fallback.
+
+    Tries in order:
+      1. OpenCV ``QRCodeDetector`` (zxing wrapped) — fast, bundled, works
+         on clean QRs.
+      2. ``pyzbar`` — different algorithm, more tolerant of cropped / scaled
+         / partly-occluded QRs. Requires ``libzbar`` system library; if
+         absent the import is silently skipped (no-op fallback).
+
+    Returns the decoded payload string if either decoder succeeds, else
+    ``None``. Callers MUST treat ``None`` as "do not try to render ASCII
+    on the terminal" and just surface the PNG path to the user — the
+    PNG itself is the authoritative artifact.
+    """
     image = cv2.imread(str(qrcode_path))
     if image is None:
         return None
 
+    # Primary: zxing wrapped in OpenCV
     detector = cv2.QRCodeDetector()
     qrcode_content, _, _ = detector.detectAndDecode(image)
-    return qrcode_content or None
+    if qrcode_content:
+        return qrcode_content
+
+    # Fallback: pyzbar. Catches QRs that cv2 misses (e.g. screenshot
+    # has extra chrome padding around the QR, or low contrast).
+    # pyzbar raises ImportError if libzbar system lib is missing — we
+    # silently degrade to zxing-only rather than crash the login flow.
+    #
+    # Color-space note: cv2.imread returns BGR; pyzbar's underlying
+    # zbar scanner only reads grayscale. We convert to single-channel
+    # gray before handing it off — this avoids the BGR-vs-RGB channel
+    # swap ambiguity that bites BGR→RGB conversion paths, and matches
+    # what zbar natively expects. QR codes are B&W anyway, so we lose
+    # nothing.
+    try:
+        from pyzbar.pyzbar import decode as _pyzbar_decode
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        decoded = _pyzbar_decode(gray)
+        if decoded:
+            return decoded[0].data.decode("utf-8", errors="replace")
+    except ImportError:
+        # libzbar not installed; common on macOS without `brew install zbar`.
+        # Silent no-op so the login flow still works (just no fallback).
+        pass
+    except Exception:
+        # Decoder-level error (corrupt JPEG, RGBA mismatch, etc.) — don't
+        # surface to user, the PNG path is what matters.
+        pass
+
+    return None
 
 
 def _print_ascii_qrcode(qrcode) -> None:

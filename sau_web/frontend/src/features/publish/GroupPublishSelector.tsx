@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useId, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import {
   Button,
@@ -14,14 +14,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/Components/ui/index'
-import { PlatformIcon, PLATFORM_BORDER_LEFT } from '@/Components/ui/platform-icon'
-import { cn } from '@/lib/utils'
+import {PlatformIcon} from '@/Components/ui/platform-icon';
+import {PLATFORM_BORDER_LEFT} from '@/Components/ui/platform-icon.helpers';import { cn } from '@/lib/utils'
 import { toneChipClasses, toneFillBgClass, toneRingClass } from '@/lib/tone'
 import { Layers, CheckCircle2, Users, ChevronRight, Sparkles, LogIn } from 'lucide-react'
 import type { AccountGroup } from '@/api/client'
 import { PLATFORMS, NOTE_PLATFORMS } from '@/api/client'
 import { LoginProgressModal } from '@/Components/LoginProgressModal'
-import type { PlatformSpecificSection } from './VideoForm'
+
+/**
+ * OPT-3G — the three platforms that have dedicated, conditional
+ * accordion sections in the wizard's advanced options (商品链接
+ * for 抖音 / 分区 for Bilibili / 短标题 for 视频号). Indexed by the
+ * same `platform` key the api/client surface uses so plumbing is
+ * type-safe end-to-end.
+ *
+ * Owned here (GroupPublishSelector) rather than in VideoForm so the
+ * chip — the canonical producer that surfaces `pendingPlatformConfigs`
+ * to the parent — sits beside the union it produces. VideoForm and
+ * ContentStep both re-import from this module.
+ */
+export type PlatformSpecificSection = 'douyin' | 'bilibili' | 'tencent'
 
 export type PlatformAccountMapping = {
   platform: string
@@ -90,6 +103,16 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
     value?.groupId ?? null,
   )
 
+  // Stable platforms grid label id — `useId()` per instance, prefix
+  // stripped of `:` so the resulting id is alphanumeric and survives
+  // a CSS-selector query. Avoids DOM-id collision when two selectors
+  // are co-mounted (Dev Tools, multi-account dashboards, tests).
+  const platformsLabelId = `wizard-platforms-label-${useId().replace(/:/g, '')}`
+
+  // Mobile: collapse the platform checkbox list after selection to save
+  // ~250-350px of vertical space. Users tap "点击修改" to expand.
+  const [platformsExpanded, setPlatformsExpanded] = useState(false)
+
   // OPT-3H: holds the失效 row whose modal is currently showing. `null`
   // when no relogin flow is in flight. After success / error / dismiss,
   // the local LoginProgressModal's `onComplete` clears this back to null.
@@ -127,6 +150,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
     (groupIdStr: string) => {
       const gid = Number(groupIdStr)
       setSelectedGroupId(gid)
+      setPlatformsExpanded(false)
       const group = groups.find((g) => g.id === gid)
       if (!group) {
         onChange(null)
@@ -260,7 +284,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
       transition={{ duration: 0.2 }}
     >
       <Card className="card-refined">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-2 sm:pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted">
               <Layers className="h-4 w-4 text-muted-foreground" />
@@ -275,15 +299,23 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
           </CardTitle>
         </CardHeader>
 
-        <CardContent className="space-y-4">
-          {/* Group selector */}
+        <CardContent className="space-y-2 sm:space-y-3">
+          {/* Group selector — 账号分组是 required。仅下拉框本身用
+              `<Label htmlFor>` 配对；后置 `*` 走视觉必填信号。
+              SR-only 「必填」把定位信号补到屏幕阅读器上 —
+              `aria-hidden` 让 * 对 AT 不可见，因此必须有等价的
+              sr-only 旁路。 */}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">账号分组</Label>
+            <Label htmlFor="publish-group-select" className="text-xs text-muted-foreground flex items-center gap-1">
+              账号分组
+              <span className="text-primary" aria-hidden="true">*</span>
+              <span className="sr-only">（必填）</span>
+            </Label>
             <Select
               value={selectedGroupId != null ? String(selectedGroupId) : ''}
               onValueChange={handleGroupChange}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="publish-group-select" className="w-full">
                 <SelectValue placeholder="选择一个账号分组…" />
               </SelectTrigger>
               <SelectContent>
@@ -328,23 +360,66 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.2 }}
-                className="space-y-3 overflow-hidden"
+                className="space-y-2 overflow-hidden"
               >
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">
-                    发布平台
-                  </Label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[11px] text-muted-foreground"
-                    onClick={handleToggleAll}
+                {/* ── Mobile collapsed summary ──────────────────────── */}
+                {!platformsExpanded && value && checkedCount > 0 && (
+                  <div
+                    className="flex sm:hidden items-center justify-between px-3 py-2.5 rounded-lg border border-border/50 bg-muted/40 cursor-pointer active:scale-[0.98] transition"
+                    onClick={() => setPlatformsExpanded(true)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setPlatformsExpanded(true) }}
                   >
-                    {allChecked ? '取消全选' : '全选'}
-                  </Button>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[12px] font-medium shrink-0">已选 {checkedCount}/{totalCount} 平台</span>
+                      <span className="text-muted-foreground/30 text-[12px]">·</span>
+                      <div className="flex items-center gap-1 overflow-hidden">
+                        {value.platforms.slice(0, 5).map((p) => (
+                          <PlatformIcon key={p} platform={p} className="h-3.5 w-3.5 shrink-0" />
+                        ))}
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-primary shrink-0">点击修改</span>
+                  </div>
+                )}
+
+                {/* Full platform grid — always on desktop, toggle on mobile */}
+                <div className={cn('space-y-2', !platformsExpanded && 'hidden sm:block')}>
+                <div className="flex items-center justify-between">
+                  <span
+                    id={platformsLabelId}
+                    className="text-xs text-muted-foreground"
+                  >
+                    发布平台
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {platformsExpanded && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[11px] text-muted-foreground sm:hidden"
+                        onClick={() => setPlatformsExpanded(false)}
+                      >
+                        收起
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[11px] text-muted-foreground"
+                      onClick={handleToggleAll}
+                    >
+                      {allChecked ? '取消全选' : '全选'}
+                    </Button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                <div
+                  role="group"
+                  aria-labelledby={platformsLabelId}
+                  className="grid grid-cols-1 gap-1.5 sm:grid-cols-2"
+                >
                   {availableAuths.map((auth, idx) => {
                     const checked = checkedPlatforms.has(auth.platform)
                     const label = platformLabelMap[auth.platform] ?? auth.platform
@@ -357,7 +432,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                         animate={{ opacity: 1 }}
                         transition={{ delay: idx * 0.03 }}
                         className={cn(
-                          'auth-row border-l-[3px] cursor-pointer select-none',
+                          'auth-row auth-row-compact border-l-[3px] cursor-pointer select-none',
                           borderCls,
                           checked
                             ? 'bg-muted/60'
@@ -367,6 +442,8 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                       >
                         <div className="relative flex-shrink-0">
                           <Checkbox
+                            id={`platform-ck-${auth.id}`}
+                            name={`platform-${auth.platform}`}
                             checked={checked}
                             onCheckedChange={() => handleTogglePlatform(auth.platform)}
                             onClick={(e) => e.stopPropagation()}
@@ -400,20 +477,24 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                               the auth being recovered. */}
                         {!auth.valid && (
                           <>
-                            <button
-                              type="button"
-                              onClick={(e) => handleReloginClick(e, auth)}
-                              aria-label={`重新登录 ${label}`}
-                              aria-describedby={`ausr-cookie-path-${auth.id}`}
-                              title={`cookie: ${auth.cookie_file} · 点击重新登录`}
-                              className={cn(
-                                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 cursor-pointer',
-                                'hover:brightness-110 active:scale-[0.97] transition',
-                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
-                                toneRingClass('warning'),
-                                toneChipClasses('warning'),
-                              )}
-                            >
+                          <button
+                            type="button"
+                            onClick={(e) => handleReloginClick(e, auth)}
+                            aria-label={`重新登录 ${label}`}
+                            aria-describedby={`ausr-cookie-path-${auth.id}`}
+                            title={`cookie: ${auth.cookie_file} · 点击重新登录`}
+                            className={cn(
+                              'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 cursor-pointer',
+                              'hover:brightness-110 active:scale-[0.97] transition',
+                              // 隐藏原生 outline（避免与自定义 ring 同位叠加
+                              // 双圈点）. `toneRingClass('warning')` 提供
+                              // WARNING 色调环 — ring-2 + offset-1 在
+                              // high-contrast / 系统强制颜色模式下都可识别.
+                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
+                              toneRingClass('warning'),
+                              toneChipClasses('warning'),
+                            )}
+                          >
                               <span
                                 className={cn('w-1 h-1 rounded-full status-running', toneFillBgClass('warning'))}
                                 aria-hidden="true"
@@ -486,13 +567,14 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1',
                         )}
                       >
-                        <span aria-hidden>💡</span>
+                        <Sparkles className="h-3.5 w-3.5" aria-hidden />
                         <span>{pendingPlatformConfigsCount} 项平台专属待配置</span>
                         <ChevronRight className="h-3 w-3 opacity-60" aria-hidden />
                       </button>
                     )}
                   </div>
                 )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

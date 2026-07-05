@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { PageHeader } from '@/components/ui/page-header'
+import { Button } from '@/Components/ui/button'
+import { Card, CardContent } from '@/Components/ui/card'
+import { Input } from '@/Components/ui/input'
+import { Label } from '@/Components/ui/label'
+import { Checkbox } from '@/Components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select'
+import { PageHeader } from '@/Components/ui/page-header'
 import { cn } from '@/lib/utils'
 import { api, type LogEntry } from '../api/client'
-import { useToast } from '@/components/ui/toast'
-import {
+import {useToast} from '@/Components/ui/toast.helpers';import {
   AlertCircle,
   Download,
   Info,
@@ -20,7 +19,7 @@ import {
   AlertTriangle,
   FileText,
 } from 'lucide-react'
-import { ChipBar, type ChipBarVariant } from '@/components/ui/chip-bar'
+import { ChipBar, type ChipBarVariant } from '@/Components/ui/chip-bar'
 import { toneFillBgClass, toneTextClass, type Tone } from '@/lib/tone'
 
 type Level = 'all' | 'info' | 'warn' | 'error'
@@ -179,7 +178,7 @@ function LogsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 max-w-[1600px] mx-auto w-full">
       <PageHeader
         title="运行日志"
         description="实时查看系统运行日志"
@@ -206,16 +205,19 @@ function LogsPage() {
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
+                  id="logs-search-keyword"
+                  name="search"
                   placeholder="搜索日志内容..."
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   className="pl-8"
+                  autoComplete="off"
                   data-search-input
                 />
               </div>
             </div>
             <Select value={selectedTaskId ?? ''} onValueChange={(v) => setSelectedTaskId(v || null)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger id="logs-task-filter" className="w-[180px]" aria-label="按任务筛选">
                 <SelectValue placeholder="按任务筛选" />
               </SelectTrigger>
               <SelectContent>
@@ -239,10 +241,6 @@ function LogsPage() {
               <Button variant="outline" size="sm" onClick={handleReset}>
                 <RefreshCw className="h-4 w-4 mr-1" />
                 重置
-              </Button>
-              <Button size="sm" onClick={handleExport} disabled={filteredLogs.length === 0}>
-                <Download className="h-4 w-4 mr-1" />
-                导出日志
               </Button>
             </div>
           </div>
@@ -269,7 +267,7 @@ function LogsPage() {
                       )}
                       aria-hidden
                     />
-                    <span className="mr-1 select-none whitespace-nowrap text-emerald-600 dark:text-emerald-400">
+                    <span className="mr-1 select-none whitespace-nowrap text-muted-foreground/60 font-mono tabular-nums">
                       {parseDate(entry.ts)}
                     </span>
                     <span className={LEVEL_TEXT_CLASS[lv]}>{entry.message}</span>

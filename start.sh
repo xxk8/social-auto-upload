@@ -30,4 +30,4 @@ echo "🚀 Starting server at http://localhost:6001 ..."
 echo "   Open this URL in your browser to use the app."
 echo "   Press Ctrl+C to stop."
 echo ""
-python web_runner.py
+python run.py

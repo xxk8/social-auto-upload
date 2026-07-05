@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/Components/ui/card'
 import { cn } from '@/lib/utils'
 import { toneFillBgClass } from '@/lib/tone'
 

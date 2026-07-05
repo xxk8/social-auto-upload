@@ -1,0 +1,13 @@
+{
+  "name": "email-auth-login",
+  "created": "2026-06-25T13:45:00+08:00",
+  "status": "implemented",
+  "artifacts": {
+    "proposal": "新增邮箱验证码登录系统，保护 Web 端 API 安全，支持管理员/用户角色区分",
+    "design": "Flask Session + SSE token 混合认证 + SECRET_KEY 管理 + CORS credentials + 验证码清理 + 竞态保护 + shadcn/ui 登录表单",
+    "tasks": { "total": 49, "completed": 49 }
+  },
+  "layers": ["api", "frontend"],
+  "platforms": [],
+  "applyReady": false
+}

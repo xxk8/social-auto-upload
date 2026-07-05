@@ -160,46 +160,56 @@ def test_inbox_slot_release_round_trip(monkeypatch):
 # ── DNS-resolution guard (v0.1 DNS-rebinding defense) ────
 
 
-def test_resolve_is_public_rejects_loopback(monkeypatch):
-    """DNS rebinding to 127.0.0.1 — must reject."""
+@pytest.mark.parametrize(
+    "addrinfo_record,url",
+    [
+        ((2, 1, 6, "", ("127.0.0.1", 0)),                "https://attacker.example/"),
+        ((2, 1, 6, "", ("10.0.0.5", 0)),                 "https://cdn.example/v.mp4"),
+        ((2, 1, 6, "", ("169.254.169.254", 0)),          "https://example.com/"),
+        ((10, 1, 6, "", ("::ffff:127.0.0.1", 0, 0, 0)),  "https://attacker.example/"),
+    ],
+    ids=["loopback", "rfc1918", "link_local_metadata", "ipv4_mapped_ipv6_loopback"],
+)
+def test_resolve_is_public_rejects_invalid_ip_family(monkeypatch, addrinfo_record, url):
+    """The four canonical `must reject` IP-family cases `_resolve_is_public`
+    must keep out — DNS-rebound to (loopback, RFC1918, AWS/GCP/Azure
+    metadata, IPv4-mapped-IPv6 trap). Each case monkeypatches
+    `socket.getaddrinfo` to return ONE fake record shaped for the
+    relevant family (AF_INET vs AF_INET6) and asserts the URL is
+    rejected.
+
+    Why these 4 (family, IP) tuples: each exercises a distinct branch
+    of Python's `ipaddress` semantics:
+      * loopback                  — `is_loopback` branch.
+      * rfc1918                   — `is_private` branch (10/8).
+      * link_local_metadata       — `is_link_local` branch
+                                      (169.254/16, AWS/GCP/Azure
+                                      metadata IP).
+      * ipv4_mapped_ipv6_loopback — IPv4-mapped IPv6 trap that
+                                      bypasses `is_loopback` without
+                                      an explicit `.ipv4_mapped`
+                                      unwrap, so this exercises the
+                                      unwrap path inside
+                                      `_resolve_is_public`.
+
+    Parameterizing keeps the (family, IP) tuple visible in the test
+    ID so a regression pinpoints which branch broke. Mirrors the
+    vitest suite's `parametrize(..., ids=[...])` per-(platform,
+    form) pattern (e.g. `language-drift`) so cross-language test
+    enumeration has the same shape: a `pytest -k <id>` /
+    `vitest --testNamePattern=<id>` lookup hits a single case
+    regardless of which language owns the contract.
+
+    When a new IP-family branch is added (e.g. IPv6 link-local
+    `fe80::/10` or 240.0.0.0/4 reserved / 0.0.0.0 unspecified),
+    append ONE tuple + ONE id; no test-name change required.
+    """
     import socket as _socket
 
     import web_runner.routes.inbox as inbox_routes
 
-    monkeypatch.setattr(_socket, "getaddrinfo", lambda host, *a, **kw: [(2, 1, 6, "", ("127.0.0.1", 0))])
-    assert inbox_routes._resolve_is_public("https://attacker.example/") is False
-
-
-def test_resolve_is_public_rejects_rfc1918(monkeypatch):
-    """DNS rebinding to 10.0.0.5 — must reject (private)."""
-    import socket as _socket
-
-    import web_runner.routes.inbox as inbox_routes
-
-    monkeypatch.setattr(_socket, "getaddrinfo", lambda host, *a, **kw: [(2, 1, 6, "", ("10.0.0.5", 0))])
-    assert inbox_routes._resolve_is_public("https://cdn.example/v.mp4") is False
-
-
-def test_resolve_is_public_rejects_link_local_metadata(monkeypatch):
-    """AWS/GCP/Azure metadata IP 169.254.169.254 — must reject (link-local)."""
-    import socket as _socket
-
-    import web_runner.routes.inbox as inbox_routes
-
-    monkeypatch.setattr(_socket, "getaddrinfo", lambda host, *a, **kw: [(2, 1, 6, "", ("169.254.169.254", 0))])
-    assert inbox_routes._resolve_is_public("https://example.com/") is False
-
-
-def test_resolve_is_public_rejects_ipv4_mapped_ipv6_loopback(monkeypatch):
-    """The IPv4-mapped-IPv6 trap: ::ffff:127.0.0.1 must NOT slip past
-    `is_loopback`-based checks. CPython 3.x returns False on the mapped
-    form, so we explicitly unwrap via `.ipv4_mapped`."""
-    import socket as _socket
-
-    import web_runner.routes.inbox as inbox_routes
-
-    monkeypatch.setattr(_socket, "getaddrinfo", lambda host, *a, **kw: [(10, 1, 6, "", ("::ffff:127.0.0.1", 0, 0, 0))])
-    assert inbox_routes._resolve_is_public("https://attacker.example/") is False
+    monkeypatch.setattr(_socket, "getaddrinfo", lambda host, *a, **kw: [addrinfo_record])
+    assert inbox_routes._resolve_is_public(url) is False
 
 
 def test_resolve_is_public_rejects_mixed_public_and_private(monkeypatch):
@@ -413,55 +423,71 @@ def test_extract_first_url_strips_trailing_cn_full_width_punct():
 # diff in the same PR row.
 
 
-def test_extract_first_url_pulls_xhs_appshare_short_link():
-    """XHS (Xiaohongshu) app-share shape: hashtags + location + short
-    xhslink.com URL + '复制此链接，打开小红书...' suffix. Whitespace
-    separates URL from the trailing CTA so the `[^\\s]+` greedy match
-    stops cleanly at the URL boundary."""
+@pytest.mark.parametrize(
+    "blob,expected",
+    [
+        (
+            "\u7ea2\u4e66\u70b9 #\u60c5\u611f #\u751f\u6d3b "
+            "\ud83d\udccd\u5317\u4eac\u4e09\u91cc\u5c6f "
+            "https://www.xhslink.com/aB3CdEf9Xy "
+            "\u590d\u5236\u6b64\u94fe\u63a5\uff0c\u6253\u5f00\u5c0f\u7ea2\u4e66\u67e5\u770b\u66f4\u591a\u7cbe\u5f69\u5185\u5bb9\uff01",
+            "https://www.xhslink.com/aB3CdEf9Xy",
+        ),
+        (
+            "\u53d1\u73b0\u4e00\u5bb6\u8d85\u6cbb\u6108\u7684\u5496\u5561\u9986 "
+            "https://www.xiaohongshu.com/explore/65a1b2c3d4e5f6789"
+            "?xsec_token=ABlZx_Y8mK7nQ2wRt5vP9sD3jH6fG4cE1aI0oM&xsec_source=pc_"
+            " \u590d\u5236\u6b64\u94fe\u63a5",
+            "https://www.xiaohongshu.com/explore/65a1b2c3d4e5f6789"
+            "?xsec_token=ABlZx_Y8mK7nQ2wRt5vP9sD3jH6fG4cE1aI0oM&xsec_source=pc_",
+        ),
+        (
+            "\u5feb\u624b\u7206\u6b3e\u77ed\u89c6\u9891 #\u641e\u7b11 #\u65e5\u5e38 "
+            "https://v.kuaishou.com/Xy7p9Q2wRt "
+            "\u590d\u5236\u94fe\u63a5\u6253\u5f00\u5feb\u624b\uff0c\u7cbe\u5f69\u4e0d\u5bb9\u9519\u8fc7\uff01",
+            "https://v.kuaishou.com/Xy7p9Q2wRt",
+        ),
+        (
+            "\u5feb\u624b\u70ed\u95e8\u77ed\u89c6\u9891\u63a8\u8350 "
+            "https://www.kuaishou.com/short-video/3x4y5z6a7b8c "
+            "\u590d\u5236\u94fe\u63a5\u6253\u5f00\u5feb\u624b",
+            "https://www.kuaishou.com/short-video/3x4y5z6a7b8c",
+        ),
+    ],
+    ids=["xhs-short", "xhs-long", "kuaishou-short", "kuaishou-long"],
+)
+def test_extract_first_url_pulls_appshare_per_platform(blob, expected):
+    """Per-platform xhs/kuaishou app-share URL extraction — short + long form.
+
+    Replaces the prior self-titled `..._xhs_appshare_short_link` +
+    `..._kuaishou_appshare_short_link` pair (one combined test each)
+    with a single parametrized test that splits (platform, form)
+    into 4 cases so a future regression can be pinpointed to the
+    EXACT (platform, form) pair that broke — matching the
+    `parametrize(..., ids=[...])` pattern used in the vitest suite's
+    per-platform locales (e.g. language-drift).
+
+    Cases:
+      * xhs-short       — xhslink.com short URL inside hashtag blob.
+      * xhs-long        — xiaohongshu.com/explore/<id>?xsec_token=...
+                          URL — exercises the query-string branch.
+      * kuaishou-short  — v.kuaishou.com short URL inside hashtag blob.
+      * kuaishou-long   — kuaishou.com/short-video/<id> URL.
+
+    When a new platform app-share text shape is added (e.g. douyin
+    or tencent), append ONE tuple + ONE id to the parametrize list
+    above; no test-name change is required. The pytest
+    `-k <platform>` / `-k <id>` filters stay usable throughout —
+    the platform dimension lives in the ID, not in the function name.
+
+    Drift between Python and TS / vitest `InboxPage.test.tsx` XHS /
+    Kuaishou extraction tests is caught by visual diff in the same
+    PR row (see the `# texts are intentionally inline + kept in
+    lock-step ...` comment immediately above this test).
+    """
     import web_runner.routes.inbox as inbox_routes
 
-    blob = (
-        "\u7ea2\u4e66\u70b9 #\u60c5\u611f #\u751f\u6d3b "
-        "\ud83d\udccd\u5317\u4eac\u4e09\u91cc\u5c6f "
-        "https://www.xhslink.com/aB3CdEf9Xy "
-        "\u590d\u5236\u6b64\u94fe\u63a5\uff0c\u6253\u5f00\u5c0f\u7ea2\u4e66\u67e5\u770b\u66f4\u591a\u7cbe\u5f69\u5185\u5bb9\uff01"
-    )
-    assert inbox_routes._extract_first_url(blob) == "https://www.xhslink.com/aB3CdEf9Xy"
-
-    # Long-form XHS `xiaohongshu.com/explore/<id>?xsec_token=...` URL
-    # — verify the regex handles query strings (the trailing `?` is
-    # not whitespace, so the match continues until the next whitespace).
-    long_form = (
-        "\u53d1\u73b0\u4e00\u5bb6\u8d85\u6cbb\u6108\u7684\u5496\u5561\u9986 "
-        "https://www.xiaohongshu.com/explore/65a1b2c3d4e5f6789"
-        "?xsec_token=ABlZx_Y8mK7nQ2wRt5vP9sD3jH6fG4cE1aI0oM&xsec_source=pc_"
-        " \u590d\u5236\u6b64\u94fe\u63a5"
-    )
-    assert inbox_routes._extract_first_url(long_form) == (
-        "https://www.xiaohongshu.com/explore/65a1b2c3d4e5f6789"
-        "?xsec_token=ABlZx_Y8mK7nQ2wRt5vP9sD3jH6fG4cE1aI0oM&xsec_source=pc_"
-    )
-
-
-def test_extract_first_url_pulls_kuaishou_appshare_short_link():
-    """Kuaishou app-share shape: hashtags + `v.kuaishou.com` short
-    link + '复制链接打开快手...' suffix."""
-    import web_runner.routes.inbox as inbox_routes
-
-    blob = (
-        "\u5feb\u624b\u7206\u6b3e\u77ed\u89c6\u9891 #\u641e\u7b11 #\u65e5\u5e38 "
-        "https://v.kuaishou.com/Xy7p9Q2wRt "
-        "\u590d\u5236\u94fe\u63a5\u6253\u5f00\u5feb\u624b\uff0c\u7cbe\u5f69\u4e0d\u5bb9\u9519\u8fc7\uff01"
-    )
-    assert inbox_routes._extract_first_url(blob) == "https://v.kuaishou.com/Xy7p9Q2wRt"
-
-    # Long-form Kuaishou `kuaishou.com/short-video/<id>` URL.
-    long_form = (
-        "\u5feb\u624b\u70ed\u95e8\u77ed\u89c6\u9891\u63a8\u8350 "
-        "https://www.kuaishou.com/short-video/3x4y5z6a7b8c "
-        "\u590d\u5236\u94fe\u63a5\u6253\u5f00\u5feb\u624b"
-    )
-    assert inbox_routes._extract_first_url(long_form) == "https://www.kuaishou.com/short-video/3x4y5z6a7b8c"
+    assert inbox_routes._extract_first_url(blob) == expected
 
 
 def test_dl_accepts_appshare_blob(client, monkeypatch):
@@ -1269,20 +1295,101 @@ def test_sweep_stale_yt_cookie_tmp_files_is_noop_when_dir_missing(
 # ── Round-7: cookie-age diagnostic in 502 path (dl() surface bleed) ──
 
 
-def test_dl_502_includes_cookie_age_diagnostic_when_stale(
+@pytest.mark.parametrize(
+    "setup_strategy,required_all,required_any_of,forbidden",
+    [
+        (
+            "stale",
+            [
+                "bilibili cookies are",
+                "h old",
+                ">24h threshold",
+                "fake yt err",
+                "fake pr err",
+            ],
+            ["QR-scan", "/app/accounts"],
+            [],
+        ),
+        (
+            "fresh",
+            ["yt-dlp failed", "fake yt err", "fake pr err"],
+            [],
+            ["h old", ">24h threshold", "refresh"],
+        ),
+        (
+            "no_cookie_file",
+            [],
+            [],
+            ["h old", "refresh", "qr-scan"],
+        ),
+    ],
+    ids=["stale", "fresh", "no_cookie_file"],
+)
+def test_dl_502_cookie_age_diagnostic_visibility(
     client,
     monkeypatch,
     tmp_path,
+    setup_strategy,
+    required_all,
+    required_any_of,
+    forbidden,
 ):
-    """Round-7 polish: when both engines fail AND the bilibili cookie
-    JSON is aged > 24h, the 502 message MUST prefix a refresh hint
-    so the user sees actionable advice first (most actionable = lead).
+    """Round-7 cookie-age diagnostic visibility matrix on the 502 path.
 
-    Lock invariant: 'X cookies are Nh old' + '>24h threshold' + platform-
-    specific refresh command ('QR-scan' for bilibili) appear in msg
-    WHEN mtime-of-cookie-jar > 24h. Combined[:500] cap may trim the
-    tail (yt-dlp err + patchright err), but the lead PRESERVES the
-    refresh hint — the user can hit `/app/accounts` based on that alone.
+    Replaces the prior separate tests (3 functions):
+      * test_dl_502_includes_cookie_age_diagnostic_when_stale
+      * test_dl_502_omits_cookie_age_diagnostic_when_fresh
+      * test_dl_502_omits_cookie_age_diagnostic_when_no_cookie_file
+
+    Each case differs only on (cookie mtime · cookie existence) and
+    the expected substring presence / absence cluster that
+    `_cookie_freshness_diagnostic` produces when combined with the
+    standard `[inbox] yt-dlp failed:` / `[inbox] patchright also
+    failed:` engine-err surface.
+
+    Cases:
+      * stale          — mtime backdated to 5 days ago (≫ 24h
+                          threshold). Diag MUST surface "X cookies
+                          are Nh old (>24h threshold)" + the
+                          platform-specific refresh hint (QR-scan
+                          OR /app/accounts route); the engine-err
+                          halves still bleed in via combined[:500].
+      * fresh          — mtime = now (write_text default). Diag MUST
+                          NOT surface; standard engine-err surface
+                          alone (yt-dlp failed / fake yt err /
+                          fake pr err) is what the user sees.
+      * no_cookie_file — cookies/ dir empty / no bilibili_myacct.json
+                          planted. Diag MUST NOT surface (no mtime
+                          to even read → returns None); no platform
+                          refresh hint bleeds either.
+
+    Combined assertion: every `required_all` substring MUST be
+    in msg (case-insensitive), AT LEAST ONE substring from
+    `required_any_of` MUST be in msg when the list is non-empty
+    (the OR semantic the original stale test used to keep the
+    hint-platform-specific check flexible), and no `forbidden`
+    substring MUST be in msg.
+
+    Note: the comparison uniformly lowers `msg` before substring
+    matching — this is STRICTER than the originals, which used a
+    mix of strict-case (`"QR-scan" not in msg`, `"h old" in msg`)
+    and case-insensitive (`"refresh" not in msg.lower()`). The
+    uniform lowering is a deliberate test-rigor win: future
+    capitalization drift in the diagnostic string (e.g. a future
+    variant emitting `QR-SCAN` / `Qr-Scan`) fails the new check
+    where the strict-case originals would have silently passed.
+    No original assertion semantic is lost (every lowercased
+    substring matches a stricter / superset of the original),
+    only widened.
+
+    When a fourth variant is added (e.g. a `corrupt_json` case
+    where `_biliup_to_netscape` fails with `JSONDecodeError`
+    but cookies/ mtime is fresh), append ONE tuple + ONE id to
+    the parametrize list above; no test-name change is required.
+    The pytest `-k <id>` filter stays usable throughout — the
+    variant dimension lives in the ID, not in the function name.
+    Mirrors the appshare per-platform `parametrize(..., ids=[...])`
+    convention.
     """
     import json
     import os
@@ -1291,25 +1398,53 @@ def test_dl_502_includes_cookie_age_diagnostic_when_stale(
     import web_runner.routes.inbox as inbox_routes
     import web_runner.utils as wr_utils
 
-    # Plant an aged cookie JSON (mtime backdated to ~5 days ago).
     cookies_dir = tmp_path / "cookies"
     cookies_dir.mkdir(exist_ok=True)
     cookie_path = cookies_dir / "bilibili_myacct.json"
-    cookie_path.write_text(
-        json.dumps(
-            [
-                {"name": "SESSDATA", "value": "x", "domain": ".bilibili.com", "path": "/", "expires": -1},
-            ]
+
+    if setup_strategy == "stale":
+        cookie_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "name": "SESSDATA",
+                        "value": "x",
+                        "domain": ".bilibili.com",
+                        "path": "/",
+                        "expires": -1,
+                    },
+                ]
+            )
         )
-    )
-    five_days_ago = time.time() - 5 * 24 * 3600
-    os.utime(cookie_path, (five_days_ago, five_days_ago))
+        # Backdate mtime to ~5 days ago (≫ 24h threshold).
+        five_days_ago = time.time() - 5 * 24 * 3600
+        os.utime(cookie_path, (five_days_ago, five_days_ago))
+    elif setup_strategy == "fresh":
+        cookie_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "name": "SESSDATA",
+                        "value": "x",
+                        "domain": ".bilibili.com",
+                        "path": "/",
+                        "expires": -1,
+                    },
+                ]
+            )
+        )
+        # mtime defaults to now (write_text's default) → fresh,
+        # under 24h threshold → diag returns None.
+    elif setup_strategy == "no_cookie_file":
+        # Intentionally NO bilibili_myacct.json planted — diag
+        # has no mtime to read → returns None.
+        pass
+    else:
+        raise AssertionError(f"unknown setup_strategy: {setup_strategy!r}")
 
     monkeypatch.setattr(wr_utils, "COOKIES_DIR", cookies_dir)
     monkeypatch.setattr(inbox_routes, "COOKIES_DIR", cookies_dir)
     monkeypatch.setattr(inbox_routes, "_bbdown_available", lambda: False)
-
-    # Force both engines to fail deterministically.
     monkeypatch.setattr(
         inbox_routes,
         "_try_ytdlp",
@@ -1321,122 +1456,28 @@ def test_dl_502_includes_cookie_age_diagnostic_when_stale(
         lambda url: (None, "fake pr err"),
     )
 
-    r = client.post("/api/inbox/download", json={"url": "https://www.bilibili.com/video/BV1n17E6KEmb/"})
+    r = client.post(
+        "/api/inbox/download",
+        json={"url": "https://www.bilibili.com/video/BV1n17E6KEmb/"},
+    )
     assert r.status_code == 502, r.get_json()
-    msg = r.get_json()["message"]
-    # Lock 1: leading refresh hint visible.
-    assert "bilibili cookies are" in msg, msg
-    # Lock 2: age reads as a positive integer (5 days ≈ 120h).
-    assert "h old" in msg, msg
-    # Lock 3: explicit staleness threshold callout prevents user
-    # confusion with "minutes/hours ago" strings.
-    assert ">24h threshold" in msg, msg
-    # Lock 4: refresh hint points to the QR-scan flow for bilibili.
-    assert "QR-scan" in msg or "/app/accounts" in msg, msg
-    # Lock 5: original 502 engine-err surface is still present
-    # (combined includes yt-dlp + patchright halves).
-    assert "fake yt err" in msg, msg
-    assert "fake pr err" in msg, msg
+    msg = r.get_json()["message"].lower()
 
-
-def test_dl_502_omits_cookie_age_diagnostic_when_fresh(
-    client,
-    monkeypatch,
-    tmp_path,
-):
-    """Round-7: when cookie mtime < 24h (recent login), the 502
-    message MUST NOT prefix a stale hint — diagnostic returns None
-    and the standard engine-err surface stands alone.
-
-    Lock invariant: NO 'X cookies are Nh old' substring in the 502
-    message when the cookie was written within the last 24h.
-    """
-    import json
-
-    import web_runner.routes.inbox as inbox_routes
-    import web_runner.utils as wr_utils
-
-    cookies_dir = tmp_path / "cookies"
-    cookies_dir.mkdir(exist_ok=True)
-    cookie_path = cookies_dir / "bilibili_myacct.json"
-    cookie_path.write_text(
-        json.dumps(
-            [
-                {"name": "SESSDATA", "value": "x", "domain": ".bilibili.com", "path": "/", "expires": -1},
-            ]
+    for needle in required_all:
+        assert needle.lower() in msg, (
+            f"[{setup_strategy}] required {needle!r} absent from msg: "
+            f"{r.get_json()['message']!r}"
         )
-    )
-    # mtime = now (write_text's default) → fresh, under 24h threshold.
-
-    monkeypatch.setattr(wr_utils, "COOKIES_DIR", cookies_dir)
-    monkeypatch.setattr(inbox_routes, "COOKIES_DIR", cookies_dir)
-    monkeypatch.setattr(inbox_routes, "_bbdown_available", lambda: False)
-
-    monkeypatch.setattr(
-        inbox_routes,
-        "_try_ytdlp",
-        lambda url: (None, "fake yt err"),
-    )
-    monkeypatch.setattr(
-        inbox_routes,
-        "_try_patchright",
-        lambda url: (None, "fake pr err"),
-    )
-
-    r = client.post("/api/inbox/download", json={"url": "https://www.bilibili.com/video/BV1n17E6KEmb/"})
-    assert r.status_code == 502, r.get_json()
-    msg = r.get_json()["message"]
-    # Lock: no staleness hint when cookies are fresh.
-    assert "h old" not in msg, msg
-    assert ">24h threshold" not in msg, msg
-    assert "refresh" not in msg.lower(), msg
-    # Standard 502 engine-err surface preserved.
-    assert "yt-dlp failed" in msg
-    assert "fake yt err" in msg
-    assert "fake pr err" in msg
-
-
-def test_dl_502_omits_cookie_age_diagnostic_when_no_cookie_file(
-    client,
-    monkeypatch,
-    tmp_path,
-):
-    """Round-7: URL → bilibili platform mapping present BUT cookie
-    JSON file absent → diagnostic returns None (we don't have a
-    refresh path if there's no cookie file at all).
-
-    Lock invariant: an empty cookies/ dir + bilibili URL → 502
-    message has no 'h old' / 'refresh' substrings.
-    """
-    import web_runner.routes.inbox as inbox_routes
-    import web_runner.utils as wr_utils
-
-    empty_cookies = tmp_path / "cookies"
-    empty_cookies.mkdir(exist_ok=True)
-    # Intentionally NO bilibili_myacct.json planted.
-
-    monkeypatch.setattr(wr_utils, "COOKIES_DIR", empty_cookies)
-    monkeypatch.setattr(inbox_routes, "COOKIES_DIR", empty_cookies)
-    monkeypatch.setattr(inbox_routes, "_bbdown_available", lambda: False)
-
-    monkeypatch.setattr(
-        inbox_routes,
-        "_try_ytdlp",
-        lambda url: (None, "fake yt err"),
-    )
-    monkeypatch.setattr(
-        inbox_routes,
-        "_try_patchright",
-        lambda url: (None, "fake pr err"),
-    )
-
-    r = client.post("/api/inbox/download", json={"url": "https://www.bilibili.com/video/BV1n17E6KEmb/"})
-    assert r.status_code == 502, r.get_json()
-    msg = r.get_json()["message"]
-    # No cookie file → no refresh hint.
-    assert "h old" not in msg
-    assert "refresh" not in msg.lower()
-    assert "QR-scan" not in msg
+    if required_any_of:
+        assert any(needle.lower() in msg for needle in required_any_of), (
+            f"[{setup_strategy}] none of {required_any_of!r} present in msg: "
+            f"{r.get_json()['message']!r}"
+        )
+    for needle in forbidden:
+        assert needle.lower() not in msg, (
+            f"[{setup_strategy}] forbidden {needle!r} present in msg: "
+            f"{r.get_json()['message']!r}"
+        )
 
 
 def test_dl_502_logs_refresh_suspected_when_stale(

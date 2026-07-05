@@ -17,23 +17,11 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
-import numpy as np
 import pytest
 
 from utils.login_qrcode import decode_qrcode_from_path
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
-
-
-@pytest.fixture
-def fake_qr_ndarray() -> np.ndarray:
-    """Toy BGR ndarray — pixel values are irrelevant; we mock the decoders.
-
-    10x10x3 keeps the array "well-formed enough" for cv2's mock surface
-    to not complain; the actual decoding is fully controlled by the
-    cv2.QRCodeDetector and pyzbar mocks below.
-    """
-    return np.zeros((10, 10, 3), dtype=np.uint8)
 
 
 @pytest.fixture
@@ -44,7 +32,7 @@ def tmp_qr_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def mock_cv2(monkeypatch, fake_qr_ndarray):
+def mock_cv2(monkeypatch, qr_zeros_array):
     """Replace ``cv2.imread`` / ``cv2.QRCodeDetector`` / ``cv2.cvtColor``
     with controllable mocks.
 
@@ -52,9 +40,14 @@ def mock_cv2(monkeypatch, fake_qr_ndarray):
     specific behaviors (zxing return value, pyzbar return value) they
     want to test, and assert side-effects (e.g., ``cvtColor`` was
     called once for the grayscale branch).
+
+    Note: ``qr_zeros_array`` is the session-scoped autouse fixture
+    from ``tests/conftest.py`` (lifting the prior function-scoped
+    ``fake_qr_ndarray`` that lived here). See that fixture's
+    docstring for the full scope-shift rationale.
     """
-    mock_imread = MagicMock(return_value=fake_qr_ndarray)
-    mock_cvtColor = MagicMock(return_value=fake_qr_ndarray)
+    mock_imread = MagicMock(return_value=qr_zeros_array)
+    mock_cvtColor = MagicMock(return_value=qr_zeros_array)
     mock_detector = MagicMock()
     # Default: zxing fails (returns (empty_str, None, None)).
     mock_detector.detectAndDecode.return_value = ("", None, None)

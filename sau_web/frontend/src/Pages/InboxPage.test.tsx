@@ -62,7 +62,7 @@ const clipboardWrite = vi.fn().mockResolvedValue(undefined)
 const clipboardRead = vi.fn().mockRejectedValue(
   new DOMException('Read permission denied.', 'NotAllowedError'),
 )
-Object.defineProperty(global.navigator, 'clipboard', {
+Object.defineProperty(globalThis.navigator, 'clipboard', {
   value: { writeText: clipboardWrite, readText: clipboardRead },
   writable: true,
   configurable: true,
@@ -71,6 +71,7 @@ Object.defineProperty(global.navigator, 'clipboard', {
 // ── imports (post-mock) ────────────────────────────────────────────────
 
 import InboxPage from './InboxPage'
+import { useInboxStore } from '@/stores/inboxStore'
 
 // ── helpers (module-level, shared across describe blocks) ───────────────
 
@@ -176,6 +177,12 @@ beforeEach(() => {
       onDone('seed transcript')
     },
   )
+  // Reset the Zustand inboxStore between tests so entries / inflight /
+  // selection / filter state from a previous test don't bleed into
+  // the next. The store is a module-level singleton — without this
+  // reset, a test that adds entries would leave them in the store for
+  // the next test's mountInboxPage(), causing false positives.
+  useInboxStore.getState().reset()
 })
 
 // ── tests ───────────────────────────────────────────────────────────────
@@ -1649,5 +1656,159 @@ describe('InboxPage · filtering & grouped view', () => {
         within(entriesContainer).queryByText(label),
       ).not.toBeInTheDocument()
     }
+  })
+})
+
+// ── Language-only chip active-state CSS lock tests ──
+//
+// The "支持下载" strip applies bg-primary/10 + ring-1 ring-primary/30 to
+// the chip whose key matches `detectedPlatform` — the user-visible
+// confirmation that `detectPlatform`'s regex hit the platform they typed.
+// Earlier rounds collapsed the chips to "language-only" (no per-platform
+// icon, no per-platform logo), but the active-state CSS contract MUST
+// survive every refactor in this region of the page. These tests lock
+// the three tokens that signal active state, so a future "minimum
+// chrome" / "no decoration" refactor that accidentally strips the
+// active-state CSS is caught immediately by vitest rather than at
+// next-browser-verify-time.
+//
+// Three pins: (1) on detect, the matching chip carries all three tokens
+// AND only one chip activates at a time (exclusivity); (2) clearing the
+// URL drops the active tokens + restores `bg-muted/50`; (3) an
+// unrecognized http(s) URL maps to `detectedPlatform === 'general'`,
+// which is a `<span>` chip (NOT a link) — so NO clickable chip lights
+// up. The third pin protects the chip-strip from accidentally lighting
+// up for catch-all URLs.
+
+describe('InboxPage · language-only chip active-state', () => {
+  // Find a clickable chip by its href (each of the 14 clickable chips
+  // carries a unique href pointing at the platform's website). `general`
+  // is a `<span>` (not a link), so it's naturally excluded from this
+  // helper. Returns `undefined` if no chip with that href is rendered.
+  function getChipByHref(href: string): HTMLElement | undefined {
+    return screen
+      .getAllByRole('link')
+      .find((el) => el.getAttribute('href') === href)
+  }
+
+  it('lights up the matching chip on URL detect (bg-primary/10 + ring-1 ring-primary/30)', () => {
+    setAuth()
+    mountInboxPage()
+
+    // Idle state: no chip carries primary-amber wash or primary-ring
+    // tokens yet (no URL typed).
+    const idleDouyinChip = getChipByHref('https://www.douyin.com')
+    expect(idleDouyinChip).toBeTruthy()
+    expect(idleDouyinChip!.className).not.toContain('bg-primary/10')
+    expect(idleDouyinChip!.className).not.toContain('ring-primary/30')
+
+    // Type a v.douyin.com URL → `detectPlatform` fires synchronously
+    // in the input's onChange → setDetectedPlatform('douyin') commits
+    // on the very next render.
+    fireEvent.change(screen.getByLabelText('视频分享链接'), {
+      target: { value: 'https://v.douyin.com/abc' },
+    })
+
+    // The matched chip's className now carries all three active-state
+    // tokens, in this order:
+    //   1. `bg-primary/10` — sodium-amber wash at 10% opacity
+    //   2. `dark:bg-primary/20` — darker variant for dark mode
+    //   3. `ring-1` + `ring-primary/30` — 1px hairline amber ring at 30%
+    // A regression that drops ANY ONE of the three tokens is caught
+    // here. (Locked together so a future "minimum chrome" cleanup
+    // can't silently reduce the active state to a single class.)
+    const activeDouyinChip = getChipByHref('https://www.douyin.com')
+    expect(activeDouyinChip).toBeTruthy()
+    expect(activeDouyinChip!.className).toContain('bg-primary/10')
+    expect(activeDouyinChip!.className).toContain('dark:bg-primary/20')
+    expect(activeDouyinChip!.className).toContain('ring-1')
+    expect(activeDouyinChip!.className).toContain('ring-primary/30')
+
+    // Exclusivity pin: `detectedPlatform` returns one PlatformKey per detected URL, so exactly one chip activates. Guards BOTH (a) a chipClass regression that drops `detectedPlatform === p.key` AND (b) future elsewhere-adopted `bg-primary/10` (link, button, badge) silently inflating this count via the strip-scope fence.
+    const chipStrip = screen.getByTestId('inbox-platform-chip-strip')
+    const activeChips = within(chipStrip)
+      .getAllByRole('link')
+      .filter((link) => link.className.includes('bg-primary/10'))
+    expect(activeChips).toHaveLength(1)
+    expect(activeChips[0]).toBe(activeDouyinChip)
+  })
+
+  // Symmetric pin for clearing the URL. When the user empties the
+  // input (e.g. after a successful download or by manual clearance),
+  // `onChange` fires `detectPlatform('')` → `null`, so the chip's
+  // `detectedPlatform === p.key` becomes false → the chip falls
+  // back to its idle `bg-muted/50` styling. The active-state tokens
+  // must all be OFF.
+  it('clears the active state when the URL input is emptied', () => {
+    setAuth()
+    mountInboxPage()
+    fireEvent.change(screen.getByLabelText('视频分享链接'), {
+      target: { value: 'https://v.douyin.com/abc' },
+    })
+    expect(
+      getChipByHref('https://www.douyin.com')?.className ?? '',
+    ).toContain('bg-primary/10')
+
+    fireEvent.change(screen.getByLabelText('视频分享链接'), {
+      target: { value: '' },
+    })
+    const clearedChip = getChipByHref('https://www.douyin.com')
+    expect(clearedChip).toBeTruthy()
+    expect(clearedChip!.className).not.toContain('bg-primary/10')
+    expect(clearedChip!.className).not.toContain('dark:bg-primary/20')
+    // Active-state ring is removed; focus-visible ring is allowed for
+    // keyboard accessibility and is not part of the active-state lock.
+    expect(clearedChip!.className).not.toContain('ring-primary/30')
+    // Idle state classes reappear on the cleared chip.
+    expect(clearedChip!.className).toContain('bg-muted/50')
+  })
+
+  // Catch-all URL pin: when the typed URL is a clean http(s) URL
+  // that DOESN'T match any registered PlatformKey (e.g. an unknown
+  // video site), `detectPlatform` returns 'general' → in the chip
+  // map, `general` is the `<span>` chip (no href, so excluded from
+  // the link-role query). The 14 clickable chips must NOT activate;
+  // the visual signal lives on the `<span>`, not on any `<a>`. A
+  // future regression that maps the active-state CSS to ALL chips
+  // when `detectedPlatform === 'general'` is caught here.
+  it('does NOT activate any clickable chip when detectedPlatform falls back to general', () => {
+    setAuth()
+    mountInboxPage()
+    fireEvent.change(screen.getByLabelText('视频分享链接'), {
+      target: { value: 'https://unknown-platform.example.com/video.mp4' },
+    })
+    // Same scope testid as Test 1 — the 'general' chip is a `<span>` (no link role), so the 14 clickable `<a>` chips must carry 0 active tokens.
+    const chipStrip = screen.getByTestId('inbox-platform-chip-strip')
+    const activeClickableChips = within(chipStrip)
+      .getAllByRole('link')
+      .filter((link) => link.className.includes('bg-primary/10'))
+    expect(activeClickableChips).toHaveLength(0)
+  })
+
+  // Multi-URL sequence pin: `detectedPlatform` is a single state, so consecutive inputs REPLACE — never accumulate. Locks against future Set/Array drift on this state shape. (Clear-to-zero path is locked by Test 2 above; this test focuses the replace-not-accumulate transitions.)
+  it('sequentially typed URLs activate only the most-recent-detected chip', () => {
+    setAuth()
+    mountInboxPage()
+    const chipStrip = screen.getByTestId('inbox-platform-chip-strip')
+    const urlInput = screen.getByLabelText('视频分享链接')
+
+    // `detectedPlatform` is `useState<PlatformKey | null>` — at most one chip carries `bg-primary/10` at any active step. Returns `['href']` (length 1) for one active chip, `[]` when cleared.
+    const getActiveHrefs = () =>
+      within(chipStrip)
+        .getAllByRole('link')
+        .filter((l) => l.className.includes('bg-primary/10'))
+        .map((l) => l.getAttribute('href') ?? '')
+
+    // Step 1: douyin active; kuaishou + bilibili + 12 others stay muted.
+    fireEvent.change(urlInput, { target: { value: 'https://v.douyin.com/abc' } })
+    expect(getActiveHrefs()).toEqual(['https://www.douyin.com'])
+
+    // Step 2: kuaishou active; douyin resets.
+    fireEvent.change(urlInput, { target: { value: 'https://v.kuaishou.com/abc' } })
+    expect(getActiveHrefs()).toEqual(['https://www.kuaishou.com'])
+
+    // Step 3: bilibili active; kuaishou resets.
+    fireEvent.change(urlInput, { target: { value: 'https://www.bilibili.com/video/abc' } })
+    expect(getActiveHrefs()).toEqual(['https://www.bilibili.com'])
   })
 })

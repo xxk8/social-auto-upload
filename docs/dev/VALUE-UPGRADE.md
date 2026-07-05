@@ -4,6 +4,14 @@
 >
 > **更新于 2026-06-24**：部分建议已在重遵中落地，详见下表“落地状态”列。提案类文档，与已交付 commit 并不强耦合，仅作 roadmap 参考。
 
+## Why this exists
+
+已落地的 Web Shell release 看上去“能用但糙”：发布页 drafts 没自动保存、AI 助手 Key 管理一行塞 6 个动作、空图占位用文字“—”抢戏。 这些都是 5-min polish 级别的低投入高回报 proposal，贡献者 pick-up 任何一条 PR 都是可见/可感知的体验提升。 本文是 low-effort high-perceived-value catalog；与 `docs/dev/VALUE-STRATEGY.md`（商业战略/“从 1 到 10”）互补。
+
+## Prereqs
+
+假设 reader 已读过 `docs/dev/optimization-checklist.md`（未做但应当做的细节 inventory） 以及 `docs/web-shell.md` 中 `/publish` 页面的现状；Web Shell dev server 已在 `:5180` 启动，你能立刻在浏览器里看到 proposal 落地后的对比。 本文中提到的 `ponytail`、`npm add canvas-confetti` 等命令都是 dev-only 命令，不影响 `web_runner/` 后端。
+
 ## 一、已在做但可以再推一步的事
 
 以下功能已经实现，加一点打磨即可显著提升"成品感"：
@@ -114,3 +122,7 @@ npm add canvas-confetti
 | 6 | 首次使用引导 | 1 小时 | 新用户体验质变 | ⚠️ `feat(onboarding): migrate to @reactour/tour spotlight + reset entry`（迁移到第三方控件，未走 3-step Dialog） |
 
 **总计**：约 3.5 小时，6 项改进，项目从"能用"变成"好用"。
+
+## Cross-references
+
+- **Hub**: [docs/dev/INDEX.md#contributors](docs/dev/INDEX.md#contributors) — Contributors (writing code, merging PRs).

@@ -28,5 +28,6 @@ export * from "./table";
 export * from "./tabs";
 export * from "./tag-input";
 export * from "./textarea";
+export * from "./timeline";
 export * from "./toast";
 export * from "./tooltip";

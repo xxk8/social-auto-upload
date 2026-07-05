@@ -1,74 +1,24 @@
 # Web Shell 可视化界面
 
-social-auto-upload 提供了一个可选的可视化 Web 界面（Web Shell），基于 React + Flask 构建，封装 CLI 能力提供图形化管理。
+social-auto-upload 提供了统一的前端 Vite 应用，同时承载两个使用面：
 
-## 快速启动
+- **官网首页（默认访问 `http://localhost:5180/`）** — React + Vite 的营销站内容，面向公众，介绍项目能力、平台、CLI / Web / Agent Skill 一套三连。**不需要登录**。
+- **Web Shell 运营台（`http://localhost:5180/app`）** — React + Flask 封装的 CLI 图控台。账号分组、批量发布、任务列表、运行日志、AI 生成。**需要邮箱验证码登录**。
 
-### 方式一：一键启动（推荐）
+历史架构中独立部署的面向官网的 `sau_web/site/` +(端口 `:5174`) React app 已合并进同 Vite 产物，唯一前端路径现在是 `sau_web/frontend/`。
 
-```bash
-bash sau_web/start.sh
-```
-
-该脚本会自动检查依赖、安装缺失包、启动后端和前端开发服务器。
-
-### 方式二：手动启动
-
-#### 1. 安装依赖
-
-```bash
-# Python 后端依赖
-uv pip install -e ".[web]"
-
-# React 前端依赖
-cd sau_web/frontend && npm install
-```
-
-#### 2. 启动后端
-
-```bash
-python web_runner.py
-```
-
-后端运行在 `http://localhost:6001`。
-
-##### CORS 配置（必读）
-
-后端默认 **禁用** CORS。前端跨域访问 `/api/*` 必须显式设置环境变量 `SAU_CORS_ALLOWED_ORIGINS`，值为逗号分隔的 来源 列表（包含 scheme 与端口，例如 `http://localhost:5174`）。
-
-本地开发示例（在 shell 启动后端前设置）：
-
-```bash
-export SAU_CORS_ALLOWED_ORIGINS="http://localhost:5173,http://localhost:5174"
-python web_runner.py
-```
-
-未设置（或值为空）时，后端只会记录一条 warning 并拒绝所有跨域请求，前端 API 调用会报 CORS 错误。
-
-#### 3. 启动前端（开发模式）
-
-```bash
-cd sau_web/frontend && npm run dev
-```
-
-前端运行在 `http://localhost:5174`，自动代理 API 到后端。
-
-#### 4. 生产构建
-
-```bash
-cd sau_web/frontend && npm run build
-```
-
-构建产物在 `sau_web/frontend/dist/`，后端会自动提供 `GET /` 服务。
+`bash sau_web/start.sh` 同时拉起唯一前端 + Flask 后端。
 
 ## 页面功能
 
-| 页面 | 路由 | 功能 |
-|---|---|---|
-| 账号管理 | `/` | 查看已保存账号、筛选平台、登录新账号、删除账号 |
-| 发布中心 | `/publish` | 视频/图文表单提交，选择平台和账号，设置定时发布 |
-| 运行日志 | `/logs` | 日志查看、过滤、关键字搜索、导出 |
-| 任务列表 | `/tasks` | 任务状态追踪、轮询更新、筛选排序 |
+| 页面 | 路由 | 认证 | 功能 |
+|---|---|---|---|
+| 官网首页 | `/` | 公开 | 营销站首页 · Hero / Platforms / Features / CTA |
+| 账号管理 | `/app` | AuthGuard | 查看已保存账号、筛选平台、登录新账号、删除账号 |
+| 发布中心 | `/app/publish` | AuthGuard | 视频/图文表单提交，选择平台和账号，设置定时发布 |
+| 运行日志 | `/app/logs` | AuthGuard | 日志查看、过滤、关键字搜索、导出 |
+| 任务列表 | `/app/tasks` | AuthGuard | 任务状态追踪、轮询更新、筛选排序 |
+| 组件目录 | `/catalog` | 公开 | 设计走查 · 设计师可在不登录的情况下浏览 9 个组件 demo |
 
 ## API 接口
 
@@ -88,8 +38,9 @@ cd sau_web/frontend && npm run build
 
 ## 注意事项
 
-- Web Shell 为单用户桌面场景设计，不包含用户系统/RBAC
+- Web Shell 运营台为单用户桌面场景设计，不包含用户系统/RBAC
 - 所有上传任务实际由 `sau_cli.py` 的 CLI 逻辑在后台线程中执行
-- 日志存储于 SQLite 数据库，重启后端不丢失（自动清理超过 2000 条的旧日志）
-- 需先登录账号（通过 CLI 或 Web Shell 的登录表单）才能发布
+- 日志存储于 PostgreSQL（或 SQLite），重启后端不丢失（自动清理超过 2000 条的旧日志）
+- 需先登录账号（通过 CLI 或运营台的登录表单）才能发布
 - 所有平台、特性已统一收敛到 `PLATFORM_CONFIG` 字典管理，不再依赖硬编码集合
+- 官网首页（`/`）位于统一前端应用本身，是公开路由，不要求登录，也不主动调用 `/api/*`。页面里的 CTA 按钮跳转 `/app` 后才进入需要登录的 Web Shell 运营台。

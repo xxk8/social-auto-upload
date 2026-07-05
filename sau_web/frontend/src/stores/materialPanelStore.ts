@@ -41,7 +41,7 @@ interface EnvelopeFailure {
   code?: string
   retry_after_sec?: number
 }
-type SearchEnvelope = EnvelopeSuccess | EnvelopeFailure
+type _SearchEnvelope = EnvelopeSuccess | EnvelopeFailure
 
 interface MaterialPanelState {
   // ── Manual search slot ──

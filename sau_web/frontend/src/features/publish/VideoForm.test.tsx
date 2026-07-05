@@ -209,6 +209,7 @@ vi.mock('@/Components/ui/index', () => {
 })
 
 vi.mock('@/Components/ui/toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useToast: () => ({ addToast: vi.fn() }),
 }))
 

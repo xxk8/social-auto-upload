@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { TourProvider, useTour, type StepType } from '@reactour/tour'
-import { useToast } from '@/components/ui/toast'
+import { useToast } from '@/Components/ui/toast'
 import { useAccountGroups } from '@/hooks/useAccountGroups'
+import { STORAGE_KEY, TOUR_DONE_EVENT, TOUR_RESET_EVENT } from './OnboardingTour.helpers'
 
-const STORAGE_KEY = 'sau-onboarding-done'
+// OPT-follow-up-3-sweep-2: `resetOnboardingTour()` and the three local
+// tour-storage primitives (`STORAGE_KEY`, `TOUR_DONE_EVENT`,
+// `TOUR_RESET_EVENT`) moved to `./OnboardingTour.helpers.ts`. This file's
+// only top-level exports are now the `<OnboardingTour>` wrapper component
+// plus the internal `AutoStartTour` component.
 
 /* ── Step 3 fallback ───────────────────────────────────────────────────
  *  Step 3 ("添加平台授权") targets `[data-tour="add-auth"]` which lives
@@ -18,19 +23,19 @@ const STORAGE_KEY = 'sau-onboarding-done'
 function buildTourSteps(hasGroups: boolean): StepType[] {
   const step3Selector = hasGroups ? '[data-tour="add-auth"]' : '[data-tour="new-group"]'
   const step3Content = hasGroups
-    ? '3️⃣ 添加平台授权 🔑\n\n分组卡片内点击 "+"，选择平台后扫码登录。\n\n登录后自动保存 Cookie，后续无需重复登录。'
-    : '3️⃣ 先创建分组 📦\n\n还没看到分组卡片？点击右上的「新建分组」先创建一个。\n\n建好分组后再回到这里，下一步会带你给分组添加平台授权。'
+    ? '第三步：添加平台授权\n\n分组卡片内点击 "+"，选择平台后扫码登录。\n\n登录后自动保存，后续无需重复登录。'
+    : '第三步：先创建分组\n\n还没看到分组卡片？点击右上的「新建分组」先创建一个。\n\n建好分组后再回到这里，下一步会带你给分组添加平台授权。'
 
   return [
     {
       selector: 'body',
       content:
-        '1️⃣ 欢迎使用 SAU Shell 🎉\n\n支持抖音、快手、小红书、B 站、视频号等多平台自动发布。\n\n接下来 5 步完成首次配置。',
+        '第一步：欢迎使用 sau@main\n\n这是一个多平台视频发布工具。接好账号以后，可以跨平台一键发布、定时发布、批量复用同一个视频文件。\n\n接下来 5 步完成首次配置。',
     },
     {
       selector: '[data-tour="new-group"]',
       content:
-        '2️⃣ 创建第一个分组\n\n点击「新建分组」，输入名称即可。\n\n建议按用途命名，如「个人号」「工作室号」。',
+        '第二步：创建第一个分组\n\n点击「新建分组」，输入名称即可。\n\n建议按用途命名，如「个人号」「工作室号」。',
     },
     { selector: step3Selector, content: step3Content },
     {
@@ -40,12 +45,12 @@ function buildTourSteps(hasGroups: boolean): StepType[] {
       // modal CTA) when no groups exist.
       selector: '[data-tour="check-all"]',
       content:
-        '4️⃣ 检测账号状态 ✅\n\n使用「一键检测」查看 Cookie 是否有效。\n\n绿色 = 正常，红色 = 已失效需重新登录。',
+        '第四步：检测账号状态\n\n使用「一键检测」查看 Cookie 是否有效。\n\n绿色 = 正常，红色 = 已失效需重新登录。',
     },
     {
       selector: '[data-tour="nav-publish"]',
       content:
-        '5️⃣ 开始发布 🚀\n\n点击左侧「发布中心」，选择平台和账号，上传视频或图文即可发布。\n\n支持定时发布和 AI 内容生成。',
+        '第五步：开始发布\n\n点击左侧「发布中心」，选择平台和账号，上传视频或图文即可发布。\n\n支持定时发布和 AI 内容生成。',
     },
   ]
 }
@@ -76,8 +81,8 @@ const tourStyles = {
   }),
   badge: (base: Record<string, unknown>) => ({
     ...base,
-    background: 'var(--primary, hsl(262 83% 58%))',
-    color: 'var(--primary-foreground, hsl(0 0% 100%))',
+    background: 'var(--primary, oklch(0.78 0.14 90))',
+    color: 'var(--primary-foreground, oklch(0.18 0.003 240))',
   }),
   controls: (base: Record<string, unknown>) => ({
     ...base,
@@ -106,25 +111,14 @@ const tourStyles = {
   }),
   arrow: (base: Record<string, unknown>) => ({
     ...base,
-    color: 'var(--primary, hsl(262 83% 58%))',
+    color: 'var(--primary, oklch(0.78 0.14 90))',
   }),
 }
 
 // ── persist on close + notify via custom event ────────────────────────
-const TOUR_DONE_EVENT = 'sau-tour-done'
-const TOUR_RESET_EVENT = 'sau-tour-reset'
 const beforeClose = () => {
   localStorage.setItem(STORAGE_KEY, '1')
   window.dispatchEvent(new Event(TOUR_DONE_EVENT))
-}
-
-/**
- * Public reset hook — call from anywhere (settings, sidebar footer, etc.)
- * to clear the localStorage flag and immediately reopen the tour.
- */
-export function resetOnboardingTour() {
-  localStorage.removeItem(STORAGE_KEY)
-  window.dispatchEvent(new Event(TOUR_RESET_EVENT))
 }
 
 // ── Inner hook component ────────────────────────────────────────────────
@@ -142,6 +136,13 @@ function AutoStartTour() {
   const { data: groups = [] } = useAccountGroups()
   const startedRef = useRef(false)
   const toastRef = useRef(addToast)
+  // Mirror pattern: keep this ref pointing at the latest addToast identity
+  // so the tour-done listener (registered once on mount) calls into the
+  // current stable wrapper. Same trick mirrored in
+  // AccountsProvider.tsx + AiSidebar.tsx — see
+  // Components/ui/.lint-baseline-after-render-harness.json waiver for
+  // the unrelated pre-existing instances.
+  // eslint-disable-next-line react-hooks/refs
   toastRef.current = addToast
 
   /* Build steps derived from current group count, then propagate to the

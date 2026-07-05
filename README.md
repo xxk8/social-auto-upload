@@ -46,13 +46,14 @@
 ## 目录
 
 - [💡 功能特性](#💡功能特性)
+- [🧱 项目架构](#🧱-项目架构)
 - [💾 安装指南](#💾安装指南)
-- [🤖 AI Agent](#🤖ai-agent)
 - [🏁 快速开始](#🏁快速开始)
 - [🗂️ 重构计划](#🗂️重构计划)
 - [📣 近况说明](#📣近况说明)
 - [🐇 项目背景](#🐇项目背景)
 - [📃 详细文档](#📃详细文档)
+- [⚙️ 环境变量](#⚙️-环境变量)
 - [🐾 交流与支持](#🐾交流与支持)
 - [🤝 贡献指南](#🤝贡献指南)
 - [📜 许可证](#📜许可证)
@@ -74,48 +75,82 @@
 在你使用AI的能力，browser agent等等，每次都让 agent 重新解析网页、截图理解, 临场判断
 该项目经过大量验证，上传这种 高频，重复，无聊的工作交给脚本和程序去执行
 
+## 🧱 项目架构
+
+```
+social-auto-upload/
+├── cli/                  # CLI 入口 (sau <platform> <action>)
+├── uploader/             # 各平台上传器核心逻辑
+├── skills/               # AI Agent Skill 定义 (OpenClaw / Codex / Claude Code)├── web_runner/           # Flask 后端 (API 路由、数据库、任务调度)
+├── sau_web/
+│   └── frontend/         # 前端应用 · 官网首页（/） + Web Shell 运营台（/app/*），统一 Vite 产物 (默认 5180)
+├── run.py                # Web 后端启动入口
+├── sau_cli.py            # CLI 启动入口
+├── utils/                # 通用工具函数
+├── db/                   # 数据库迁移 (Alembic)
+├── docs/                 # 项目文档
+├── cookies/              # 各平台登录 Cookie 存储
+└── .sau-logs/            # 运行日志 (backend / frontend / marketing)
+```
+
+**核心工作流：**
+
+| 层 | 技术栈 | 职责 |
+|---|---|---|
+| 前端 | React + Vite + TypeScript | 任务管理、日志查看、AI 配置 |
+| 后端 | Flask + PostgreSQL | REST API、任务调度、状态管理 |
+| CLI | Python Click | 命令行批量操作、脚本集成 |
+| 上传器 | Playwright / patchright | 浏览器自动化，模拟用户操作 |
+| Agent Skills | Markdown + YAML | 让 AI Agent 直接调用上传能力 |
+
 
 ## 💾安装指南
 
-### 自己上手使用
-如果你只是普通用户，不准备借助 agent 客户端，直接看
+### 环境要求
 
-安装、更新、环境准备已经统一收敛到文档：
+- Python 3.10+
+- Node.js 18+（唯一前端 `sau_web/frontend`，同时承载官网首页 `/` 与 Web Shell 运营台 `/app/*`）
+- PostgreSQL 14+（推荐）或 SQLite（零配置备选）
+- Chrome / Chromium 浏览器（平台登录扫码用）
+
+### 普通用户
+
+安装、更新、环境准备已统一收敛到文档：
 
 - [安装说明](./docs/install.md)
 - [更新说明](./docs/update.md)
 
 
-### AGENT 
+### Agent 用户
 
 ```
 AI的发展毋庸置疑，希望你遇到这种安装和使用，不要再怯场，而是交给各种AI Agent来协助你
 ```
 
-如果你准备把这个仓库直接交给 `OpenClaw`、`Codex`、`Claude Code` 来安装和使用
-
-先把仓库给 agent，再把这份启动提示词一起发给它：
+如果你准备把这个仓库直接交给 `OpenClaw`、`Codex`、`Claude Code` 来安装和使用，先把仓库给 agent，再把这份启动提示词一起发给它：
 
 - [Agent Bootstrap Prompt](./docs/agent-bootstrap.md)
 
 这份提示词会引导 agent：
 
-- 优先按当前主线安装项目
-- 优先使用 `uv`、`sau` CLI 和 `skills/`
-- 先验证 `bilibili`、`douyin`、`kuaishou`、`xiaohongshu` 四个平台入口是否可用
+1. 优先按当前主线安装项目
+2. 优先使用 `uv`、`sau` CLI 和 `skills/`
+3. 先验证 `bilibili`、`douyin`、`kuaishou`、`xiaohongshu` 四个平台入口是否可用
 
 
-### 补充说明：
+### 相关文档
 
-- CLI 使用请看：[CLI 使用说明](./docs/CLI.md)
-- 如果你准备在 `OpenClaw`、`Codex`、`Claude Code / cc` 里使用本项目，先看：[Agent Bootstrap Prompt](./docs/agent-bootstrap.md)
-- agent / skill 请看：[Douyin Upload Skill](./skills/douyin-upload/SKILL.md)
-- agent / skill 请看：[Kuaishou Upload Skill](./skills/kuaishou-upload/SKILL.md)
-- agent / skill 请看：[Xiaohongshu Upload Skill](./skills/xiaohongshu-upload/SKILL.md)
-- agent / skill 请看：[Bilibili Upload Skill](./skills/bilibili-upload/SKILL.md)
-- 历史 Web 说明请看：[历史 Web 版本说明](./docs/legacy-web.md)
-- 其他单平台 skill 与整合型 skill 仍在开发中
-- `requirements.txt` 目前主要用于历史兼容路径，普通用户不需要优先使用它
+| 文档 | 说明 |
+|------|------|
+| [CLI 使用说明](./docs/CLI.md) | `sau` 命令行工具详细用法 |
+| [Agent Bootstrap Prompt](./docs/agent-bootstrap.md) | AI Agent 启动提示词 |
+| [Douyin Upload Skill](./skills/douyin-upload/SKILL.md) | 抖音上传 Skill |
+| [Kuaishou Upload Skill](./skills/kuaishou-upload/SKILL.md) | 快手上传 Skill |
+| [Xiaohongshu Upload Skill](./skills/xiaohongshu-upload/SKILL.md) | 小红书上传 Skill |
+| [Bilibili Upload Skill](./skills/bilibili-upload/SKILL.md) | Bilibili 上传 Skill |
+| [历史 Web 版本说明](./docs/legacy-web.md) | 旧版 Web 迁移说明 |
+
+> 其他单平台 skill 与整合型 skill 仍在开发中。`requirements.txt` 主要用于历史兼容路径，普通用户不需要优先使用。
 
 
 ## 📣近况说明
@@ -138,79 +173,112 @@ AI的发展毋庸置疑，希望你遇到这种安装和使用，不要再怯场
 
 ## 🗂️重构计划
 
-项目正在进行一轮整体重构，当前重构重点是：
+项目正在进行一轮整体重构，当前重点：
 
-- 各平台 uploader 的结构收敛
-- CLI 统一接入
-- 面向 OpenClaw、Codex、 Claude Code 等工具的 skill 化
-- 更换为 `patchright` 驱动，提升兼容性与隐蔽性
-- 主线优先围绕无头模式推进
+| 方向 | 状态 | 说明 |
+|------|------|------|
+| uploader 结构收敛 | 进行中 | 各平台 uploader 统一接口、统一参数约定 |
+| CLI 统一接入 | 已完成 | 抖音/快手/小红书/Bilibili 已接入 `sau` CLI |
+| Skill 化 | 进行中 | 面向 OpenClaw、Codex、Claude Code 的 Skill 定义 |
+| patchright 驱动 | 进行中 | 替换 Playwright，提升兼容性与隐蔽性 |
+| 无头模式 | 进行中 | 浏览器后台运行，适配 CLI / 服务端 / Agent 场景 |
+| PostgreSQL 支持 | 已完成 | Web Shell 默认使用 PostgreSQL，支持 SQLite 回退 |
 
-“无头模式（headless）”，指的是浏览器在后台运行，不弹出可见窗口，但自动化流程仍然会照常执行。这样更适合 CLI、服务端、自动任务和 agent 场景。
-
-历史 Vue Web 端代码已从仓库移除；当前主线提供可选的 Web Shell（React 前端 + Flask 后端），详见 [Web Shell 使用说明](./docs/web-shell.md)。
+> 历史 Vue Web 端代码已从仓库移除；当前主线提供可选的 Web Shell（React 前端 + Flask 后端），详见 [Web Shell 使用说明](./docs/web-shell.md)。
 
 
 ## 🏁快速开始
 
-### 方式 1：使用 Web Shell（可选）
+### 默认入口：合并后的统一前端（官网首页 + Web Shell 运营台）
 
-项目提供了一个基于 React + Flask 的可视化 Web 界面，封装 CLI 能力。
+> **架构说明：** `sau_web/frontend/` 这个唯一的 Vite app 同时承载 **官网营销首页**（`/`）和 **Web Shell 运营台**（`/app/*`）。之前描述的独立 `sau_web/site/` 已合并进同 Vite 产物，无需独立启动。
 
-```bash
-# 安装 Web 依赖
-uv pip install -e ".[web]"
+**一键启动（推荐）：**
 
-# 启动后端 (http://localhost:6001)
-python web_runner.py
-
-# 另开终端，启动前端开发服务器 (http://localhost:5174)
-cd sau_web/frontend && npm install && npm run dev
-```
-
-或一键启动：
 ```bash
 bash sau_web/start.sh
 ```
 
+该脚本会自动：
+- 检查并安装前后端依赖
+- 关闭已占用的端口（5180 / 6001）
+- 配置数据库连接（默认 `postgres:///sau`）
+- 同时启动 **唯一前端（`/` 官网首页 + `/app/*` Web Shell 运营台）、Flask 后端** 两个服务
+
+启动后访问：
+
+| 入口 | URL | 说明 |
+|---|---|---|
+| 官网首页（默认访问） | http://localhost:5180/ | 面向公众的官网，含 Hero / Platforms / Features / CTA 等页面。手机/桌面均适适。公开访问，不需要登录。 |
+| Web Shell 运营台 | http://localhost:5180/app | 账号分组、批量发布、运行日志、AI 配置。需登录。 |
+| Flask 后端 API | http://localhost:6001 | `/api/*` REST，供 Web Shell 调用 |
+
+运行日志：`.sau-logs/` （分别有 `frontend.log` · `backend.log`）。
+
+**手动启动（开发调试用）：**
+
+```bash
+# 安装依赖
+uv pip install -e ".[web]"
+npm install --prefix sau_web/frontend
+
+# 启动后端 (http://localhost:6001)
+python run.py
+
+# 另起一个终端：唯一前端 (http://localhost:5180)
+cd sau_web/frontend && npm run dev
+```
+
 详见 [Web Shell 使用说明](./docs/web-shell.md)。
+
 
 ### 方式 2：使用 CLI
 
-当前抖音、快手、小红书、Bilibili 已经接入 CLI：
+当前抖音、快手、小红书、Bilibili 已接入 CLI。每个平台的使用流程一致：`login` → `check` → `upload-video` / `upload-note`。
 
 ```bash
+# 抖音
 sau douyin login --account <account_name>
 sau douyin check --account <account_name>
 sau douyin upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介"
 sau douyin upload-note --account <account_name> --images videos/1.png videos/2.png --title "图文标题" --note "图文正文"
 
+# 快手
 sau kuaishou login --account <account_name>
 sau kuaishou check --account <account_name>
 sau kuaishou upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介"
 sau kuaishou upload-note --account <account_name> --images videos/1.png videos/2.png videos/3.png --title "图文标题" --note "图文正文"
 
+# 小红书
 sau xiaohongshu login --account <account_name>
 sau xiaohongshu check --account <account_name>
 sau xiaohongshu upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介"
 sau xiaohongshu upload-note --account <account_name> --images videos/1.png videos/2.png videos/3.png --title "图文标题" --note "图文正文"
 
+# Bilibili
 sau bilibili login --account <account_name>
 sau bilibili check --account <account_name>
 sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tid 249
 ```
 
-补充说明：
+**参数说明：**
 
-- `creator` 之类的名字只是示例值，真正含义是 `account_name`
-- 一个 `account_name` 对应一个账号文件，可以准备多个账号，也可以按账号名并发执行任务
-- 浏览器平台统一约定：
-- 视频使用 `title + desc + tags`
-- 图文使用 `title + note + tags`
-- Bilibili CLI 不要求用户手动安装 `biliup`
-- 首次运行相关命令时，程序会自动下载 `biliup`
-- 后续运行会自动检查上游 release 并更新
-- Bilibili 登录建议由用户自己在本地真实终端里执行；如果终端二维码显示不完整，可以直接打开当前目录下的 `qrcode.png` 扫码
+| 参数 | 说明 |
+|------|------|
+| `<account_name>` | 账号标识名，自定义（如 `creator`、`work1`），对应 `cookies/` 下的文件 |
+| `--file` | 视频文件路径 |
+| `--images` | 图文图片路径（支持多张） |
+| `--title` | 发布标题 |
+| `--desc` | 视频简介（视频上传用） |
+| `--note` | 图文正文（图文上传用） |
+| `--tid` | Bilibili 分区 ID（Bilibili 上传必需） |
+
+**注意事项：**
+
+- 一个 `account_name` 对应一个账号 Cookie 文件，可准备多个账号，也可按账号名并发执行任务
+- 视频统一使用 `title + desc + tags`，图文统一使用 `title + note + tags`
+- Bilibili CLI 无需手动安装 `biliup`，首次运行时自动下载，后续自动检查更新
+- Bilibili 登录建议在本地真实终端执行；二维码显示不完整时，可直接打开 `qrcode.png` 扫码
 
 
 
@@ -230,6 +298,8 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 | 更新说明 | [`docs/update.md`](docs/update.md) | `git pull` 后重新同步依赖与浏览器驱动 |
 | CLI 命令速查 | [`docs/CLI.md`](docs/CLI.md) | `sau <platform> <action>` 子命令、参数、示例 |
 | Web Shell | [`docs/web-shell.md`](docs/web-shell.md) | 可选 React + Flask 可视化界面、CORS、页面与路由 |
+| 运营 Cron Runbook | [`docs/dev/monitor-cdp-throttling-cron-ops.md`](docs/dev/monitor-cdp-throttling-cron-ops.md) | TBF-018 on-call cron 部署 / 验证 / idempotent 重跑 / 回滚 / 阈值调整 |
+| 开发文档枢纽 | [`docs/dev/INDEX.md`](docs/dev/INDEX.md) | `docs/dev/` 全部 runbook 索引（按 Operators / Contributors / Onboarding 分组） |
 | Agent Bootstrap | [`docs/agent-bootstrap.md`](docs/agent-bootstrap.md) | OpenClaw / Codex / Claude Code 启动提示词 |
 | 历史 Web 说明 | [`docs/legacy-web.md`](docs/legacy-web.md) | `sau_backend.py` + Vue 旧 Web 迁移说明 |
 
@@ -237,9 +307,47 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 
 更详细的文档和说明，请查看：[social-auto-upload 官方文档](https://sap-doc.nasdaddy.com/)
 
+## 🔧 运营 Operations / on-call
+
+当班 on-call、监控运维、财务回滚等运营侧入口。与 Web Shell 入口（[`docs/web-shell.md`](docs/web-shell.md)）平行：
+
+| 入口 | 路径 | 适用场景 |
+| --- | --- | --- |
+| On-call cron 排错 | [`docs/dev/monitor-cdp-throttling-cron-ops.md`](docs/dev/monitor-cdp-throttling-cron-ops.md) | TBF-018 每日 baseline diff / 每小时 CDP throttle sweep cron 的部署、校验、回滚、阈值调整；包含 macOS 裸 `python` gotcha 与多 `-e` rollback 表单语法正确性 |
+| Dev-docs 枢纽 | [`docs/dev/INDEX.md`](docs/dev/INDEX.md) | 全 `docs/dev/` 文档列表，按 on-call / contributor / onboarding 三类受众分组；含 discoverability-on-arrival 合约 |
+
+> 当班第一步：翻到这个 H2 看一眼哪份 runbook 对应当前问题，多半会被定位到 [`docs/dev/monitor-cdp-throttling-cron-ops.md`](docs/dev/monitor-cdp-throttling-cron-ops.md)。这不是面向 SDK / 产品使用者的文档，与 Web Shell（[`docs/web-shell.md`](docs/web-shell.md)）平行。
+
 ## ⚙️ 环境变量
 
 项目支持通过环境变量配置行为。完整列表见 [`.env.example`](.env.example)。
+
+### 数据库
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `SAU_DB_DIALECT` | 数据库方言，`postgres` 或 `sqlite` | `postgres` |
+| `DATABASE_URL` | PostgreSQL 连接串 | `postgres:///sau` |
+| `SAU_DB_POOL_MIN` | 连接池最小连接数 | `2` |
+| `SAU_DB_POOL_MAX` | 连接池最大连接数 | `15` |
+| `SAU_DB_POOL_TIMEOUT` | 连接池获取连接超时（秒） | `30` |
+
+Web Shell 一键启动时，`sau_web/start.sh` 会自动设置以上数据库变量。手动启动需自行配置：
+
+```bash
+export SAU_DB_DIALECT=postgres
+export DATABASE_URL="postgres:///sau"
+python run.py
+```
+
+如需使用 SQLite（无需安装 PostgreSQL）：
+
+```bash
+export SAU_DB_DIALECT=sqlite
+python run.py
+```
+
+### Web 服务
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -247,10 +355,10 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 | `OPENROUTER_API_KEY` | OpenRouter API Key，用于 AI 内容生成 | 空 |
 | `VITE_API_BASE_URL` | 前端后端地址，开发模式自动走代理无需设置 | 空 |
 
-启动 Web Shell 时，`sau_web/start.sh` 会自动设置 `SAU_CORS_ALLOWED_ORIGINS`。如手动启动后端，需自行配置：
+`bash sau_web/start.sh` 启动时会自动注入 `SAU_CORS_ALLOWED_ORIGINS=http://localhost:5173,5180`（唯一前端 Vite 服务器的默认端口是 5180；5173 是 Vite 选口）。手动启动后端需自行配置：
 
 ```bash
-export SAU_CORS_ALLOWED_ORIGINS="http://localhost:5174"
+export SAU_CORS_ALLOWED_ORIGINS="http://localhost:5180"
 python run.py
 ```
 

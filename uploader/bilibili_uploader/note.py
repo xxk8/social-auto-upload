@@ -1,19 +1,29 @@
 from __future__ import annotations
+
 import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from patchright.async_api import Page, Playwright, async_playwright
+
 import patchright
+from patchright.async_api import Page, Playwright, async_playwright
+
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS
+from uploader.base_video import BaseVideoUploader
 from uploader.common import _msg
+from utils.anti_detect import obfuscate_image
+from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.log import bilibili_logger
+
 BILIBILI_NOTE_PUBLISH_STRATEGY_IMMEDIATE = 'immediate'
 BILIBILI_NOTE_PUBLISH_STRATEGY_SCHEDULED = 'scheduled'
 BILIBILI_NOTE_UPLOAD_PAGE = 'https://member.bilibili.com/platform/upload/text/edit'
 MAX_IMAGES = 20
-SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+# SUPPORTED_IMAGE_EXTENSIONS intentionally omitted — Phase 4 §8.5 migration
+# consolidated onto BaseVideoUploader.SUPPORTED_IMAGE_EXTENSIONS (the bilibili
+# set happens to be a strict subset of the base set; dropping the local const
+# keeps the family aligned with the `BaiJiaHaoVideo` reference shape).
 
 def _convert_biliup_cookies_to_storage_state(biliup_cookie_path: str) -> dict:
     raw = json.loads(Path(biliup_cookie_path).read_text(encoding='utf-8'))
@@ -35,7 +45,15 @@ def _convert_storage_state_to_biliup_cookies(storage_state: dict) -> list[dict]:
         cookies.append(cookie)
     return cookies
 
-class BilibiliNote:
+class BilibiliNote(BaseVideoUploader):
+    # Phase 4 §8.5 migration (2026-07-02): migrated to `BaseVideoUploader` inheritance
+    # + dropped the in-class `_validate_image` private method (same logic as the base's
+    # `validate_image_file`; the bilibili SUPPORTED_IMAGE_EXTENSIONS set is a strict
+    # subset of the base set so the consolidation is behaviour-preserving). The ad-hoc
+    # `publish_date not in (None, 0) and (not isinstance(...))` TypeError check is
+    # replaced by an unconditional `self.validate_publish_date(self.publish_date)` at
+    # the tail of `validate_upload_args` (matches the `BaiJiaHaoVideo` / `DouYinVideo`
+    # shared pattern).
 
     def __init__(self, image_paths: list[str], title: str, note: str, tags: list[str], publish_date: datetime | int, account_file: str, publish_strategy: str=BILIBILI_NOTE_PUBLISH_STRATEGY_IMMEDIATE, debug: bool=DEBUG_MODE, headless: bool=LOCAL_CHROME_HEADLESS):
         self.image_paths = image_paths
@@ -48,16 +66,6 @@ class BilibiliNote:
         self.debug = debug
         self.headless = headless
 
-    def _validate_image(self, file_path: str | Path) -> Path:
-        path = Path(file_path).expanduser().resolve()
-        if not path.exists():
-            raise FileNotFoundError(f'图片文件不存在: {path}')
-        if not path.is_file():
-            raise ValueError(f'图片路径不是文件: {path}')
-        if path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
-            raise ValueError(f"不支持的图片格式: {path.suffix}，当前支持: {', '.join(sorted(SUPPORTED_IMAGE_EXTENSIONS))}")
-        return path
-
     async def validate_upload_args(self):
         if not self.title.strip():
             raise ValueError('Bilibili 图文上传时，title 是必须的')
@@ -65,12 +73,30 @@ class BilibiliNote:
             raise ValueError('Bilibili 图文上传时，图片是必须的')
         if len(self.image_paths) > MAX_IMAGES:
             raise ValueError(f'Bilibili 图文上传最多支持 {MAX_IMAGES} 张图片')
-        if self.publish_date not in (None, 0) and (not isinstance(self.publish_date, datetime)):
-            raise TypeError('publish_date 必须是 datetime 类型或 0')
         normalized = []
         for image_path in self.image_paths:
-            normalized.append(str(self._validate_image(image_path)))
-        self.image_paths = normalized
+            normalized.append(str(self.validate_image_file(image_path)))
+
+        # ── Image fingerprint obfuscation (anti-duplicate-detection) ──────────
+        config = get_config("bilibili")
+        obfuscated_images = []
+        for img_path in normalized:
+            p = Path(img_path)
+            obf_path = str(p.with_suffix("")) + ".obf" + p.suffix
+            obf = obfuscate_image(
+                img_path,
+                obf_path,
+                quality=config.image_quality,
+                crop_pixels=config.image_crop_pixels,
+                brightness_range=config.brightness_range,
+            )
+            if obf.exists():
+                obfuscated_images.append(str(obf))
+        if obfuscated_images:
+            self.image_paths = obfuscated_images
+            bilibili_logger.info(_msg("🎭", f"{len(obfuscated_images)} 张图片指纹已混淆"))
+
+        self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def upload_note_content(self, page: Page) -> None:
         bilibili_logger.info(_msg('🏃', f'开始上传 Bilibili 图文，共 {len(self.image_paths)} 张图片'))

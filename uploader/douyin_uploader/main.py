@@ -1,17 +1,11 @@
-# -*- coding: utf-8 -*-
-from datetime import datetime
-
 import asyncio
-import base64
 import inspect
-import json
 import os
 import random
+from datetime import datetime
 from pathlib import Path
 
-from patchright.async_api import Page
-from patchright.async_api import Playwright
-from patchright.async_api import async_playwright
+from patchright.async_api import Page, Playwright, async_playwright
 
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
@@ -22,11 +16,9 @@ from utils.anti_detect import (
     human_type,
     obfuscate_video,
 )
-from utils.base_social_media import set_init_script
-from utils.login_qrcode import build_login_qrcode_path
-from utils.login_qrcode import remove_qrcode_file
-from utils.login_qrcode import save_data_url_image
 from utils.log import douyin_logger
+from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
+from utils.patchright_race import is_patchright_race
 
 DOUYIN_PUBLISH_STRATEGY_IMMEDIATE = "immediate"
 DOUYIN_PUBLISH_STRATEGY_SCHEDULED = "scheduled"
@@ -46,6 +38,10 @@ async def _emit_qrcode_callback(qrcode_callback, payload: dict):
 
 
 def _build_login_result(success: bool, status: str, message: str, account_file: str, qrcode: dict | None = None, current_url: str = "") -> dict:
+    # status 字面以 module-local `LOGIN_RESULT_STATUSES` 为 source-of-truth。
+    # 如果你不确定 valid 取值是什么, 看 `uploader.douyin_uploader._status_schema`
+    # 或跑 `python -c "from uploader.douyin_uploader._status_schema import LOGIN_RESULT_STATUSES; print(LOGIN_RESULT_STATUSES)"`。
+    # 未来 TBF-019 增量迁移到 enum; 本 PR 不 break current call-site signature。
     return {
         "success": success,
         "status": status,
@@ -54,6 +50,69 @@ def _build_login_result(success: bool, status: str, message: str, account_file: 
         "qrcode": qrcode,
         "current_url": current_url,
     }
+
+
+class PatchrightRaceError(Exception):
+    """patchright race (context/browser closed mid-operation) captured at a goto / wait_for_url site.
+
+    Three pieces of context for the caller:
+      * flow_label: 语义化后缀, 来自 caller(cookie校验 / 视频流程 / 图文流程 / 落地页跳转 / 上传页跳转(…))
+        一并写入 🩻 警告。grep 友好, 后续 dashboard 可以按 label 分桶统计 race 频率。
+      * original_msg: page.goto/wait_for_url 抛出的 str(e), 保留 [:60] 用于 match 定位。
+      * safe_url: 在 race 触发前缓存的 page.url(空字符串 = capture 阶段也已坏)。让 caller
+        在 except 块内能直接读 self.safe_url, 避免 race-after-race 的二次 exception。
+    """
+
+    def __init__(self, original_msg: str, flow_label: str, safe_url: str):
+        self.original_msg = original_msg
+        self.flow_label = flow_label
+        self.safe_url = safe_url
+        super().__init__(f"PatchrightRace[{flow_label}]: {original_msg}")
+
+
+async def _goto_race_safe(page: Page, url: str, *, flow_label: str, wait_until: str = "domcontentloaded", timeout: int = 60000) -> None:
+    """统一包裹 page.goto: race 时打 🩻 与注入 flow_label 后缀 + 抛 PatchrightRaceError。
+
+    not-race 的 exception(goto 超时 / DNS 失败 / TLS 错误)原样向上抛, 由 caller
+    或上层 try/except 决定如何处理(race 之外不该被吞)。
+    """
+    try:
+        # race-safe capture: context 已关闭时 page.url 会再次 throw, 用空串兜底
+        safe_url = page.url
+    except Exception:
+        safe_url = ""
+
+    try:
+        await page.goto(url, wait_until=wait_until, timeout=timeout)
+    except Exception as e:
+        msg = str(e)
+        if is_patchright_race(e):
+            douyin_logger.warning(_msg("🩻", f"patchright race：{msg[:60]}；{flow_label} 小人先去有头浏览器重新登录"))
+            raise PatchrightRaceError(msg, flow_label, safe_url) from e
+        raise
+
+
+async def _wait_for_url_race_safe(page: Page, url_pattern: str, *, flow_label: str, timeout: int = 5000) -> None:
+    """统一包裹 page.wait_for_url: race 时同样打 🩻 + 抛 PatchrightRaceError。
+
+    wait_for_url 在 context/browser 已经 race 关闭的状态下不能抛 clean 的
+    "context closed" 给 caller, 会先抛 timeout(因为 url 永远 match 不到)。
+    我们仍然按 race-substring 检测 + throw, 这样 5 处 wrap 共享同一套
+    PatchrightRaceError 处理路径。
+    """
+    try:
+        safe_url = page.url
+    except Exception:
+        safe_url = ""
+
+    try:
+        await page.wait_for_url(url_pattern, timeout=timeout)
+    except Exception as e:
+        msg = str(e)
+        if is_patchright_race(e):
+            douyin_logger.warning(_msg("🩻", f"patchright race：{msg[:60]}；{flow_label} wait_for_url race 小人先去有头浏览器重新登录"))
+            raise PatchrightRaceError(msg, flow_label, safe_url) from e
+        raise
 
 
 async def cookie_auth(account_file):
@@ -68,10 +127,27 @@ async def cookie_auth(account_file):
             )
             context = await apply_anti_detect(context)
             page = await context.new_page()
-            await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
             try:
-                await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload", timeout=5000)
-            except Exception:
+                await _goto_race_safe(
+                    page,
+                    "https://creator.douyin.com/creator-micro/content/upload",
+                    flow_label="cookie校验",
+                    timeout=90000,
+                )
+                await _wait_for_url_race_safe(
+                    page,
+                    "https://creator.douyin.com/creator-micro/content/upload",
+                    flow_label="cookie校验",
+                    timeout=5000,
+                )
+            except PatchrightRaceError:
+                return False
+            except Exception as exc:
+                # nonrace 异常(超时 / 网络 / TLS 抖动)保留原 over-broad tolerance:
+                # cookie_auth 的 caller contract 是 bool False = cookie_invalid,
+                # 不是要不要向上传的错误 subtype。race 还会在上方 ⩕ 警告里留痕,
+                # 其他异常 → 一律 cookie_invalid。
+                douyin_logger.warning(_msg("🩻", f"cookie校验非 race 异常（{str(exc)[:50]}）；视为 cookie 失效，小人重新扫码"))
                 return False
 
             if await page.get_by_text("手机号登录").count() or await page.get_by_text("扫码登录").count():
@@ -97,6 +173,14 @@ async def douyin_setup(account_file, handle=False, return_detail=False, qrcode_c
 
 async def _cdp_capture_screenshot(page: Page, clip: dict | None = None, capture_beyond_viewport: bool = False) -> str:
     """Capture at CDP level (Page.captureScreenshot), returning a data: URL.
+
+    DEPRECATED-FOR-QR-EXTRACTION (2026-06-29): no longer called by
+    `_extract_douyin_qrcode_src`. The Strategy 3 CDP-screenshot-fallback was
+    removed because modal bbox often missed the rendered QR (browser zoom +
+    modal-shift animations + async-render timing). Preserved as a future-use
+    building block for CDP capture (debug dumps, content-upload page diff
+    snapshots). DOM extraction + network interception are preferred for new
+    QR-scrapes.
 
     Returns ``"data:image/png;base64,<...>"`` ready for inline ``<img>`` rendering
     in the Web Shell or for PNG-on-disk writes. CDP's ``Page.captureScreenshot``
@@ -161,35 +245,14 @@ async def _extract_douyin_qrcode_src(page: Page) -> str:
             pass
         await asyncio.sleep(1)
 
-    # Strategy 3: CDP-level screenshot fallback — 全模态框内的 <canvas>绘制缓冲区是 Page.captureScreenshot
-    # 原生拍住的（拍到的就是 CDP-shot 那一瞬已合成的画面，可能落后 0–30 s 于最新旋转但仍属 30–60 s 扫描有效期内，无需单独的旋转/活性检查），所以任何遗留的 `<canvas>`-rendered QR 已被合并到本套小模态截图里。 uc-secure-sdk 可能阻止 DOM
-    # 读取（不可见元素、CDP 拦截），但有头浏览器窗口里二维码肉眼可见。
-    # CDP-level Page.captureScreenshot 绕开 Playwright 的高阶 wrapper，直接拿
-    # 到 PNG base64；并裁剪到模态框区域。配合 ``_cdp_capture_screenshot`` 实现
-    # 单点切换——这张图会以``image_data_url``走 SSE inline 流而不是 cookies/ 落盘。
-    #
-    # ``capture_beyond_viewport=True`` 防小视口（CI 默认 1280×720 / 移动 UA）
-    # 上登录模态框下半截被裁剪——clip 坐标以 CSS px 计，但 CDP 默认仅渲染
-    # viewport 区域，超出 viewport 的像素会返回空白。
-    try:
-        modal = page.locator(
-            ".douyin-login-container-sl0M7z, .login-card-double-Gtywl8, .login-Wl0dx0"
-        ).first
-        if await modal.count():
-            bbox = await modal.bounding_box()
-            if bbox:
-                return await _cdp_capture_screenshot(
-                    page,
-                    clip={
-                        "x": bbox["x"], "y": bbox["y"],
-                        "width": bbox["width"], "height": bbox["height"],
-                    },
-                    capture_beyond_viewport=True,
-                )
-    except Exception:
-        pass
-    # 最终兜底：CDP-level 全视口截图（viewport-only 是这里正确的语义）
-    return await _cdp_capture_screenshot(page)
+    # Strategy 3 removed: CDP-screenshot-fallback was unreliable for QR extraction.
+    # Modal bbox often missed the rendered QR because of async-render timing +
+    # browser zoom + modal-shift animations in Douyin 2026 (user feedback
+    # 2026-06-29: screen capture is not accurate). The QR capture hierarchy is
+    # now Strategy 0 (network interception of get_qrcode) and Strategy 1 (DOM
+    # polling for data:image img). The preserved _cdp_capture_screenshot helper
+    # below is a future-use building block; nothing currently calls it.
+    return ""
 
 
 async def _save_douyin_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None = None, qrcode_callback=None) -> dict:
@@ -222,10 +285,16 @@ async def _save_douyin_qrcode(page: Page, account_file: str, previous_qrcode_pat
 
     qrcode_path: Path | None = None
     if qrcode_callback is None:
-        # CLI direct-path: write PNG so the user can scan via file viewer.
-        qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
-        douyin_logger.info(_msg("🖼️", f"二维码已存到本地：{qrcode_path}"))
-        douyin_logger.info(_msg("📲", f"请用抖音APP扫码，或打开：file://{qrcode_path}"))
+        if qrcode_src:
+            # CLI direct-path: write PNG so the user can scan via file viewer.
+            qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+            douyin_logger.info(_msg("🖼️", f"二维码已存到本地：{qrcode_path}"))
+            douyin_logger.info(_msg("📲", f"请用抖音APP扫码，或打开：file://{qrcode_path}"))
+        else:
+            # Strategy 0 + Strategy 1 都失败，_extract_douyin_qrcode_src 返回 ""；
+            # 之前的 EDIT 1 (Strategy 3 移除) 后这是常见落地形态。
+            # 不走 save_data_url_image (会 ValueError)，改走 operator-friendly warning。
+            douyin_logger.warning(_msg("😵", "没定位到二维码元素——请直接在弹出的浏览器里扫码，小人继续等登录跳转"))
 
     if previous_qrcode_path and previous_qrcode_path != qrcode_path:
         if remove_qrcode_file(previous_qrcode_path):
@@ -263,10 +332,66 @@ async def _is_douyin_login_completed(page: Page) -> bool:
     return True
 
 
-async def _wait_for_douyin_login(page: Page, account_file: str, qrcode_info: dict, qrcode_callback=None, poll_interval: int = 3, max_checks: int = 100) -> dict:
+async def _wait_for_douyin_login(page: Page, account_file: str, qrcode_info: dict, qrcode_callback=None, poll_interval: int = 3, max_checks: int = 100, max_soft_failures: int = 5) -> dict:
     qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
+    # 软失败 counter: 防止 network blip 连续触发 nonrace exception 走 continue
+    # 耗光 max_checks*poll_interval 全量预算(上百 5min)后才超时。
+    # 连续 max_soft_failures 次软失败升级为 hard fail, 让 web-runner 走快速
+    # re-login 路径而不再 5min 后 receiver timeout。
+    polling_soft_failures = 0
     for _ in range(max_checks):
-        if await _is_douyin_login_completed(page):
+        # race-safe: 轮询 marker.count / is_visible / page.url 时 context 已关闭
+        # 都可能 throw；走原路径会 propagate 到 outer except 并打裸 😢。
+        try:
+            is_completed = await _is_douyin_login_completed(page)
+        except Exception as e:
+            msg = str(e)
+            if is_patchright_race(e):
+                douyin_logger.warning(_msg("🩻", f"patchright race：{msg[:60]}；扫码轮询小人先去有头浏览器重新登录"))
+                return _build_login_result(
+                    False,
+                    "patchright_race",
+                    "扫码轮询 race; please re-login via sau douyin login",
+                    account_file,
+                    qrcode_info,
+                    "",
+                )
+            # nonrace 异常(网络抖动 / marker 渲染超时)按原 marker-level 容错什继续轮询:
+            # 单次软失败允许, 接下来 iter sleep poll_interval 后重新。counter
+            # 连续递增, 达到 max_soft_failures 后升级为 hard fail。
+            polling_soft_failures += 1
+            if polling_soft_failures >= max_soft_failures:
+                douyin_logger.warning(
+                    _msg("🐢", f"扫码轮询连续 {polling_soft_failures} 次软失败，升级为 hard fail; 请重新登录")
+                )
+                return _build_login_result(
+                    False,
+                    "polling_unstable",
+                    f"扫码轮询连续 {polling_soft_failures} 次软失败，升级为 hard fail;请重新登录",
+                    account_file,
+                    qrcode_info,
+                    "",
+                )
+            douyin_logger.debug(
+                _msg("🐢", f"扫码轮询非 race 抖动({polling_soft_failures}/{max_soft_failures})（{msg[:40]}）；小人继续等")
+            )
+            # NOTE (2026-06-29 user-accepted risk): 去除 inside-except sleep 后,
+            # `continue` 跳到 for-loop 顶端 next iter 不会有底 sleep 间隔 (Python)
+            # `continue` 不会 fall through 到 bottom sleep). 这意味着 except 路径
+            # 重试间隔 = 0, 出现 persistent transient blip 会形成 ~CPU-spin tight
+            # loop, marker.count()/is_visible() 被 hammer thousands/s。
+            #
+            # operator-traceable 兜底是 polling_soft_failures >= max_soft_failures
+            # (=5) 升级为 hard fail (🐢→ polling_unstable result), 调用方走快速
+            # re-login 路径, 不是 5×0ms=0ms 后 hot-spin 黑洞。
+            #
+            # 双层 mental model 决定: user choose raw-minimal-state path
+            # (reviewer LOW-1 cosmetic polish), 不是 try/finally 包装。变更点
+            # 不在 structural correctness, 在 operator 监控 visibility preference。
+            continue
+        # 一次 exception-free 轮询成功(如 is_completed=False 正常), 重置 counter
+        polling_soft_failures = 0
+        if is_completed:
             douyin_logger.info(_msg("🥳", f"扫码成功，已经跳转到登录后页面: {page.url}"))
             return _build_login_result(True, "success", "抖音扫码登录成功", account_file, qrcode_info, page.url)
 
@@ -333,11 +458,21 @@ async def douyin_cookie_gen(
             # tracking / ad scripts; "load" event typically >30 s on
             # patchright first-run, which burned our default page.goto
             # timeout.
-            await page.goto(
-                "https://creator.douyin.com/",
-                wait_until="domcontentloaded",
-                timeout=60000,
-            )
+            try:
+                await _goto_race_safe(
+                    page,
+                    "https://creator.douyin.com/",
+                    flow_label="落地页跳转",
+                    timeout=60000,
+                )
+            except PatchrightRaceError as e:
+                return _build_login_result(
+                    False,
+                    "patchright_race",
+                    "落地页跳转 race; please re-login via sau douyin login",
+                    account_file,
+                    current_url=e.safe_url,
+                )
             # 显式点「创作者登录」进登录页 — Douyin 2026 的 creator.douyin.com/
             # 默认展示的是落地页（产品介绍），不再是直出登录 form。domcontentloaded
             # 只代表 HTML 解析完，JS 渲染的按钮还要 3-5s 才出现——先等页面就绪。
@@ -361,11 +496,21 @@ async def douyin_cookie_gen(
                             douyin_logger.warning(
                                 _msg("🪟", "点击「创作者登录」后 URL 未变化且登录 UI 不可见（可能弹出新窗口或模态框未渲染），小人直接导航到登录页")
                             )
-                            await page.goto(
-                                "https://creator.douyin.com/creator-micro/content/upload",
-                                wait_until="domcontentloaded",
-                                timeout=60000,
-                            )
+                            try:
+                                await _goto_race_safe(
+                                    page,
+                                    "https://creator.douyin.com/creator-micro/content/upload",
+                                    flow_label="上传页跳转（点击创作者登录重试）",
+                                    timeout=60000,
+                                )
+                            except PatchrightRaceError as e:
+                                return _build_login_result(
+                                    False,
+                                    "patchright_race",
+                                    "上传页跳转 race（点击创作者登录重试）; please re-login via sau douyin login",
+                                    account_file,
+                                    current_url=e.safe_url,
+                                )
                             await asyncio.sleep(3)
             except Exception:
                 pass
@@ -431,11 +576,21 @@ async def douyin_cookie_gen(
             # 才跳转——如果模态框已打开只是 QR 加载慢，不触发 fallback。
             if not qrcode_info.get("image_data_url") and not landing_page_clicked:
                 douyin_logger.info(_msg("🔄", "落地页未拿到二维码，尝试导航到内容上传页触发登录重定向"))
-                await page.goto(
-                    "https://creator.douyin.com/creator-micro/content/upload",
-                    wait_until="domcontentloaded",
-                    timeout=60000,
-                )
+                try:
+                    await _goto_race_safe(
+                        page,
+                        "https://creator.douyin.com/creator-micro/content/upload",
+                        flow_label="上传页跳转（QR未捕获）",
+                        timeout=60000,
+                    )
+                except PatchrightRaceError as e:
+                    return _build_login_result(
+                        False,
+                        "patchright_race",
+                        "上传页跳转 race（QR未捕获）; please re-login via sau douyin login",
+                        account_file,
+                        current_url=e.safe_url,
+                    )
                 await asyncio.sleep(3)
                 qrcode_info = await _save_douyin_qrcode(page, account_file, qrcode_callback=qrcode_callback)
             qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
@@ -490,17 +645,16 @@ class DouYinBaseUploader(BaseVideoUploader):
         self.headless = headless
 
     async def validate_base_args(self):
+        # Phase 4 alignment (2026-07-02): shared `BaiJiaHaoVideo.validate_upload_args` pattern.
+        # publish_date validation moved to derived-class `validate_upload_args` (unconditional
+        # `self.validate_publish_date(self.publish_date)`, short-circuits on `0`/`None`).
+        # validate_base_args NOW: cookie file + cookie_auth + publish_strategy only.
         if not os.path.exists(self.account_file):
             raise RuntimeError(f"cookie文件不存在，请先完成抖音登录: {self.account_file}")
         if not await cookie_auth(self.account_file):
             raise RuntimeError(f"cookie文件已失效，请先完成抖音登录: {self.account_file}")
         if self.publish_strategy not in {DOUYIN_PUBLISH_STRATEGY_IMMEDIATE, DOUYIN_PUBLISH_STRATEGY_SCHEDULED}:
             raise ValueError(f"不支持的发布策略: {self.publish_strategy}")
-
-        if self.publish_strategy == DOUYIN_PUBLISH_STRATEGY_SCHEDULED:
-            self.publish_date = self.validate_publish_date(self.publish_date)
-        else:
-            self.publish_date = 0
 
     async def set_schedule_time_douyin(self, page, publish_date):
         label_element = page.locator("[class^='radio']:has-text('定时发布')")
@@ -764,6 +918,12 @@ class DouYinVideo(DouYinBaseUploader):
         if self.thumbnail_portrait_path:
             self.thumbnail_portrait_path = str(self.validate_image_file(self.thumbnail_portrait_path))
 
+        # Phase 4 alignment (2026-07-02): shared BaiJiaHaoVideo.validate_upload_args pattern.
+        # Unconditional validate_publish_date (short-circuits on 0/None for immediate,
+        # enforces past-date + 2h lead-time for scheduled). Replaces the prior
+        # strategy-conditional logic that lived in validate_base_args.
+        self.publish_date = self.validate_publish_date(self.publish_date)
+
     async def handle_upload_error(self, page):
         douyin_logger.warning(_msg("😵", "视频上传摔了一跤，小人马上重新上传"))
         await page.locator('div.progress-div [class^="upload-btn-input"]').set_input_files(self.file_path)
@@ -853,7 +1013,12 @@ class DouYinVideo(DouYinBaseUploader):
         context = await apply_anti_detect(context)
 
         page = await context.new_page()
-        await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
+        await _goto_race_safe(
+            page,
+            "https://creator.douyin.com/creator-micro/content/upload",
+            flow_label="视频流程",
+            timeout=90000,
+        )
         douyin_logger.info(_msg("🏃", f"小人开始搬运视频: {self.title}.mp4"))
         douyin_logger.info(_msg("🧭", "小人正在赶往上传主页"))
         await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload", timeout=90000)
@@ -936,8 +1101,7 @@ class DouYinVideo(DouYinBaseUploader):
             except Exception:
                 await self.handle_auto_video_cover(page)
                 douyin_logger.info(_msg("🏃", "小人正在冲刺发布视频"))
-                if self.debug:
-                    await page.screenshot(full_page=True)
+                # Screen capture disabled 2026-06-29 (not accurate per user feedback).
                 await asyncio.sleep(0.5)
 
         await context.storage_state(path=self.account_file)
@@ -1006,6 +1170,11 @@ class DouYinNote(DouYinBaseUploader):
         for image_path in self.image_paths:
             normalized_image_paths.append(str(self.validate_image_file(image_path)))
         self.image_paths = normalized_image_paths
+
+        # Phase 4 alignment (2026-07-02): shared BaiJiaHaoVideo.validate_upload_args pattern.
+        # Unconditional validate_publish_date (short-circuits on 0/None for immediate,
+        # enforces past-date + 2h lead-time for scheduled). Symmetric to DouYinVideo.
+        self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def upload_note_content(self, page: Page) -> None:
         douyin_logger.info(_msg("🏃", f"小人开始搬运图文，共 {len(self.image_paths)} 张图片"))
@@ -1078,7 +1247,12 @@ class DouYinNote(DouYinBaseUploader):
         upload_success = False
         try:
             page = await context.new_page()
-            await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
+            await _goto_race_safe(
+                page,
+                "https://creator.douyin.com/creator-micro/content/upload",
+                flow_label="图文流程",
+                timeout=90000,
+            )
             douyin_logger.info(_msg("🧭", "小人正在赶往图文发布页"))
             await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload", timeout=90000)
 

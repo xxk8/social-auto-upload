@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export type SubmitSuccessInfo = {
   count: number
@@ -17,11 +18,20 @@ interface PublishState {
   clearSubmit: () => void
 }
 
-export const usePublishStore = create<PublishState>((set) => ({
-  lastTaskIds: [],
-  submitSuccess: null,
+export const usePublishStore = create<PublishState>()(
+  persist(
+    (set) => ({
+      lastTaskIds: [],
+      submitSuccess: null,
 
-  setLastTaskIds: (ids) => set({ lastTaskIds: ids }),
-  setSubmitSuccess: (info) => set({ submitSuccess: info }),
-  clearSubmit: () => set({ lastTaskIds: [], submitSuccess: null }),
-}))
+      setLastTaskIds: (ids) => set({ lastTaskIds: ids }),
+      setSubmitSuccess: (info) => set({ submitSuccess: info }),
+      clearSubmit: () => set({ lastTaskIds: [], submitSuccess: null }),
+    }),
+    {
+      name: 'sau-publish-store',
+      // Only persist lastTaskIds — submitSuccess is ephemeral UI state
+      partialize: (state) => ({ lastTaskIds: state.lastTaskIds }),
+    },
+  ),
+)

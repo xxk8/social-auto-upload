@@ -40,66 +40,95 @@ export const PublishStatsBar = memo(function PublishStatsBar({
   onRefresh,
 }: PublishStatsBarProps) {
   return (
-    <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-      {/* Accounts */}
-      <Card className="flex items-center gap-3 px-4 py-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-          <Users className="h-4 w-4 text-primary" />
-        </div>
-        <div>
-          <p className="text-lg font-bold leading-none tabular-nums">{accountCount}</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">可用账号</p>
-        </div>
-      </Card>
-
-      {/* Platforms — token-driven (was emerald-500/10 + emerald-600/400) */}
-      <Card className="flex items-center gap-3 px-4 py-3">
-        <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', toneBgClass('success'))}>
-          <Layers className={cn('h-4 w-4', toneTextClass('success'))} />
-        </div>
-        <div>
-          <p className="text-lg font-bold leading-none tabular-nums">{PLATFORMS.length}</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">支持平台</p>
-        </div>
-      </Card>
-
-      {/* Recent tasks + refresh — OPT-V-2 tone-aware (was hard-coded warning) */}
-      <Card className="flex items-center gap-3 px-4 py-3">
-        <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', toneBgClass(lastTaskTone))}>
-          <Flag className={cn('h-4 w-4', toneTextClass(lastTaskTone))} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-lg font-bold leading-none tabular-nums">
-              {lastTaskIds.length > 0 ? lastTaskIds.length : '—'}
-            </p>
-            {lastTaskIds.length > 0 && (
-              <div className="flex items-center gap-1 min-w-0 overflow-hidden">
-                {lastTaskIds.slice(0, 2).map((id) => (
-                  <Badge key={id} variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
-                    {formatTaskId(id)}
-                  </Badge>
-                ))}
-                {lastTaskIds.length > 2 && (
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    +{lastTaskIds.length - 2}
-                  </span>
-                )}
-              </div>
-            )}
+    <>
+      {/* ── Mobile: compact single-row summary ──────────────────── */}
+      <div className="mt-4 flex items-center justify-between rounded-lg border border-border/50 bg-card px-3 py-2 shadow-sm sm:hidden">
+        <div className="flex items-center gap-2.5 text-[12px] font-medium text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <Users className="h-3.5 w-3.5 text-primary" />
+            <span className="text-foreground font-semibold">{accountCount}</span>
+            <span>账号</span>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5">最近提交</p>
+          <span className="text-border/60">·</span>
+          <div className="flex items-center gap-1">
+            <Layers className={cn('h-3.5 w-3.5', toneTextClass('success'))} />
+            <span className="text-foreground font-semibold">{PLATFORMS.length}</span>
+            <span>平台</span>
+          </div>
+          <span className="text-border/60">·</span>
+          <div className="flex items-center gap-1">
+            <Flag className={cn('h-3.5 w-3.5', toneTextClass(lastTaskTone))} />
+            <span className="text-foreground font-semibold">{lastTaskIds.length || 0}</span>
+            <span>最近</span>
+          </div>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground shrink-0"
-          onClick={onRefresh}
-          aria-label="刷新账号列表"
-        >
-          <RefreshCw className="h-4 w-4" />
+        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0 text-muted-foreground" onClick={onRefresh} aria-label="刷新">
+          <RefreshCw className="h-3.5 w-3.5" />
         </Button>
-      </Card>
-    </div>
+      </div>
+
+      {/* ── Desktop: full 3-card grid ───────────────────────────── */}
+      <div className="mt-6 hidden sm:grid sm:grid-cols-3 gap-3">
+        {/* Accounts */}
+        <Card className="flex items-center gap-3 px-4 py-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+            <Users className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-lg font-bold leading-none tabular-nums">{accountCount}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">可用账号</p>
+          </div>
+        </Card>
+
+        {/* Platforms */}
+        <Card className="flex items-center gap-3 px-4 py-3">
+          <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', toneBgClass('success'))}>
+            <Layers className={cn('h-4 w-4', toneTextClass('success'))} />
+          </div>
+          <div>
+            <p className="text-lg font-bold leading-none tabular-nums">{PLATFORMS.length}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">支持平台</p>
+          </div>
+        </Card>
+
+        {/* Recent tasks + refresh */}
+        <Card className="flex items-center gap-3 px-4 py-3">
+          <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', toneBgClass(lastTaskTone))}>
+            <Flag className={cn('h-4 w-4', toneTextClass(lastTaskTone))} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-lg font-bold leading-none tabular-nums">
+                {lastTaskIds.length > 0 ? lastTaskIds.length : '—'}
+              </p>
+              {lastTaskIds.length > 0 && (
+                <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+                  {lastTaskIds.slice(0, 2).map((id) => (
+                    <Badge key={id} variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
+                      {formatTaskId(id)}
+                    </Badge>
+                  ))}
+                  {lastTaskIds.length > 2 && (
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      +{lastTaskIds.length - 2}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-0.5">最近提交</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground shrink-0"
+            onClick={onRefresh}
+            aria-label="刷新账号列表"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </Card>
+      </div>
+    </>
   )
 })

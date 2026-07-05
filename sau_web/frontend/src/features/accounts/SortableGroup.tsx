@@ -1,13 +1,12 @@
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/Components/ui/alert-dialog'
+import { Button } from '@/Components/ui/button'
+import { Card, CardContent, CardHeader } from '@/Components/ui/card'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { GripVertical, Pencil, Plus, Shield, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pctToTone, toneChipClasses, toneDotStyle, toneFgVar, toneTextClass, validityTone } from '@/lib/tone'
 import type { AccountGroup } from '@/api/client'
-import { useAccountsDispatch } from './AccountsProvider'
-import { SortableAuthorizationList } from './SortableAuthorizationList'
+import {useAccountsDispatch} from './AccountsProvider.helpers';import { SortableAuthorizationList } from './SortableAuthorizationList'
 
 interface SortableGroupProps {
   group: AccountGroup
@@ -135,12 +134,16 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
   })
 
   const validCount = group.authorizations.filter((a) => a.valid).length
+  const hasStale = group.authorizations.some((a) => a.stale)
   const totalCount = group.authorizations.length
   // Hoist the chip tone to component scope so the chip body (`toneChipClasses`)
   // and inner dot (`toneDotStyle`) helpers share a single mapper call — both
   // helpers absorb `Tone | null | undefined` gracefully so the JSX-level
   // `{totalCount > 0 && <chip>}` guard is the only shape-relevant check.
-  const chipTone = validityTone(validCount, totalCount)
+  // Downgrade to warning if any auth is stale (cookie expired but file OK).
+  const chipTone = validityTone(validCount, totalCount) === 'success' && hasStale
+    ? 'warning' as const
+    : validityTone(validCount, totalCount)
 
   return (
     <Card

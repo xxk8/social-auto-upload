@@ -1,19 +1,22 @@
 import { useCallback, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/Components/ui/button'
 import { Card, CardContent } from '@/Components/ui/card'
 import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
+import { BrandGlyph } from '@/Components/ui/brand-glyph'
 import { PageHeader } from '@/Components/ui/page-header'
-import { PlatformIcon, PlatformIconChip, PLATFORM_CHIP_COLORS } from '@/Components/ui/platform-icon'
+import { PlatformChipStrip, type PlatformKey } from '@/Components/ui/platform-chip-strip'
+import { PLATFORMS } from '@/Components/ui/platform-chip-strip.constants'
 import { useToast } from '@/Components/ui/toast.helpers'
 import {
+  AlertCircle,
   Check,
   CheckSquare,
   ChevronDown,
   Clipboard,
   Copy,
   Download as DownloadIcon,
-  FileVideo,
   FolderOpen,
   GripVertical,
   Inbox,
@@ -30,6 +33,7 @@ import { cn } from '@/lib/utils'
 import { DragDropProvider } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { arrayMove } from '@dnd-kit/helpers'
+import { useInboxStore, getInboxStore, type InboxEntry, type InboxStatus, type StatusFilter } from '@/stores/inboxStore'
 
 
 // Ponytail: status is a flat union — the four-state visual progression
@@ -37,82 +41,25 @@ import { arrayMove } from '@dnd-kit/helpers'
 // variants. A `waiting` state isn't needed because the only async step
 // is gated by `busy` (URL input) for downloads and the per-row
 // `transcribing`-badge for streaming transcription.
-type Status = 'downloading' | 'downloaded' | 'failed' | 'transcribing' | 'transcribed'
-
-interface InboxEntry {
-  id: string
-  url: string
-  filename?: string
-  dir?: string
-  engine?: 'yt-dlp' | 'patchright' | 'bbdown'
-  status: Status
-  error?: string
-  transcript?: string
-}
 
 const newEntryId = () =>
   `entry_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 
-type PlatformKey = 'douyin' | 'kuaishou' | 'xiaohongshu' | 'bilibili'
-  | 'youtube' | 'tiktok' | 'twitter' | 'instagram' | 'facebook'
-  | 'tencent' | 'ixigua' | 'dailymotion' | 'rumble' | 'vk'
-  | 'general'
-
-// ── Supported download platforms (tested via yt-dlp / patchright) ───────
-//
-// Engine legend:
-//   • yt-dlp — general-purpose, supports 1000+ sites (YouTube, Bilibili,
-//     TikTok, Twitter/X, Instagram, Facebook, Dailymotion, Rumble, VK,
-//     西瓜视频, 微视, 秒拍, etc.)
-//   • patchright — browser fallback for anti-bot-heavy platforms where
-//     yt-dlp extractors are unreliable (Douyin, Kuaishou, Xiaohongshu)
-//   • BBDown — dedicated Bilibili TV-API downloader (watermark-free)
-//
-// See scripts/test_platform_downloads.py for the full test matrix.
-const DOWNLOAD_PLATFORMS: ReadonlyArray<{
-  key: PlatformKey
-  name: string
-  engine: string
-}> = [
-  // Browser-first (patchright)
-  { key: 'douyin', name: '抖音', engine: 'browser(patchright)' },
-  { key: 'kuaishou', name: '快手', engine: 'browser(patchright)' },
-  { key: 'xiaohongshu', name: '小红书', engine: 'browser(patchright)' },
-  // yt-dlp + dedicated engines
-  { key: 'bilibili', name: 'B站', engine: 'yt-dlp / BBDown' },
-  { key: 'youtube', name: 'YouTube', engine: 'yt-dlp' },
-  { key: 'tiktok', name: 'TikTok', engine: 'yt-dlp' },
-  { key: 'twitter', name: 'X (Twitter)', engine: 'yt-dlp' },
-  { key: 'instagram', name: 'Instagram', engine: 'yt-dlp' },
-  { key: 'facebook', name: 'Facebook', engine: 'yt-dlp' },
-  { key: 'tencent', name: '视频号', engine: 'yt-dlp' },
-  { key: 'ixigua', name: '西瓜视频', engine: 'yt-dlp' },
-  { key: 'dailymotion', name: 'Dailymotion', engine: 'yt-dlp' },
-  { key: 'rumble', name: 'Rumble', engine: 'yt-dlp' },
-  { key: 'vk', name: 'VK', engine: 'yt-dlp' },
-  // Catch-all for the rest (皮皮虾, 微视, 秒拍, etc.)
-  { key: 'general', name: '其他·通用', engine: 'yt-dlp' },
-]
-
-// Platform → website URL (clickable chips)
-const PLATFORM_URLS: Record<string, string> = {
-  douyin: 'https://www.douyin.com',
-  kuaishou: 'https://www.kuaishou.com',
-  xiaohongshu: 'https://www.xiaohongshu.com',
-  bilibili: 'https://www.bilibili.com',
-  youtube: 'https://www.youtube.com',
-  tiktok: 'https://www.tiktok.com',
-  twitter: 'https://x.com',
-  instagram: 'https://www.instagram.com',
-  facebook: 'https://www.facebook.com',
-  tencent: 'https://channels.weixin.qq.com',
-  ixigua: 'https://www.ixigua.com',
-  dailymotion: 'https://www.dailymotion.com',
-  rumble: 'https://rumble.com',
-  vk: 'https://vk.com',
+function isCookieStalenessError(error: string | undefined): boolean {
+  if (!error) return false
+  const lower = error.toLowerCase()
+  return (
+    (lower.includes('cookies are') && lower.includes('h old') && lower.includes('anti-bot')) ||
+    lower.includes('fresh cookies (not necessarily logged in) are needed')
+  )
 }
 
-type StatusFilter = Status | 'all'
+// `PlatformKey` / `PLATFORMS` are imported from
+// `@/Components/ui/platform-chip-strip` so the chip strip stays the
+// single source of truth for the supported-platform roster.
+// The auto-detect strip below uses `PLATFORMS.find(...)` for the
+// chip label + engine tag; the chip strip itself takes
+// `activeKey={detectedPlatform}` directly.
 
 const FILTER_OPTIONS: ReadonlyArray<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: '全部' },
@@ -124,7 +71,7 @@ const FILTER_OPTIONS: ReadonlyArray<{ key: StatusFilter; label: string }> = [
 ]
 
 // Status group display order (in-progress → attention → completed)
-const STATUS_ORDER: Status[] = [
+const STATUS_ORDER: InboxStatus[] = [
   'downloading',
   'transcribing',
   'failed',
@@ -132,7 +79,7 @@ const STATUS_ORDER: Status[] = [
   'transcribed',
 ]
 
-const STATUS_LABELS: Record<Status, string> = {
+const STATUS_LABELS: Record<InboxStatus, string> = {
   downloading: '下载中',
   downloaded: '已下载',
   failed: '失败',
@@ -227,64 +174,66 @@ function extractFirstUrl(input: string): string | null {
   return match ? match[0].replace(TRAILING_CN_PUNCT_RE, '') : null
 }
 
+// BrandGlyph sourced from `@/Components/ui/brand-glyph` (single source
+// of truth). The previous inlined copy was the 5th duplicate of the
+// canonical `>_` glyph across Pages/ — landed here so the visitor
+// surfaces (`LandingPage` / `PricingPage` / `AboutPage` / `LoginPage` /
+// `LoginAuthPage`) and the dashboard all share one definition. The
+// URL auto-detect strip is **locked** (NOT URL/platform-customizable):
+// it cannot be swapped against a per-platform logo (`<PlatformIcon
+// platform={…}>`, 🌐 emoji fallback, etc.) — the canonical website
+// mark is the only glyph rendered here.
+
 export default function InboxPage() {
+  const navigate = useNavigate()
   const { addToast } = useToast()
   const [url, setUrl] = useState('')
-  // Per-entry in-flight tracking. The previous design used a single
-  // `busy` boolean that disabled the URL input / paste / download
-  // button / every row's retry button for the duration of any single
-  // download — which the user reported as "after one download the
-  // rest of the page is locked". Switching to a Set of in-flight
-  // entry IDs lets the page host N parallel downloads: the top-level
-  // controls are never blocked, the per-row retry button is only
-  // disabled for the entry whose retry is currently in flight, and
-  // the header chip counts how many downloads are running.
-  const [inflightEntryIds, setInflightEntryIds] = useState<Set<string>>(
-    () => new Set(),
-  )
-  // `batchBusy` is a separate debounce for the batch-retry loop only.
-  // It exists so two clicks of "重试选中" can't fire two parallel
-  // sequential loops that re-process the same entries. The per-entry
-  // set handles every other case.
-  const [batchBusy, setBatchBusy] = useState(false)
-  const inFlightCount = inflightEntryIds.size
-  // Per-entry add/remove helpers. useCallback-wrapped so the
-  // downstream useCallback deps (handleDownload / handleRetry /
-  // handleBatchRetry) don't churn on every render — that would
-  // re-derive `onRetry` props on every row and re-render the
-  // sortable wrapper unnecessarily. Empty deps are correct: the
-  // setter is stable, and the functional form `setInflightEntryIds
-  // ((prev) => …)` re-reads the latest Set so closure staleness
-  // can't happen.
-  const markInflight = useCallback((id: string) => {
-    setInflightEntryIds((prev) => {
-      const next = new Set(prev)
-      next.add(id)
-      return next
-    })
-  }, [])
-  const clearInflight = useCallback((id: string) => {
-    setInflightEntryIds((prev) => {
-      // No-op short-circuit: if the id wasn't tracked, return
-      // the same Set reference so React can bail out of the
-      // commit. Otherwise we'd allocate a new Set per
-      // handleRemove / handleBatchRemove call even when the
-      // entry was already terminal (downloaded / failed), which
-      // would re-render rows unnecessarily. Recent switched
-      // entries are the common path where the chip is already
-      // 0 and we're pruning ids that never went through
-      // markInflight.
-      if (!prev.has(id)) return prev
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-  }, [])
-  const [entries, setEntries] = useState<InboxEntry[]>([])
   const [detectedPlatform, setDetectedPlatform] = useState<PlatformKey | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [filterStatus, setFilterStatus] = useState<StatusFilter>('all')
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<Status>>(new Set())
+
+  const handleCookieReauthorize = useCallback(() => {
+    navigate('/')
+    addToast('请在账号管理页面重新授权对应的平台', 'info')
+  }, [navigate, addToast])
+
+  // ── Store-backed state ──────────────────────────────────────────────
+  //
+  // All download/selection/filter state lives in the Zustand
+  // `inboxStore` (module-level singleton), NOT in useState. This is
+  // the fix for the "download lost on page switch" bug: when the user
+  // navigates away from /app/inbox, React Router unmounts this
+  // component. If state lived in useState, the in-flight
+  // `api.inboxDownload()` promises' `.then()` / `.catch()` / `.finally()`
+  // callbacks would call dead state setters (no-ops) → the download
+  // result is silently lost + the inflight chip is stuck.
+  //
+  // With the store, async callbacks use `getInboxStore()` (store.getState())
+  // to call actions that work regardless of mount status. When the user
+  // navigates back, the component re-mounts, reads the store, and the
+  // in-flight entries are still there.
+  const entries = useInboxStore((s) => s.entries)
+  const inflightEntryIds = useInboxStore((s) => s.inflightEntryIds)
+  const batchBusy = useInboxStore((s) => s.batchBusy)
+  const selectedIds = useInboxStore((s) => s.selectedIds)
+  const filterStatus = useInboxStore((s) => s.filterStatus)
+  const collapsedGroups = useInboxStore((s) => s.collapsedGroups)
+
+  // Store actions (stable references — safe in useCallback deps)
+  const {
+    addEntry,
+    updateEntry,
+    removeEntry,
+    clearAll: storeClearAll,
+    markInflight,
+    setBatchBusy,
+    toggleSelect,
+    selectAll: storeSelectAll,
+    clearSelection,
+    setFilterStatus: storeSetFilterStatus,
+    toggleCollapse,
+    setCollapsedGroups,
+  } = useInboxStore()
+
+  const inFlightCount = inflightEntryIds.size
 
   const filteredEntries = useMemo(
     () =>
@@ -300,7 +249,7 @@ export default function InboxPage() {
     for (const status of STATUS_ORDER) {
       groups[status] = entries.filter((e) => e.status === status)
     }
-    return groups as Record<Status, InboxEntry[]>
+    return groups as Record<InboxStatus, InboxEntry[]>
   }, [entries])
 
   // Collapse/expand state (must live AFTER groupedEntries to avoid TDZ)
@@ -309,34 +258,33 @@ export default function InboxPage() {
     [collapsedGroups, groupedEntries],
   )
 
-  const handleToggleCollapse = useCallback((status: Status) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(status)) next.delete(status)
-      else next.add(status)
-      return next
-    })
-  }, [])
+  const handleToggleCollapse = useCallback((status: InboxStatus) => {
+    toggleCollapse(status)
+  }, [toggleCollapse])
 
   const handleToggleAll = useCallback(() => {
-    setCollapsedGroups((prev) => {
-      if (STATUS_ORDER.every((s) => groupedEntries[s].length === 0 || prev.has(s))) {
-        // All non-empty groups are collapsed → expand all
-        return new Set()
-      }
-      // Collapse all non-empty groups
+    const store = getInboxStore()
+    const { collapsedGroups: prev } = store
+    // Re-derive groupedEntries locally since the store doesn't hold it
+    const localGroups: Record<string, InboxEntry[]> = {}
+    for (const s of STATUS_ORDER) {
+      localGroups[s] = store.entries.filter((e) => e.status === s)
+    }
+    if (STATUS_ORDER.every((s) => localGroups[s].length === 0 || prev.has(s))) {
+      setCollapsedGroups(new Set())
+    } else {
       const next = new Set(prev)
       for (const status of STATUS_ORDER) {
-        if (groupedEntries[status].length > 0) {
+        if (localGroups[status].length > 0) {
           next.add(status)
         }
       }
-      return next
-    })
-  }, [groupedEntries])
+      setCollapsedGroups(next)
+    }
+  }, [setCollapsedGroups])
 
   const detectedInfo = useMemo(
-    () => DOWNLOAD_PLATFORMS.find((p) => p.key === detectedPlatform) ?? null,
+    () => PLATFORMS.find((p) => p.key === detectedPlatform) ?? null,
     [detectedPlatform],
   )
 
@@ -396,13 +344,13 @@ export default function InboxPage() {
       target = extracted
     }
     const id = newEntryId()
-    setEntries((prev) => [{ id, url: target, status: 'downloading' }, ...prev])
+    // Use store actions so the entry survives component unmount.
+    // The addEntry + markInflight are synchronous (no await), so they
+    // commit to the store immediately even if the component unmounts
+    // before the api.inboxDownload promise resolves.
+    addEntry({ id, url: target, status: 'downloading' })
     setUrl('')
     setDetectedPlatform(null)
-    // Per-entry in-flight tracking. Does NOT block the top-level UI
-    // (URL input / paste / download button) — the user can fire
-    // another handleDownload() while this one is in flight, which
-    // will be tracked independently via its own entry id.
     markInflight(id)
     try {
       // Round-15 fix: pass `target` (extracted URL when the input was
@@ -412,102 +360,67 @@ export default function InboxPage() {
       // 400 the request via the backend's startswith('http(s)://')
       // gate, defeating the whole point of front-end extraction.
       const res = await api.inboxDownload(target)
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id !== id
-            ? e
-            : res.success && res.filename
-              ? {
-                  ...e,
-                  status: 'downloaded',
-                  filename: res.filename,
-                  dir: res.dir,
-                  engine: res.engine,
-                }
-              : { ...e, status: 'failed', error: res.message ?? '下载失败' },
-        ),
-      )
+      // Use getInboxStore() so this callback works even if the
+      // component was unmounted during the await (user navigated to
+      // another page). The store action updates the entry regardless
+      // of mount status; when the user returns to /app/inbox, the
+      // entry is already updated.
+      const store = getInboxStore()
       if (res.success && res.filename) {
+        store.updateEntry(id, {
+          status: 'downloaded',
+          filename: res.filename,
+          dir: res.dir,
+          engine: res.engine,
+        })
         addToast(`已下载 ${res.filename}${res.dir ? `\n${res.dir}` : ''}`, 'success')
       } else {
+        store.updateEntry(id, { status: 'failed', error: res.message ?? '下载失败' })
         addToast(res.message ?? '下载失败', 'error')
       }
     } catch (err) {
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id !== id
-            ? e
-            : {
-                ...e,
-                status: 'failed',
-                error: err instanceof Error ? err.message : '请求失败',
-              },
-        ),
-      )
+      getInboxStore().updateEntry(id, {
+        status: 'failed',
+        error: err instanceof Error ? err.message : '请求失败',
+      })
       addToast('请求失败，请检查后端连接', 'error')
     } finally {
-      clearInflight(id)
+      getInboxStore().clearInflight(id)
     }
-  }, [url, addToast, markInflight, clearInflight])
+  }, [url, addToast, addEntry, markInflight])
 
   const handleTranscribe = useCallback(
     async (id: string) => {
-      const target = entries.find((e) => e.id === id)
+      // Read from the store (not the hook closure) so this works
+      // even if called after a re-mount where the closure's `entries`
+      // is stale.
+      const target = getInboxStore().entries.find((e) => e.id === id)
       if (!target?.filename) return
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id === id
-            ? { ...e, status: 'transcribing', transcript: undefined, error: undefined }
-            : e,
-        ),
-      )
+      updateEntry(id, { status: 'transcribing', transcript: undefined, error: undefined })
       try {
         await api.inboxTranscribeStream(
           { filename: target.filename },
-          (chunk) =>
-            setEntries((prev) =>
-              prev.map((e) =>
-                e.id === id
-                  ? { ...e, transcript: (e.transcript ?? '') + chunk }
-                  : e,
-              ),
-            ),
-          () =>
-            setEntries((prev) =>
-              prev.map((e) =>
-                e.id === id ? { ...e, status: 'transcribed' } : e,
-              ),
-            ),
+          (chunk) => getInboxStore().appendTranscript(id, chunk),
+          () => getInboxStore().updateEntry(id, { status: 'transcribed' }),
           (msg) => {
-            setEntries((prev) =>
-              prev.map((e) =>
-                e.id === id ? { ...e, status: 'failed', error: msg } : e,
-              ),
-            )
+            getInboxStore().updateEntry(id, { status: 'failed', error: msg })
             addToast(`转写失败：${msg}`, 'error')
           },
         )
       } catch (err) {
-        setEntries((prev) =>
-          prev.map((e) =>
-            e.id === id
-              ? {
-                  ...e,
-                  status: 'failed',
-                  error: err instanceof Error ? err.message : '请求失败',
-                }
-              : e,
-          ),
-        )
+        getInboxStore().updateEntry(id, {
+          status: 'failed',
+          error: err instanceof Error ? err.message : '请求失败',
+        })
         addToast('转写请求失败', 'error')
       }
     },
-    [entries, addToast],
+    [updateEntry, addToast],
   )
 
   const handleCopyTranscript = useCallback(
     async (id: string) => {
-      const target = entries.find((e) => e.id === id)
+      const target = getInboxStore().entries.find((e) => e.id === id)
       if (!target?.transcript) return
       try {
         await navigator.clipboard.writeText(target.transcript)
@@ -516,74 +429,53 @@ export default function InboxPage() {
         addToast('复制失败，请手动复制', 'error')
       }
     },
-    [entries, addToast],
+    [addToast],
   )
 
   const handleRemove = useCallback((id: string) => {
-    setEntries((prev) => prev.filter((e) => e.id !== id))
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-    // Issue 1 fix: drop the entry from in-flight tracking if it
-    // was actively downloading — otherwise the in-flight count
-    // chip would carry a stale id and only decrement when the
-    // underlying api.inboxDownload promise resolves seconds
-    // later. Backend download itself is NOT cancelled here:
-    // the server-side download continues per the inbox 24h
-    // auto-cleanup policy. clearInflight no-ops if the id
-    // wasn't tracked, so this stays safe for already-terminal
-    // entries (downloaded / failed).
-    clearInflight(id)
-  }, [clearInflight])
+    // removeEntry handles entries + selectedIds + inflightEntryIds
+    // in a single store commit. UI-only cancellation — backend
+    // downloads continue per the inbox 24h auto-cleanup policy.
+    removeEntry(id)
+  }, [removeEntry])
 
   const handleClearAll = useCallback(() => {
-    if (entries.length === 0) return
+    const store = getInboxStore()
+    if (store.entries.length === 0) return
     // Issue 1 fix part 3: clear ALL in-flight ids in one atomic
     // update so the chip disappears in a single React commit.
     // UI-only cancellation — backend downloads continue per the
-    // inbox 24h auto-cleanup policy. We bypass the per-id
-    // clearInflight helper here because we want a single
-    // commit, not N sequential commits — N would mean the chip
-    // reads `1 then 0` flicker through as React commits each
-    // individual id-cleanup. Wrapped in the functional-set form
-    // so `prev.size === 0` short-circuits to the same reference
-    // when nothing is in flight (bail-out).
-    setInflightEntryIds((prev) => (prev.size === 0 ? prev : new Set()))
-    setEntries([])
-    setSelectedIds(new Set())
+    // inbox 24h auto-cleanup policy.
+    storeClearAll()
     addToast('已清除全部记录', 'info')
-  }, [entries.length, addToast])
+  }, [storeClearAll, addToast])
 
   const handleSelectAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      if (prev.size === entries.length) return new Set() // deselect all
-      return new Set(entries.map((e) => e.id))
-    })
-  }, [entries])
+    const store = getInboxStore()
+    if (store.selectedIds.size === store.entries.length) {
+      clearSelection()
+    } else {
+      storeSelectAll()
+    }
+  }, [storeSelectAll, clearSelection])
 
   const handleBatchRemove = useCallback(() => {
-    if (selectedIds.size === 0) return
+    const store = getInboxStore()
+    if (store.selectedIds.size === 0) return
     // Issue 1 fix part 2: per-id clearInflight for each selected
     // entry BEFORE the entries update commits. UI-only
     // cancellation: backend downloads continue per inbox 24h
-    // auto-cleanup policy. The loop uses the helper rather than
-    // a single bulk setState so future helper behaviour
-    // (logging, abort hooks, etc.) is picked up automatically.
-    // Each clearInflight is a stable hook reference, and the
-    // early-return inside the helper means ids that aren't
-    // actually in flight are zero-cost.
-    for (const id of selectedIds) {
-      clearInflight(id)
+    // auto-cleanup policy.
+    for (const id of store.selectedIds) {
+      store.clearInflight(id)
     }
-    setEntries((prev) => prev.filter((e) => !selectedIds.has(e.id)))
-    addToast(`已移除 ${selectedIds.size} 条记录`, 'info')
-    setSelectedIds(new Set())
-  }, [selectedIds, addToast, clearInflight])
+    store.setEntries(store.entries.filter((e) => !store.selectedIds.has(e.id)))
+    addToast(`已移除 ${store.selectedIds.size} 条记录`, 'info')
+    store.clearSelection()
+  }, [addToast])
 
   const handleGroupDragEnd = useCallback(
-    (status: Status) =>
+    (status: InboxStatus) =>
       (event: {
         operation: {
           target: { id: string | number } | null
@@ -596,36 +488,35 @@ export default function InboxPage() {
         const sourceId = String(source.id)
         const targetId = String(target.id)
 
-        setEntries((prev) => {
-          // Find indices in the full entries array
-          const sourceIndex = prev.findIndex((e) => e.id === sourceId)
-          const targetIndex = prev.findIndex((e) => e.id === targetId)
-          if (sourceIndex === -1 || targetIndex === -1) return prev
+        const store = getInboxStore()
+        const prev = store.entries
+        // Find indices in the full entries array
+        const sourceIndex = prev.findIndex((e) => e.id === sourceId)
+        const targetIndex = prev.findIndex((e) => e.id === targetId)
+        if (sourceIndex === -1 || targetIndex === -1) return
 
-          // Both entries must belong to the target status group
-          if (prev[sourceIndex].status !== status) return prev
-          if (prev[targetIndex].status !== status) return prev
+        // Both entries must belong to the target status group
+        if (prev[sourceIndex].status !== status) return
+        if (prev[targetIndex].status !== status) return
 
-          return arrayMove(prev, sourceIndex, targetIndex)
-        })
+        store.setEntries(arrayMove(prev, sourceIndex, targetIndex))
       },
     [],
   )
 
   const handleBatchRetry = useCallback(async () => {
+    const store = getInboxStore()
     // Filter on (status === 'failed' && !inflight). The latter is
     // critical: if a previous batch loop is still draining and the
     // user clicks 重试选中 again on a re-selected entry, we MUST
     // skip it — otherwise two parallel `await api.inboxDownload`
-    // calls race on the same entry id. The inflight check uses the
-    // functional `setInflightEntryIds` flow below to also stay in
-    // sync as concurrent batches interleave.
-    const toRetry = entries.filter(
+    // calls race on the same entry id.
+    const toRetry = store.entries.filter(
       (e) =>
-        selectedIds.has(e.id) &&
+        store.selectedIds.has(e.id) &&
         e.status === 'failed' &&
         e.url &&
-        !inflightEntryIds.has(e.id),
+        !store.inflightEntryIds.has(e.id),
     )
     if (toRetry.length === 0) {
       addToast('选中的条目中没有可重试的失败记录', 'warning')
@@ -638,122 +529,79 @@ export default function InboxPage() {
         // Mark this entry 'downloading' BEFORE the await so the row
         // re-renders as in-progress (Badge switches to 下载中) and
         // any subsequent batch retry filters it out via the
-        // !inflightEntryIds.has() check above. Mirrors the per-row
-        // handleRetry status flip; the previous handleBatchRetry
-        // skipped this flip, which was the root cause of a
-        // double-retry race.
-        setEntries((prev) =>
-          prev.map((e) =>
-            e.id === entry.id
-              ? { ...e, status: 'downloading' as Status, error: undefined }
-              : e,
-          ),
-        )
-        markInflight(entry.id)
+        // !inflightEntryIds.has() check above.
+        getInboxStore().updateEntry(entry.id, { status: 'downloading' as InboxStatus, error: undefined })
+        getInboxStore().markInflight(entry.id)
         try {
           const res = await api.inboxDownload(entry.url)
-          setEntries((prev) =>
-            prev.map((e) =>
-              e.id !== entry.id
-                ? e
-                : res.success && res.filename
-                  ? { ...e, status: 'downloaded' as Status, filename: res.filename, engine: res.engine }
-                  : { ...e, status: 'failed' as Status, error: res.message ?? '下载失败' },
-            ),
-          )
+          const s = getInboxStore()
+          if (res.success && res.filename) {
+            s.updateEntry(entry.id, { status: 'downloaded' as InboxStatus, filename: res.filename, engine: res.engine })
+          } else {
+            s.updateEntry(entry.id, { status: 'failed' as InboxStatus, error: res.message ?? '下载失败' })
+          }
           if (res.success) successCount++
         } catch {
-          setEntries((prev) =>
-            prev.map((e) =>
-              e.id === entry.id ? { ...e, status: 'failed' as Status, error: '重试请求失败' } : e,
-            ),
-          )
+          getInboxStore().updateEntry(entry.id, { status: 'failed' as InboxStatus, error: '重试请求失败' })
         } finally {
           // Per-entry clear so the in-flight header chip decrements
-          // live as the loop drains. The batchBusy wrapper around
-          // the loop is the second debounce layer (prevents two
-          // parallel batch loops), but per-entry tracking drives
-          // the UI.
-          clearInflight(entry.id)
+          // live as the loop drains.
+          getInboxStore().clearInflight(entry.id)
         }
       }
       addToast(`重试完成：${successCount}/${toRetry.length} 成功`, successCount === toRetry.length ? 'success' : 'info')
-      setSelectedIds(new Set())
+      getInboxStore().clearSelection()
     } finally {
       // Defensive: even if a future refactor throws between
       // setBatchBusy(true) and the for-loop end, the batch flag
-      // must NOT stay stuck — that would freeze the 重试选中
-      // button. Per-entry inflightEntryIds is independently cleaned
-      // by the inner finally above.
+      // must NOT stay stuck.
       setBatchBusy(false)
     }
-  }, [entries, selectedIds, addToast, inflightEntryIds, markInflight, clearInflight])
+  }, [addToast, setBatchBusy])
 
   const handleRetry = useCallback(
     async (id: string) => {
-      const target = entries.find((e) => e.id === id)
+      const target = getInboxStore().entries.find((e) => e.id === id)
       if (!target?.url) return
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id === id
-            ? { ...e, status: 'downloading' as Status, error: undefined }
-            : e,
-        ),
-      )
+      getInboxStore().updateEntry(id, { status: 'downloading' as InboxStatus, error: undefined })
       // Per-entry in-flight tracking. ONLY this row's 重试 button is
       // disabled while this retry runs (via the InboxRow `inflight`
       // prop, which the parent computes from inflightEntryIds.has()).
-      // Other rows' retry buttons stay clickable, so a user can fire
-      // parallel retries across multiple failed entries.
-      markInflight(id)
+      getInboxStore().markInflight(id)
       try {
         const res = await api.inboxDownload(target.url)
-        setEntries((prev) =>
-          prev.map((e) =>
-            e.id !== id
-              ? e
-              : res.success && res.filename
-                ? {
-                    ...e,
-                    status: 'downloaded' as Status,
-                    filename: res.filename,
-                    dir: res.dir,
-                    engine: res.engine,
-                  }
-                : { ...e, status: 'failed' as Status, error: res.message ?? '下载失败' },
-          ),
-        )
+        const s = getInboxStore()
         if (res.success && res.filename) {
+          s.updateEntry(id, {
+            status: 'downloaded' as InboxStatus,
+            filename: res.filename,
+            dir: res.dir,
+            engine: res.engine,
+          })
           addToast(`已下载 ${res.filename}`, 'success')
         } else {
+          s.updateEntry(id, { status: 'failed' as InboxStatus, error: res.message ?? '下载失败' })
           addToast(res.message ?? '下载失败', 'error')
         }
       } catch (err) {
-        setEntries((prev) =>
-          prev.map((e) =>
-            e.id === id
-              ? {
-                  ...e,
-                  status: 'failed' as Status,
-                  error: err instanceof Error ? err.message : '请求失败',
-                }
-              : e,
-          ),
-        )
+        getInboxStore().updateEntry(id, {
+          status: 'failed' as InboxStatus,
+          error: err instanceof Error ? err.message : '请求失败',
+        })
         addToast('重试失败', 'error')
       } finally {
-        clearInflight(id)
+        getInboxStore().clearInflight(id)
       }
     },
-    [entries, addToast, markInflight, clearInflight],
+    [addToast],
   )
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 max-w-[1600px] mx-auto w-full">
       <PageHeader
         title="素材收件箱"
         description="从分享链接下载到本地，再转写音视频文案"
-        icon={<Inbox className="h-5 w-5 text-muted-foreground" />}
+        icon={<BrandGlyph className="h-5 w-5 text-[14px]" />}
       />
 
       <Card className="card-refined">
@@ -813,12 +661,13 @@ export default function InboxPage() {
           </div>
 
           {detectedInfo && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/60 border border-border/50 animate-in fade-in slide-in-from-top-1 duration-150">
-              {detectedInfo.key === 'general' ? (
-                <span className="h-4 w-4 flex items-center justify-center text-xs">🌐</span>
-              ) : (
-                <PlatformIcon platform={detectedInfo.key} variant="light" className="h-4 w-4" />
-              )}
+            <div
+              data-testid="inbox-detected"
+              className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/60 border border-border/50 animate-in fade-in slide-in-from-top-1 duration-150"
+            >
+              <BrandGlyph className="h-4 w-4" />
+              <span className="text-sm font-medium text-foreground">{detectedInfo.name}</span>
+              <span className="text-xs text-muted-foreground/80 font-mono tabular-nums">{detectedInfo.engine}</span>
             </div>
           )}
 
@@ -827,50 +676,13 @@ export default function InboxPage() {
             IP（含 DNS 解析层）。数据归属您，24h 后自动清理。
           </p>
 
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 pt-3 border-t border-border/40">
-            <span className="text-xs text-muted-foreground">支持下载</span>
-            {DOWNLOAD_PLATFORMS.map((p) => {
-              const url = PLATFORM_URLS[p.key]
-              const platformColor = PLATFORM_CHIP_COLORS[p.key] ?? ''
-              const chip = (
-                <span
-                  key={p.key}
-                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs transition-all duration-150 ${
-                    detectedPlatform === p.key
-                      ? 'bg-primary/10 dark:bg-primary/20 ring-1 ring-primary/30'
-                      : 'bg-muted/50 dark:bg-white/10'
-                  } ${url ? 'cursor-pointer hover:bg-muted/80 dark:hover:bg-white/15' : ''} ${platformColor}`}
-                  title={p.name}
-                >
-                  {p.key === 'general' ? (
-                    <span className="h-3.5 w-3.5 flex items-center justify-center text-[10px]">🌐</span>
-                  ) : (
-                    <PlatformIconChip platform={p.key} />
-                  )}
-                  <span>{p.name}</span>
-                </span>
-              )
-              return url ? (
-                <a
-                  key={p.key}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="no-underline"
-                  title={`打开 ${p.name} 网站`}
-                >
-                  {chip}
-                </a>
-              ) : (
-                chip
-              )
-            })}
-          </div>
+          <PlatformChipStrip activeKey={detectedPlatform} />
         </CardContent>
       </Card>
 
       <Card className="card-refined">
-        <CardContent className="pt-6">            <div className="flex items-center justify-between mb-3">
+        <CardContent className="pt-6">
+            <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold">
                 下载记录{' '}
@@ -934,7 +746,7 @@ export default function InboxPage() {
                   <button
                     key={opt.key}
                     type="button"
-                    onClick={() => setFilterStatus(opt.key)}
+                    onClick={() => storeSetFilterStatus(opt.key)}
                     className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-all duration-150 ${
                       filterStatus === opt.key
                         ? 'bg-primary/10 text-primary ring-1 ring-primary/30 font-medium'
@@ -951,8 +763,15 @@ export default function InboxPage() {
           {entries.length === 0 ? (
             <div className="flex h-[280px] items-center justify-center rounded-lg bg-muted/40 border border-dashed animate-in fade-in-0 slide-in-from-top-2 duration-300">
               <div className="text-center text-sm text-muted-foreground">
-                <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                暂无下载记录，粘贴分享链接开始
+                <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50 animate-pulse" />
+                <p className="text-sm font-medium text-foreground/70 mb-4">暂无下载记录，粘贴分享链接开始下载</p>
+                <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
+                  <kbd className="px-2 py-1 rounded bg-muted/60 border border-border/40 font-mono">1. 粘贴 URL</kbd>
+                  <span className="text-muted-foreground/40">→</span>
+                  <kbd className="px-2 py-1 rounded bg-muted/60 border border-border/40 font-mono">2. 下载</kbd>
+                  <span className="text-muted-foreground/40">→</span>
+                  <kbd className="px-2 py-1 rounded bg-muted/60 border border-border/40 font-mono">3. 转写文案</kbd>
+                </div>
               </div>
             </div>
           ) : (
@@ -1038,18 +857,12 @@ export default function InboxPage() {
                                 entry={entry}
                                 index={index}
                                 selected={selectedIds.has(entry.id)}
-                                onToggleSelect={() => {
-                                  setSelectedIds((prev) => {
-                                    const next = new Set(prev)
-                                    if (next.has(entry.id)) next.delete(entry.id)
-                                    else next.add(entry.id)
-                                    return next
-                                  })
-                                }}
+                                onToggleSelect={() => toggleSelect(entry.id)}
                                 onTranscribe={() => void handleTranscribe(entry.id)}
                                 onCopyTranscript={() => void handleCopyTranscript(entry.id)}
                                 onRetry={() => void handleRetry(entry.id)}
-                                onRemove={() => void handleRemove(entry.id)}
+                                onRemove={() => handleRemove(entry.id)}
+                                onCookieReauthorize={handleCookieReauthorize}
                               />
                               ))}
                             </div>
@@ -1069,7 +882,7 @@ export default function InboxPage() {
                     <p>暂无匹配记录</p>
                     <button
                       type="button"
-                      onClick={() => setFilterStatus('all')}
+                      onClick={() => storeSetFilterStatus('all')}
                       className="mt-2 text-xs underline underline-offset-4 hover:text-foreground transition-colors"
                     >
                       清除筛选
@@ -1088,18 +901,12 @@ export default function InboxPage() {
                         entry={e}
                         enableDrag={false}
                         selected={selectedIds.has(e.id)}
-                        onToggleSelect={() => {
-                          setSelectedIds((prev) => {
-                            const next = new Set(prev)
-                            if (next.has(e.id)) next.delete(e.id)
-                            else next.add(e.id)
-                            return next
-                          })
-                        }}
+                        onToggleSelect={() => toggleSelect(e.id)}
                         onTranscribe={() => void handleTranscribe(e.id)}
                         onCopyTranscript={() => void handleCopyTranscript(e.id)}
                         onRetry={() => void handleRetry(e.id)}
-                        onRemove={() => void handleRemove(e.id)}
+                        onRemove={() => handleRemove(e.id)}
+                        onCookieReauthorize={handleCookieReauthorize}
                       />
                     </li>
                   ))}
@@ -1127,10 +934,7 @@ interface SortableGroupEntryProps {
   onCopyTranscript: () => void
   onRetry: () => void
   onRemove: () => void
-  // No per-row `inflight` prop — see InboxRowProps for the
-  // rationale. In-flight state lives at the page level and is
-  // cleared through the row's Trash icon (handleRemove →
-  // clearInflight).
+  onCookieReauthorize?: () => void
 }
 
 function SortableGroupEntry({
@@ -1142,7 +946,8 @@ function SortableGroupEntry({
   onCopyTranscript,
   onRetry,
   onRemove,
-}: SortableGroupEntryProps) {
+  onCookieReauthorize,
+}: Omit<SortableGroupEntryProps, 'enableDrag' | 'dragHandleRef'>) {
   const { ref, handleRef, isDragging } = useSortable({
     id: entry.id,
     index,
@@ -1171,6 +976,7 @@ function SortableGroupEntry({
           onCopyTranscript={onCopyTranscript}
           onRetry={onRetry}
           onRemove={onRemove}
+          onCookieReauthorize={onCookieReauthorize}
         />
       </div>
     </div>
@@ -1191,16 +997,7 @@ interface InboxRowProps {
   onCopyTranscript: () => void
   onRetry: () => void
   onRemove: () => void
-  // No per-row `inflight` prop: the row's retry button is only
-  // rendered when status === 'failed' && !entry.filename, which
-  // is mutually exclusive with the moment `inflightEntryIds.has
-  // (id)` is true (handleRetry flips status to 'downloading'
-  // BEFORE its markInflight commit). So `disabled={inflight}` on
-  // the retry button is dead code — the button is already gone
-  // from the DOM by the time inflight is set. In-flight state
-  // lives at the page level: `inflightEntryIds` drives the chip
-  // count, and removal is wired through handleRemove →
-  // clearInflight so the chip doesn't show a phantom entry.
+  onCookieReauthorize?: () => void
 }
 
 function InboxRow({
@@ -1213,12 +1010,9 @@ function InboxRow({
   onCopyTranscript,
   onRetry,
   onRemove,
+  onCookieReauthorize,
 }: InboxRowProps) {
-  const { status, url } = entry
-  const platformKey = detectPlatform(url)
-  const platformInfo = platformKey
-    ? DOWNLOAD_PLATFORMS.find((p) => p.key === platformKey) ?? null
-    : null
+  const { status } = entry
 
   const badge = (() => {
     switch (status) {
@@ -1284,17 +1078,14 @@ function InboxRow({
             <Square className="h-4 w-4" />
           )}
         </button>
-        {platformInfo && platformInfo.key !== 'general' ? (
-          <PlatformIcon
-            platform={platformInfo.key}
-            className="h-5 w-5 flex-shrink-0 mt-0.5"
-          />
-        ) : (
-          <FileVideo
-            className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0"
-            aria-hidden
-          />
-        )}
+        {/* Single canonical BrandGlyph across all rows — locked,
+         *  identical to the chip strip + PageHeader + auto-detect
+         *  strip on the same page. Per-platform identity is already
+         *  carried by the URL caption (mono font) + the engine tag
+         *  (browser(patchright), yt-dlp, etc.) directly below, so
+         *  dropping the per-row platform logo removes duplicate
+         *  emphasis + the rainbow-of-platform-colors reading. */}
+        <BrandGlyph className="h-5 w-5 flex-shrink-0 mt-0.5 text-[14px]" />
         <div className="flex-1 min-w-0">
           <div className="text-xs text-muted-foreground/70 font-mono truncate">
             {entry.url}
@@ -1322,9 +1113,37 @@ function InboxRow({
               {entry.dir}
             </div>
           )}
-          {entry.error && (
-            <div className="text-xs text-destructive mt-1">{entry.error}</div>
-          )}
+          {(() => {
+            const cookieExpired = isCookieStalenessError(entry.error)
+            if (!entry.error) return null
+            return (
+              <div className="mt-1 space-y-1.5">
+                {cookieExpired && onCookieReauthorize && (
+                  <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-warning">平台授权已过期，请重新登录</p>
+                      <p className="mt-0.5 text-[11px] text-warning/70">
+                        Cookie 过期可能导致下载失败，回到账号管理页重新授权即可恢复。
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-1.5 h-7 text-[11px] border-warning/40 text-warning hover:bg-warning/20"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onCookieReauthorize()
+                        }}
+                      >
+                        去账号管理重新授权
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <div className="text-xs text-destructive">{entry.error}</div>
+              </div>
+            )
+          })()}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {badge}
@@ -1371,12 +1190,6 @@ function InboxRow({
               size="sm"
               variant="outline"
               onClick={onRetry}
-              // No `disabled` prop: handleRetry's status flip to
-              // 'downloading' unmounts this button before any
-              // `inflight` set-state could matter (and parallel
-              // retries across rows are already unlocked since
-              // each one tracks its own inflight entry id). See
-              // InboxRowProps for the full reasoning.
               data-testid="inbox-download-retry"
             >
               <RefreshCw className="h-3 w-3 mr-1" />

@@ -152,6 +152,17 @@ vi.mock('@/Components/ui/index', () => {
   return {
     Alert: Tag('alert'),
     AlertDescription: Tag('alert-description'),
+    AlertDialog: ({ children }: MockProps) => <>{children}</>,
+    AlertDialogAction: ({ children, onClick }: MockProps) => (
+      <button data-tag="alert-action" onClick={onClick}>{children}</button>
+    ),
+    AlertDialogCancel: ({ children }: MockProps) => <button data-tag="alert-cancel">{children}</button>,
+    AlertDialogContent: ({ children }: MockProps) => <div data-tag="alert-content">{children}</div>,
+    AlertDialogDescription: ({ children }: MockProps) => <div data-tag="alert-desc">{children}</div>,
+    AlertDialogFooter: ({ children }: MockProps) => <div data-tag="alert-footer">{children}</div>,
+    AlertDialogHeader: ({ children }: MockProps) => <div data-tag="alert-header">{children}</div>,
+    AlertDialogTitle: ({ children }: MockProps) => <div data-tag="alert-title">{children}</div>,
+    AlertDialogTrigger: ({ children }: MockProps) => <>{children}</>,
     Badge: Tag('badge'),
     Button: ({ children, className, ...rest }: MockProps) => (
       <button className={className} {...rest}>
@@ -181,6 +192,7 @@ vi.mock('@/Components/ui/index', () => {
 })
 
 vi.mock('@/Components/ui/toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useToast: () => ({ addToast: vi.fn() }),
 }))
 

@@ -242,3 +242,9 @@ sau bilibili upload-video
 - `sau_cli.py` 是当前 CLI 主入口
 - `docs/legacy-web.md` 是历史 Web 版本说明，不保证当前可用
 - Bilibili 首次运行时可能自动下载 `biliup`
+
+---
+
+> 🔧 **运行后当日 on-call / 运营 / 排错入口**：[`docs/dev/INDEX.md`](docs/dev/INDEX.md) · [`docs/dev/monitor-cdp-throttling-cron-ops.md`](docs/dev/monitor-cdp-throttling-cron-ops.md) · [`docs/dev/public-inbox-ops.md`](docs/dev/public-inbox-ops.md)
+>
+> 公开试用 /try 相关的告警 / 30 天滚动 kill criteria：`docs/dev/public-inbox-ops.md`。可选 webhook 接收 STOP-SHIP / WATCHFUL verdict：`SAU_KILL_CRITERIA_WEBHOOK`（见 `.env.example` 告警段）。

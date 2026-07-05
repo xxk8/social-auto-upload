@@ -12,7 +12,7 @@ import {
   Badge,
   Button,
   Progress,
-} from '@/components/ui/index'
+} from '@/Components/ui/index'
 import {
   CheckCircle2,
   ChevronDown,

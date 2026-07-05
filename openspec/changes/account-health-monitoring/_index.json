@@ -1,0 +1,13 @@
+{
+  "name": "account-health-monitoring",
+  "created": "2026-07-02T00:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "账号 cookie 健康度后台定期检查 + 邮件/Webhook 通知 + 前端可视化 badge,从被动发现变主动预警",
+    "design": "4 状态 enum + 24h 通知频率限制 + asyncio background task + ALTER TABLE 自动 migration + 7d 推断 expiring_soon",
+    "tasks": { "total": 31, "completed": 0 }
+  },
+  "layers": ["api", "frontend", "database"],
+  "platforms": ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent", "tiktok", "baijiahao", "youtube"],
+  "applyReady": true
+}

@@ -9,8 +9,10 @@ implemented:
    methods (no longer raising NotImplementedError).
 2. ``TencentNote.validate_upload_args`` enforces the 18-image cap and accepts
    well-formed input.
-3. ``sau_cli`` exposes ``tencent upload-note`` as a CLI subcommand with the
-   expected argument surface.
+3. ``cli.parser`` exposes ``tencent upload-note`` as a CLI subcommand with the
+   expected argument surface (``sau_cli.py`` is a 10-line shim that delegates
+   to ``cli.main.main`` so it shares the same parser — see Phase 2 of
+   ``openspec/changes/cli-uploader-architecture-consistency``).
 4. ``web_runner.PLATFORM_CONFIG['tencent']['note']`` now advertises note
    support so the backend /api/upload/note route can accept a tencent request.
 """
@@ -173,10 +175,10 @@ def test_fill_note_title_and_tags_types_through_stubbed_page(tmp_path: Path) -> 
 
 
 def test_cli_tencent_upload_note_parser_has_expected_flags() -> None:
-    """sau_cli must register tencent upload-note with --images/--title/--note/--tags/--schedule/--draft."""
-    import sau_cli
+    """``cli.parser`` (consumed via the ``sau_cli`` shim) must register ``tencent upload-note`` with ``--images/--title/--note/--tags/--schedule/--draft``."""
+    from cli.parser import build_parser
 
-    parser = sau_cli.build_parser()
+    parser = build_parser()
     args = parser.parse_args(
         [
             "tencent",

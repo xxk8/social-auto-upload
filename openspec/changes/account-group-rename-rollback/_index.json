@@ -1,0 +1,19 @@
+{
+  "name": "account-group-rename-rollback",
+  "created": "2026-06-29T22:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Fix rename_account_group() so DB writes commit AFTER all cookie file renames succeed; on mid-flight os.rename failure, restore prior file paths AND return 409.",
+    "design": "4 key decisions: fs-first ordering, savepoint for DB writes, dual-side rollback, idempotent retry on PermissionError",
+    "tasks": {
+      "total": 8,
+      "completed": 0
+    },
+    "spec": "specs/api-account-groups/spec.md"
+  },
+  "layers": [
+    "api"
+  ],
+  "platforms": [],
+  "applyReady": false
+}

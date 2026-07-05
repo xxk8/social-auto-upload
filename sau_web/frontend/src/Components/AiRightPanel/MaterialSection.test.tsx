@@ -1,6 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { useRef } from 'react'
 import { MaterialSection } from './MaterialSection'
 import { useMaterialPanelStore } from '@/stores/materialPanelStore'
 import type { ApplyAttempt, FormHandle } from '@/lib/chat/chatFormBridge'
@@ -81,18 +81,6 @@ vi.mock('lucide-react', () => ({
 }))
 
 // ── helpers ───────────────────────────────────────────────────
-function RefHarness({
-  onRef,
-  mode = 'note',
-}: {
-  onRef: (ref: React.MutableRefObject<FormHandle | null>) => void
-  mode?: 'video' | 'note'
-}) {
-  const ref = useRef<FormHandle | null>(null)
-  onRef(ref)
-  return <MaterialSection formMode={mode} formRef={ref} />
-}
-
 function makeStubForm(applyMediaReturn: ApplyAttempt = { applied: true }): FormHandle {
   return {
     applyAiResult: vi.fn(),

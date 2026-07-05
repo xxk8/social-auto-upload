@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Badge,
   Button,
@@ -18,8 +19,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/index'
-import { Loader2, RotateCcw, Trash2 } from 'lucide-react'
+} from '@/Components/ui/index'
+import { Loader2, RotateCcw, Repeat, Trash2 } from 'lucide-react'
 import type { TaskItem } from '../../api/client'
 import { formatDateTime, shortenId } from '@/lib/features'
 import { STATUS_META, type StatusType } from './shared'
@@ -51,6 +52,7 @@ export const TaskTableRow = memo(function TaskTableRow({
   onStatusFilter: (status: StatusType) => void
   retrying: string | null
 }) {
+  const navigate = useNavigate()
   const meta = STATUS_META[task.status ?? 'pending'] ?? STATUS_META.pending
   const canDelete =
     task.status === 'success' ||
@@ -96,7 +98,7 @@ export const TaskTableRow = memo(function TaskTableRow({
           }}
           title={`筛选「${meta.label}」任务`}
         >
-          {meta.label}
+          {meta.icon ?? meta.label}
         </Badge>
       </TableCell>
       <TableCell className="whitespace-nowrap">{formatDateTime(task.created)}</TableCell>
@@ -122,6 +124,19 @@ export const TaskTableRow = memo(function TaskTableRow({
               </Button>
             </TooltipTrigger>
             <TooltipContent>重新执行此任务</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(`/publish?from_task=${task.task_id}`)}
+                aria-label="Re-publish"
+              >
+                <Repeat className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>用此任务参数重新发布</TooltipContent>
           </Tooltip>
           {canDelete && (
             <AlertDialog>

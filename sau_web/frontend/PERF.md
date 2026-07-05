@@ -13,7 +13,7 @@
 | 文件 | 大小 | 说明 |
 |------|------|------|
 | `dist/assets/` (总计) | **1.4 MB** | |
-| `index-xxx.js` (主入口) | **768 KB** | 包含 React、antd、路由等核心库 |
+| `index-xxx.js` (主入口) | **768 KB** | 包含 React、路由等核心库 |
 | `PublishPage-xxx.js` | **88 KB** | 发布页面 |
 | `AccountsPage-xxx.js` | 代码分割后独立 chunk | |
 | `TasksPage-xxx.js` | 代码分割后独立 chunk | |
@@ -34,7 +34,7 @@
 
 | 路由 | 耗时 |
 |------|------|
-| `/publish` (首次) | **611ms** (含 antd 组件加载) |
+| `/publish` (首次) | **611ms** (含页面组件加载) |
 | `/publish` (后续) | ~440ms |
 | `/logs` | **439ms** |
 | `/tasks` | **443ms** |
@@ -67,16 +67,14 @@
 **目标：** 将主 JS bundle 从 768 KB 降到 500 KB 以下。
 
 - [ ] **Tree Shaking** — 确保 `package.json` 中设置 `"sideEffects": false`（如果适用）
-- [ ] **Ant Design 按需引入** — 目前每个页面 import 了整棵 antd 组件树。验证构建工具是否已自动 tree-shake。Webpack 时代需要 `babel-plugin-import`，Vite 基于 ESM 通常自动处理，但可检查 `vite.config.ts` 是否有优化配置。
-- [ ] **@ant-design/icons 分包** — 图标库体积较大。考虑使用 `IconProvider` + 按需 icon 组件，或分析哪些 icon 实际被使用。
-- [ ] **moment.js 替换** — antd v5+ 已移除 moment 依赖，但需确认项目中无直接 moment 引用。
+- [ ] **lucide-react 按需引入** — 当前大量 import 单个 icon，确认构建工具已自动 tree-shake 未使用的 icon。
 - [ ] **dayjs 替代** — 若需日期处理，使用 dayjs（~6KB）替代 moment.js（~230KB）。
 
 ### 2. 代码分割深化
 
 - [ ] **FloatingLogs 懒加载** — 该组件仅在用户点击浮动按钮时显示，可改为 `React.lazy()`，减少首屏 30+ KB
 - [ ] **路由级 chunk 命名** — 在 `vite.config.ts` 中配置 `rollupOptions.output.chunkFileNames` 使 chunk 名称更可读
-- [ ] **Ant Design 组件级懒加载** — 大体积组件如 `Table`、`Upload.Dragger` 可进一步拆分为异步 chunk
+- [ ] **大体积组件懒加载** — 如 recharts、motion 等可进一步拆分为异步 chunk
 
 ### 3. 运行时性能
 
@@ -100,7 +98,6 @@
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
-          antd: ['antd', '@ant-design/icons'],
           motion: ['motion'],
         },
       },

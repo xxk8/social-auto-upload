@@ -52,7 +52,7 @@ const Row = React.forwardRef<HTMLDivElement, RowProps>(
       >
         {React.Children.map(children, (child) => {
           if (React.isValidElement(child)) {
-            return React.cloneElement(child as React.ReactElement<any>, {
+            return React.cloneElement(child as React.ReactElement<Record<string, unknown>>, {
               style: {
                 paddingLeft: `${horizontal / 2}px`,
                 paddingRight: `${horizontal / 2}px`,

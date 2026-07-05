@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "Cursor伟哥续命良药 · social-auto-upload": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "--disable-warning=ExperimentalWarning",
+        "--unhandled-rejections=warn",
+        "/Users/a123/.cursor/extensions/local.cursor-keepalive-9.4.57/dist/mcp-server.mjs"
+      ],
+      "env": {
+        "MESSENGER_DATA_DIR": "/Users/a123/.moyu-message/5ada0ece0907",
+        "MESSENGER_WORKSPACE_NAME": "social-auto-upload",
+        "MESSENGER_HEARTBEAT_INTERVAL_MS": "8000",
+        "MESSENGER_MAX_WAIT_MS": "300000",
+        "MESSENGER_KEEPALIVE_PATTERNS": "你好",
+        "NODE_NO_WARNINGS": "1"
+      }
+    }
+  }
+}

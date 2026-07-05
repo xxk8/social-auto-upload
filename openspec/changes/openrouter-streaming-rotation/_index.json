@@ -1,0 +1,18 @@
+{
+  "name": "openrouter-streaming-rotation",
+  "created": "2026-06-29T22:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Restore the 8 spot-checked OpenRouter streaming responses (test_stream_openrouter.py) — likely mock signature drift OR real key-rotation order regression in web_runner/routes/ai.py.",
+    "tasks": {
+      "total": 5,
+      "completed": 0
+    },
+    "spec": "specs/api-ai-stream/spec.md"
+  },
+  "layers": [
+    "api"
+  ],
+  "platforms": [],
+  "applyReady": false
+}

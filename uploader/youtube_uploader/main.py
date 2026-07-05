@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """YouTube uploader (browser automation via YouTube Studio).
 
 Unlike the other platforms here, YouTube also offers an official Data API. We deliberately
@@ -18,6 +17,8 @@ from patchright.async_api import Page, Playwright, async_playwright
 
 from conf import DEBUG_MODE
 from uploader.base_video import BaseVideoUploader
+from utils.anti_detect import obfuscate_video
+from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.log import youtube_logger
 
@@ -185,7 +186,14 @@ async def _wait_upload_complete(page: Page, max_polls: int = 360) -> bool:
 class YouTubeVideo(BaseVideoUploader):
     def __init__(self, title, file_path, tags, account_file, *,
                  description="", thumbnail_path=None, playlist=None,
+                 publish_date=0,  # Phase 5: matches the family fingerprint
                  visibility="public", debug=DEBUG_MODE, headless=False):
+        # NOTE(deviation-from-spec): the family uses `BaseVideoUploader` as a
+        # stateless namespace for classmethods (no `super().__init__()`).
+        # The `publish_date` field is exposed here for spec-parity with the
+        # rest of the family, but YouTube Studio's standard browser-automation
+        # path does not expose the schedule UI (premium/audited account
+        # required), so the value is NOT acted on in `upload()`.
         self.title = title
         self.file_path = str(file_path)
         self.tags = tags or []
@@ -193,11 +201,69 @@ class YouTubeVideo(BaseVideoUploader):
         self.description = description or ""
         self.thumbnail_path = str(thumbnail_path) if thumbnail_path else None
         self.playlist = playlist
+        self.publish_date = publish_date
         self.visibility = visibility if visibility in VISIBILITY else "public"
         self.debug = debug
         self.headless = headless
 
+    async def validate_upload_args(self):
+        """Pre-flight validation before opening the browser (Phase 5 §2 — closing the §8.4.5 grep miss-tail).
+
+        Mirrors the Phase 4 §8.4 family pattern:
+          * title non-empty
+          * file exists + supported video extension (via
+            ``BaseVideoUploader.validate_video_file``; resolves to ``Path``,
+            normalised back to ``str`` for symmetry with the rest of the
+            family — matches `TiktokVideo` / `TiktokNote` shape)
+          * publish_date unconditional via
+            ``BaseVideoUploader.validate_publish_date``; short-circuits on
+            ``0``/``None`` for immediate publish (matches the rest of the
+            family).
+
+        NOTE: YouTube Studio's standard browser-automation path does NOT
+        act on `publish_date` (premium/audited account required for the
+        schedule UI; out of scope for Phase 5). Future ticket if the UI
+        becomes viable — drop in a `set_schedule_time_youtube` after the
+        schedule-form selectors land.
+        """
+        if not self.title or not str(self.title).strip():
+            raise ValueError("YouTube video mode requires title")
+        self.file_path = str(self.validate_video_file(self.file_path))
+
+        # ── Content fingerprint obfuscation (anti-duplicate-detection) ────────
+        config = get_config("youtube")
+        obf_path = str(Path(self.file_path).with_suffix("")) + ".obf" + Path(self.file_path).suffix
+        obfuscated = obfuscate_video(
+            self.file_path,
+            obf_path,
+            crop_pixels=config.crop_pixels,
+            bitrate_variation=config.bitrate_variation,
+            add_noise=config.add_noise,
+            target_codec=config.target_codec,
+            brightness_range=config.brightness_range,
+            contrast_range=config.contrast_range,
+            min_bitrate_mbps=config.min_bitrate_mbps,
+            fast_mode=config.fast_mode,
+        )
+        if obfuscated.exists():
+            self.file_path = str(obfuscated)
+            youtube_logger.info(_msg("🎭", "视频指纹已混淆，用于对抗平台重复检测"))
+
+        self.publish_date = self.validate_publish_date(self.publish_date)
+
     async def upload(self, playwright: Playwright) -> None:
+        await self.validate_upload_args()
+        if self.publish_date != 0:
+            # YouTube Studio's standard browser-automation path does not
+            # expose the schedule UI (premium/audited account required);
+            # ``publish_date`` is exposed for spec-parity with the rest
+            # of the family but the value is NOT acted on. Warn loudly
+            # so a future maintainer is not confused by the silent drop.
+            youtube_logger.warning(
+                "YouTube Studio's standard browser-automation path does not "
+                "expose the schedule UI; ignoring publish_date=%r",
+                self.publish_date,
+            )
         browser = await playwright.chromium.launch(
             headless=self.headless, channel="chrome",
             proxy={"server": YT_PROXY} if YT_PROXY else None,

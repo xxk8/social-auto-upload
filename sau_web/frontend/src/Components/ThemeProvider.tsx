@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-
-export type Theme = 'light' | 'dark' | 'system'
+/* eslint-disable react-refresh/only-export-components */
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Theme } from './ThemeProvider.helpers'
+import { ThemeProviderContext } from './ThemeProvider.helpers'
+export { useTheme } from './ThemeProvider.helpers'
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -8,19 +10,11 @@ type ThemeProviderProps = {
   storageKey?: string
 }
 
-type ThemeProviderState = {
-  theme: Theme
-  resolved: 'light' | 'dark'
-  setTheme: (theme: Theme) => void
-}
-
-const initialState: ThemeProviderState = {
-  theme: 'system',
-  resolved: 'light',
-  setTheme: () => null,
-}
-
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
+// OPT-follow-up-3-sweep-2: `useTheme`, the `Theme` / `ThemeProviderState`
+// types, the `initialState` const, and the `ThemeProviderContext` object
+// moved to `./ThemeProvider.helpers.ts`. This file's only remaining
+// top-level export is the `ThemeProvider` React component; the imported
+// context wraps `children`.
 
 export function ThemeProvider({
   children,
@@ -70,8 +64,3 @@ export function ThemeProvider({
   )
 }
 
-export const useTheme = () => {
-  const context = useContext(ThemeProviderContext)
-  if (context === undefined) throw new Error('useTheme must be used within a ThemeProvider')
-  return context
-}

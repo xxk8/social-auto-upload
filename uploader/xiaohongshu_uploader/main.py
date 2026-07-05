@@ -1,25 +1,27 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import asyncio
 import inspect
 import os
+import random
 from datetime import datetime
 from pathlib import Path
 
-from patchright.async_api import Page
-from patchright.async_api import Playwright
-from patchright.async_api import async_playwright
+from patchright.async_api import Page, Playwright, async_playwright
 
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
-from utils.base_social_media import set_init_script
-from utils.login_qrcode import build_login_qrcode_path
-from utils.login_qrcode import decode_qrcode_from_path
-from utils.login_qrcode import print_terminal_qrcode
-from utils.login_qrcode import remove_qrcode_file
-from utils.login_qrcode import save_data_url_image
+from uploader.common import _cdp_capture_screenshot
+from utils.anti_detect import (
+    apply_anti_detect,
+    build_browser_context_options,
+    build_browser_launch_kwargs,
+    human_type,
+    obfuscate_image,
+    obfuscate_video,
+)
 from utils.log import xiaohongshu_logger
+from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
 
 XHS_DEFAULT_CREATOR_BASE_URL = "https://creator.xiaohongshu.com"
 XHS_CREATOR_BASE_URL_ENV = "SAU_XHS_CREATOR_BASE_URL"
@@ -112,28 +114,50 @@ async def _save_xhs_qrcode(
     qrcode_callback=None,
 ) -> dict:
     qrcode_src = await _extract_xhs_qrcode_src(page)
-    qrcode_path = build_login_qrcode_path(account_file, suffix="xhs_login_qrcode")
-    qrcode_img = await _find_xhs_qrcode_locator(page)
+    qrcode_path: Path | None = None
 
-    if qrcode_src.startswith("data:image/"):
-        save_data_url_image(qrcode_src, qrcode_path)
-    else:
-        qrcode_path.parent.mkdir(parents=True, exist_ok=True)
-        await qrcode_img.screenshot(path=str(qrcode_path))
+    # When xiaohongshu surfaces the QR via a CDN <img>, ``src`` is not a
+    # ``data:image/...`` URL. Inline-capture the locator's bbox via the
+    # shared ``uploader.common._cdp_capture_screenshot`` helper so the
+    # downstream ``image_data_url`` payload keeps a uniform shape. The
+    # local try/except around the CDP call is the bbox/CDP failure point —
+    # we still fall through to a full-viewport capture rather than crashing.
+    if not qrcode_src.startswith("data:image/"):
+        qrcode_img = await _find_xhs_qrcode_locator(page)
+        try:
+            bbox = await qrcode_img.bounding_box()
+            if bbox:
+                qrcode_src = await _cdp_capture_screenshot(
+                    page,
+                    clip={
+                        "x": bbox["x"], "y": bbox["y"],
+                        "width": bbox["width"], "height": bbox["height"],
+                    },
+                    capture_beyond_viewport=True,
+                )
+            else:
+                qrcode_src = await _cdp_capture_screenshot(page)
+        except Exception:
+            qrcode_src = await _cdp_capture_screenshot(page)
+
+    if qrcode_callback is None:
+        # CLI direct-path: write PNG so the user can scan via file viewer.
+        if qrcode_src.startswith("data:image/"):
+            qrcode_path = save_data_url_image(
+                qrcode_src,
+                build_login_qrcode_path(account_file, suffix="xhs_login_qrcode"),
+            )
+            xiaohongshu_logger.info(_msg("🖼️", f"二维码已经准备好啦，已保存到: {qrcode_path}"))
+            xiaohongshu_logger.info(_msg("📲", f"请用小红书APP扫码，或打开：file://{qrcode_path}"))
+        else:
+            xiaohongshu_logger.warning(_msg("😵", "没拿到二维码 data:URL，请在弹出的浏览器窗口里扫码"))
 
     if previous_qrcode_path and previous_qrcode_path != qrcode_path:
         if remove_qrcode_file(previous_qrcode_path):
             xiaohongshu_logger.info(_msg("🧹", f"临时二维码文件已清理: {previous_qrcode_path}"))
 
-    xiaohongshu_logger.info(_msg("🖼️", f"二维码已经准备好啦，已保存到: {qrcode_path}"))
-    qrcode_content = decode_qrcode_from_path(qrcode_path)
-    if qrcode_content:
-        print_terminal_qrcode(qrcode_content, qrcode_path, "小红书APP")
-    else:
-        xiaohongshu_logger.warning(_msg("😵", f"终端没法完整显示二维码，请打开 {qrcode_path} 扫码"))
-
     qrcode_info = {
-        "image_path": str(qrcode_path),
+        "image_path": str(qrcode_path) if qrcode_path else "",
         "image_data_url": qrcode_src,
     }
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
@@ -159,13 +183,18 @@ async def cookie_auth(account_file):
         return False
 
     async with async_playwright() as playwright:
-        if LOCAL_CHROME_PATH:
-            browser = await playwright.chromium.launch(headless=True, executable_path=LOCAL_CHROME_PATH)
-        else:
-            browser = await playwright.chromium.launch(headless=True, channel="chrome")
+        browser = await playwright.chromium.launch(
+            **build_browser_launch_kwargs(headless=True),
+        )
         try:
-            context = await browser.new_context(storage_state=account_file)
-            context = await set_init_script(context)
+            context = await browser.new_context(
+                **build_browser_context_options(
+                    "xiaohongshu",
+                    account_file=account_file,
+                    headless=True,
+                ),
+            )
+            context = await apply_anti_detect(context)
             page = await context.new_page()
             await page.goto(
                 _build_xhs_creator_url(
@@ -233,9 +262,13 @@ async def xiaohongshu_cookie_gen(
     account_path.parent.mkdir(parents=True, exist_ok=True)
 
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=headless, channel="chrome")
-        context = await browser.new_context()
-        context = await set_init_script(context)
+        browser = await playwright.chromium.launch(
+            **build_browser_launch_kwargs(headless=headless),
+        )
+        context = await browser.new_context(
+            **build_browser_context_options("xiaohongshu", headless=headless),
+        )
+        context = await apply_anti_detect(context)
         qrcode_path = None
         qrcode_info = None
         result = _build_login_result(False, "failed", "小红书登录失败", account_file)
@@ -243,7 +276,7 @@ async def xiaohongshu_cookie_gen(
             page = await context.new_page()
             await page.goto(_build_xhs_creator_url("/login"))
             qrcode_info = await _save_xhs_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info["image_path"])
+            qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
             xiaohongshu_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
 
             for _ in range(max_checks):
@@ -314,11 +347,10 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED,
         }:
             raise ValueError(f"不支持的发布策略: {self.publish_strategy}")
-
-        if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED:
-            self.publish_date = self.validate_publish_date(self.publish_date)
-        else:
-            self.publish_date = 0
+        # Phase 4 §8.6 migration (2026-07-02): strategy-conditional publish_date block
+        # removed. Validation is now unconditional in the derived-class `validate_upload_args`
+        # (matches `BaiJiaHaoVideo` / `DouYinVideo` / `KSBaseUploader` shared pattern;
+        # fixes the latent "IMMEDIATE strategy + datetime input → silently overwritten to 0" bug).
 
     async def set_schedule_time_xiaohongshu(self, page: Page, publish_date: datetime):
         xiaohongshu_logger.info(_msg("🕒", f"小人准备设置定时发布时间: {publish_date.strftime(self.date_format)}"))
@@ -390,7 +422,8 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
 
     async def fill_title(self, page: Page) -> None:
         title_container = page.locator('input[placeholder*="填写标题"]')
-        await title_container.fill(self.title[:20])
+        await title_container.click()
+        await human_type(page, self.title[:20], min_delay_ms=40, max_delay_ms=150)
 
     async def fill_desc(self, page: Page) -> None:
         if not getattr(self, "desc", ""):
@@ -401,7 +434,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         await page.keyboard.press("Backspace")
         await page.keyboard.press("Control+KeyA")
         await page.keyboard.press("Delete")
-        await page.keyboard.type(self.desc)
+        await human_type(page, self.desc, min_delay_ms=35, max_delay_ms=120)
         await page.keyboard.press("Enter")
 
     async def fill_tags(self, page: Page) -> None:
@@ -424,7 +457,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             # 话题候选下拉框依赖小红书联想接口实时返回，网络抖动/无匹配时会等不到。
             # 标签是可选增强项：等不到候选框就跳过该标签继续，不让整条发布因此失败。
             try:
-                await page.keyboard.type("#" + tag, delay=30)
+                await page.keyboard.type("#" + tag, delay=random.randint(25, 60))
                 await page.locator('#creator-editor-topic-container').wait_for(
                     state="visible",
                     timeout=6000
@@ -432,6 +465,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 first_item = page.locator('#creator-editor-topic-container .item').first
                 await first_item.wait_for(state="visible", timeout=4000)
                 await first_item.click()
+                await asyncio.sleep(random.uniform(0.3, 0.8))
             except Exception as exc:
                 xiaohongshu_logger.warning(
                     _msg("🏷️", f"话题『{tag}』未出现候选，跳过该标签继续发布: {exc}")
@@ -503,6 +537,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         self.file_path = str(self.validate_video_file(self.file_path))
         if self.thumbnail_path:
             self.thumbnail_path = str(self.validate_image_file(self.thumbnail_path))
+        self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def handle_upload_error(self, page: Page):
         xiaohongshu_logger.warning(_msg("😵", "视频上传摔了一跤，小人马上重新上传"))
@@ -556,7 +591,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                     # 获取整个预览区域的文本，更鲁棒地判断上传状态
                     all_text = await preview_new.inner_text()
                     upload_success = any(keyword in all_text for keyword in ['上传成功', '分辨率', '重新上传', '编辑封面', '已上传', '已选择', '100%'])
-                    
+
                     if not upload_success:
                         # 检查是否有特定的状态码或百分比
                         stage_elements = await preview_new.query_selector_all('div.stage')
@@ -565,11 +600,11 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                             if '上传成功' in text_content or '分辨率' in text_content:
                                 upload_success = True
                                 break
-                    
+
                     if upload_success:
                         xiaohongshu_logger.success(_msg("🥳", "视频已经传完啦"))
                         break
-                    
+
                     if self.debug:
                         normalized_text = all_text.strip().replace("\n", " ")
                         xiaohongshu_logger.debug(_msg("🧍", f"预览区域内容: {normalized_text}"))
@@ -619,12 +654,25 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、视频文件、封面和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "上传前检查通过"))
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
-            permissions=["geolocation"],
-            storage_state=self.account_file,
+
+        # ── Content fingerprint obfuscation (anti-duplicate-detection) ────────
+        obf_path = str(Path(self.file_path).with_suffix("")) + ".obf" + Path(self.file_path).suffix
+        obfuscated = obfuscate_video(self.file_path, obf_path)
+        if obfuscated.exists():
+            self.file_path = str(obfuscated)
+            xiaohongshu_logger.info(_msg("🎭", "视频指纹已混淆，用于对抗平台重复检测"))
+
+        browser = await playwright.chromium.launch(
+            **build_browser_launch_kwargs(headless=self.headless),
         )
-        context = await set_init_script(context)
+        context = await browser.new_context(
+            **build_browser_context_options(
+                "xiaohongshu",
+                account_file=self.account_file,
+                headless=self.headless,
+            ),
+        )
+        context = await apply_anti_detect(context)
 
         try:
             page = await context.new_page()
@@ -684,6 +732,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         for image_path in self.image_paths:
             normalized_image_paths.append(str(self.validate_image_file(image_path)))
         self.image_paths = normalized_image_paths
+        self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def upload_note_content(self, page: Page) -> None:
         xiaohongshu_logger.info(_msg("🏃", f"小人开始搬运图文，共 {len(self.image_paths)} 张图片"))
@@ -742,12 +791,30 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、图片和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "图文上传前检查通过"))
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
-            permissions=["geolocation"],
-            storage_state=self.account_file,
+
+        # ── Image fingerprint obfuscation (anti-duplicate-detection) ──────────
+        obfuscated_images = []
+        for img_path in self.image_paths:
+            p = Path(img_path)
+            obf_path = str(p.with_suffix("")) + ".obf" + p.suffix
+            obf = obfuscate_image(img_path, obf_path)
+            if obf.exists():
+                obfuscated_images.append(str(obf))
+        if obfuscated_images:
+            self.image_paths = obfuscated_images
+            xiaohongshu_logger.info(_msg("🎭", f"{len(obfuscated_images)} 张图片指纹已混淆"))
+
+        browser = await playwright.chromium.launch(
+            **build_browser_launch_kwargs(headless=self.headless),
         )
-        context = await set_init_script(context)
+        context = await browser.new_context(
+            **build_browser_context_options(
+                "xiaohongshu",
+                account_file=self.account_file,
+                headless=self.headless,
+            ),
+        )
+        context = await apply_anti_detect(context)
 
         try:
             page = await context.new_page()

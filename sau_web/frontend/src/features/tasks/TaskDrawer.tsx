@@ -7,14 +7,9 @@ import {
   Badge,
   Button,
   Separator,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/index'
-import { FileText, Loader2, RotateCcw, Terminal } from 'lucide-react'
-import { CliCommandBlock } from '@/components/CliCommand'
+} from '@/Components/ui/index'
+import { FileText, Loader2, RotateCcw } from 'lucide-react'
+import { CliCommandBlock } from '@/Components/CliCommand'
 import { escapeQuotes } from '@/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { api, type TaskItem } from '../../api/client'
@@ -23,6 +18,7 @@ import { formatDateTime, shortenId } from '@/lib/features'
 import { STATUS_META } from './shared'
 import { cn } from '@/lib/utils'
 import { toneTextClass } from '@/lib/tone'
+import { Drawer } from '@/Components/motion/drawer'
 
 const TASKS_QUERY_KEY = ['tasks'] as const
 
@@ -46,23 +42,26 @@ export const TaskDrawer = memo(function TaskDrawer({
   retrying: string | null
 }) {
   return (
-    <Sheet open={taskId !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-[520px] sm:max-w-[520px] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            任务详情
-            {taskId && <TaskStatusBadge taskId={taskId} />}
-          </SheetTitle>
-          <SheetDescription>查看任务的详细信息和运行日志</SheetDescription>
-        </SheetHeader>
-        {taskId && (
-          <div className="mt-4">
-            <RetryButton taskId={taskId} onRetry={onRetry} retrying={retrying} />
-            <TaskDrawerBody taskId={taskId} />
-          </div>
-        )}
-      </SheetContent>
-    </Sheet>
+    <Drawer
+      open={taskId !== null}
+      onOpenChange={(open) => !open && onClose()}
+      className="w-[620px] sm:max-w-[620px] overflow-y-auto"
+      ariaLabel="任务详情"
+    >
+      <div className="flex flex-col space-y-2 text-center sm:text-left">
+        <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+          任务详情
+          {taskId && <TaskStatusBadge taskId={taskId} />}
+        </h2>
+        <p className="text-sm text-muted-foreground">查看任务的详细信息和运行日志</p>
+      </div>
+      {taskId && (
+        <div className="mt-6 space-y-5">
+          <RetryButton taskId={taskId} onRetry={onRetry} retrying={retrying} />
+          <TaskDrawerBody taskId={taskId} />
+        </div>
+      )}
+    </Drawer>
   )
 })
 
@@ -133,7 +132,7 @@ const TaskDrawerBody = memo(function TaskDrawerBody({ taskId }: { taskId: string
       }
     }
     if (task.platform && task.action && task.account) {
-      return `sau ${escapeQuotes(task.platform)} ${escapeQuotes(task.action)} --account "${escapeQuotes(task.account)}"`
+      return `${escapeQuotes(task.platform)} ${escapeQuotes(task.action)} --account "${escapeQuotes(task.account)}"`
     }
     return null
   }, [task])
@@ -184,15 +183,12 @@ const TaskDrawerBody = memo(function TaskDrawerBody({ taskId }: { taskId: string
           <>
             <Separator />
             <div className="space-y-2">
-              <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <Terminal className="h-3.5 w-3.5" />
-                CLI 命令
+              <span className="text-sm text-muted-foreground">
+                执行命令
               </span>
               <CliCommandBlock command={command} className="max-h-[200px]" />
               <p className="text-[10px] text-muted-foreground/60">
-                {task.argv
-                  ? '点击命令区域可复制，用于在终端中手动重试'
-                  : '基础命令预览（完整参数请参考原始提交或任务日志）'}
+                参考命令格式
               </p>
             </div>
           </>
@@ -214,7 +210,7 @@ const TaskDrawerBody = memo(function TaskDrawerBody({ taskId }: { taskId: string
               <Badge variant="secondary">{taskLogs.length} 条</Badge>
               {(task.status === 'pending' || task.status === 'running') && (
                 // Spinner color: --status-info-fg via `@/lib/tone`
-                // (matches the lavender "task in flight" cue used elsewhere).
+                // (the "task in flight" cue used everywhere else).
                 <Loader2 className={cn('h-4 w-4 animate-spin', toneTextClass('info'))} />
               )}
             </div>

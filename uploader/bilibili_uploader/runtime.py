@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import platform
 import shutil
 import stat
@@ -7,7 +8,9 @@ import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
+
 import requests
+
 GITHUB_RELEASE_API = 'https://api.github.com/repos/biliup/biliup/releases/latest'
 
 def get_biliup_runtime_root() -> Path:
@@ -42,7 +45,7 @@ def _select_release_asset(assets: list[dict]) -> dict:
         raise RuntimeError(f'Unsupported biliup platform: {platform_key}')
     for asset in assets:
         asset_name = asset.get('name', '')
-        if any((pattern in asset_name for pattern in patterns)):
+        if any(pattern in asset_name for pattern in patterns):
             return {'asset_name': asset_name, 'asset_url': asset.get('browser_download_url', '')}
     raise RuntimeError(f'No matching biliup release asset found for platform: {platform_key}')
 

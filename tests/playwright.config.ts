@@ -26,7 +26,12 @@ export default defineConfig({
   reporter: process.env['CI'] ? 'line' : 'list',
 
   use: {
-    baseURL: 'http://localhost:5174',
+    // Post-merge the SPA serves both marketing + dashboard from
+    // :5180; :5174 has no Vite listener after `sau_web/site/` was
+    // removed. Every spec in `tests/e2e/` also carries an explicit
+    // `test.use({ baseURL: 'http://localhost:5180' })` override so
+    // the port is self-evident per file (not just chases here).
+    baseURL: 'http://localhost:5180',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -41,12 +46,30 @@ export default defineConfig({
   // terminal so external is faster).
   webServer: process.env['E2E_BOOT_SERVER']
     ? {
-        command: 'bash ../../sau_web/start.sh',
-        url: 'http://localhost:5174',
+        // Playwright resolves webServer.command relative to the config
+        // file's directory (tests/), NOT the shell's cwd at invocation
+        // time. From tests/ the relative path to sau_web/start.sh is
+        // one level up, not two — `../../sau_web/start.sh` would 404
+        // out of the repo root. Use the cwd-relative form here.
+        command: 'bash ../sau_web/start.sh',
+        // Post-merge the SPA serves both marketing + dashboard from
+        // :5180; :5174 has no Vite after sau_web/site/ was removed.
+        url: 'http://localhost:5180',
         reuseExistingServer: false,
         timeout: 120_000,
         stdout: 'ignore',
         stderr: 'pipe',
+        // Inject env vars that the Flask backend needs for E2E tests.
+        // SAU_MOCK_AUTHORIZE=true makes the backend generate synthetic
+        // QR codes so the opt-3m drag-proof test can exercise the full
+        // SSE authorize flow without real platform credentials.
+        // SAU_DB_DIALECT=sqlite avoids the need for a Postgres service
+        // in CI/local — the backend boots against a zero-config SQLite
+        // file, which is sufficient for mocked API tests.
+        env: {
+          SAU_MOCK_AUTHORIZE: 'true',
+          SAU_DB_DIALECT: 'sqlite',
+        },
       }
     : undefined,
 

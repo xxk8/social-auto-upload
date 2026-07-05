@@ -1,0 +1,26 @@
+{
+  "name": "upload-argv-shape-restoration",
+  "created": "2026-06-29T22:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Restore CLI argv shape contract asserted by 30 publish-flow tests in test_sau_web_upload.py (BilibiliUploadVideo, ThumbnailUploadVideo, TencentUploadVideo, CrossPlatform, Schedule, Headless, Desc, MissingField classes).",
+    "tasks": {
+      "total": 6,
+      "completed": 0
+    },
+    "spec": "specs/cli-parsing/spec.md"
+  },
+  "layers": [
+    "api"
+  ],
+  "platforms": [
+    "bilibili",
+    "tencent",
+    "douyin",
+    "kuaishou",
+    "xiaohongshu",
+    "tiktok",
+    "baijiahao"
+  ],
+  "applyReady": false
+}

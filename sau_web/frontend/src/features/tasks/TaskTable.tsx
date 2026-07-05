@@ -15,7 +15,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/index'
+} from '@/Components/ui/index'
 import { BarChart3, Loader2, Plus, RefreshCw } from 'lucide-react'
 import type { TaskItem } from '../../api/client'
 import { TaskTableRow, TaskTableRowSkeleton } from './TaskTableRow'

@@ -4,13 +4,14 @@ from __future__ import annotations
 import json
 import queue as _queue
 import uuid
+from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
-from typing import Generator
 
 from flask import Blueprint, Response, jsonify, request
 
 from web_runner.utils import (
+    _SSE_TIMEOUT_SECONDS,
     DESC_PLATFORMS,
     MIN_UPLOAD_BYTES,
     NOTE_PLATFORMS,
@@ -20,7 +21,6 @@ from web_runner.utils import (
     UPLOADS_DIR,
     _db_get_task,
     _db_insert_task,
-    _db_update_task,
     _headless_flag,
     _new_task_id,
     _normalise_schedule,
@@ -29,8 +29,6 @@ from web_runner.utils import (
     _run_sau,
     _save_data_uri,
     _schedule_task,
-    _store_result,
-    _SSE_TIMEOUT_SECONDS,
     log,
     task_executor,
 )
@@ -147,6 +145,15 @@ def upload_video():
     else:
         _db_insert_task(task_id=task_id, status="pending", platform=platform, action="upload-video", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
         task_executor.submit(_run_sau, task_id, argv)
+    # Log usage for quota tracking
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        from web_runner.routes.auth import _current_user_id
+        uid = _current_user_id()
+        if uid:
+            log_action(uid, "publish")
+    except Exception:
+        pass
     return jsonify({"success": True, "data": {"task_id": task_id}})
 
 
@@ -225,11 +232,25 @@ def upload_note():
     else:
         _db_insert_task(task_id=task_id, status="pending", platform=platform, action="upload-note", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
         task_executor.submit(_run_sau, task_id, argv)
+    # Log usage for quota tracking
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        from web_runner.routes.auth import _current_user_id
+        uid = _current_user_id()
+        if uid:
+            log_action(uid, "publish")
+    except Exception:
+        pass
     return jsonify({"success": True, "data": {"task_id": task_id}})
 
 
 @bp.get("/api/upload/progress")
 def upload_progress_sse():
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
     task_id = request.args.get("task_id", "")
     if not task_id:
         return jsonify({"success": False, "message": "task_id is required"}), 400

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/Components/ui/button'
 import { Compass } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toneBgClass, toneTextClass } from '@/lib/tone'

@@ -7,7 +7,7 @@ import {
   FlaskConical,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { ChipBarVariant } from '@/components/ui/chip-bar'
+import type { ChipBarVariant } from '@/Components/ui/chip-bar'
 
 /**
  * Task-domain types, status meta, and the chip definitions for the status
@@ -35,12 +35,12 @@ export type TaskStatusVariant =
   | 'error'
 
 /** Maps task.status code → friendly label + chip-bar/badge palette variant. */
-export const STATUS_META: Record<string, { variant: TaskStatusVariant; label: string }> = {
+export const STATUS_META: Record<string, { variant: TaskStatusVariant; label: string; icon?: ReactNode }> = {
   pending: { variant: 'secondary', label: '等待中' },
   running: { variant: 'info', label: '执行中' },
   scheduled: { variant: 'warning', label: '定时中' },
-  success: { variant: 'success', label: '成功' },
-  failed: { variant: 'error', label: '失败' },
+  success: { variant: 'success', label: '成功', icon: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> },
+  failed: { variant: 'error', label: '失败', icon: <AlertOctagon className="h-3.5 w-3.5 text-red-500" /> },
   error: { variant: 'error', label: '异常' },
 }
 

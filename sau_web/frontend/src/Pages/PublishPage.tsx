@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { cn } from '@/lib/utils'
-import { Button } from '@/Components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs'
 import { PageHeader } from '@/Components/ui/page-header'
 import { useAccounts, useTasks } from '../hooks/useTasks'
 import { useAccountGroups } from '../hooks/useAccountGroups'
 import { usePublishStore } from '../stores/publishStore'
-import { PublishAiSidebar, MobileAiDrawer } from '@/Components/AiRightPanel'
-import { useMobileDrawer } from '@/hooks/useMobileDrawer'
-import { Image as ImageIcon, Send, Video, Sparkles } from 'lucide-react'
-import { VideoForm, type VideoFormHandle, type PlatformSpecificSection } from '../features/publish/VideoForm'
-import { NoteForm, type NoteFormHandle } from '../features/publish/NoteForm'
+import {
+  usePublishWizardStore,
+  type WizardContent,
+} from '../stores/publishWizardStore'
+import { Send, Sparkles } from 'lucide-react'
+import { Button } from '@/Components/ui/button'
+import { cn } from '@/lib/utils'
+import { effectiveMaxTags } from '@/features/publish/shared.helpers'
 import { PublishSuccessBanner } from '../features/publish/PublishSuccessBanner'
 import { PublishStatsBar } from '../features/publish/PublishStatsBar'
-import { GroupPublishSelector, type GroupSelection } from '../features/publish/GroupPublishSelector'
-import type { FormPreviewData } from '../features/publish/PublishPreview'
+import { PublishWizard } from '../features/publish/wizard/PublishWizard'
+import { PublishAiSidebar } from '../Components/AiRightPanel/PublishAiSidebar'
+import { MobileAiDrawer } from '../Components/AiRightPanel/MobileAiDrawer'
+import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import type { TaskItem } from '@/api/client'
 import type { Tone } from '@/lib/tone'
+import type { AiGenerationResult } from '@/Components/AiSidebar/AiSidebar'
+import type { FormHandle, FormSnapshot } from '@/lib/chat/chatFormBridge'
 
 /**
  * OPT-3F: shared storage key with AppShell's sidebar collapsed state. The
@@ -27,22 +31,7 @@ import type { Tone } from '@/lib/tone'
  * `sau-sidebar-collapsed`); keeping them separate means clearing one
  * leaves the other intact.
  */
-const AI_COLLAPSED_STORAGE_KEY = 'sau-publish-ai-collapsed'
-
-/**
- * OPT-3F: lazy initializer that reads LS once on mount. Wrapped in
- * `typeof window` so SSR / Nitro prerender doesn't throw (the module
- * might also be touched in non-DOM test environments that lack
- * `window`).
- */
-function readAiCollapsedFromStorage(): boolean {
-  if (typeof window === 'undefined') return false
-  try {
-    return window.localStorage.getItem(AI_COLLAPSED_STORAGE_KEY) === 'true'
-  } catch {
-    return false
-  }
-}
+const PUBLISH_AI_COLLAPSED_KEY = 'sau-publish-ai-collapsed'
 
 /**
  * OPT-V-2: derive a single Tone from intersection of `lastTaskIds` and
@@ -79,22 +68,86 @@ function deriveLastTaskTone(tasks: TaskItem[], lastTaskIds: string[]): Tone | nu
 }
 
 /**
+ * OPT-3F: bridge the wizard store to the chat pipeline's `FormHandle`
+ * contract. The wizard owns form state via `usePublishWizardStore`, but
+ * AiSidebar's chat pipeline speaks the same `applyAiResult` /
+ * `getFormSnapshot` API that the (now-orphaned) VideoForm/NoteForm used
+ * to expose via `useImperativeHandle`. Rather than wire the wizard
+ * through `useImperativeHandle` (which would only fire when ContentStep
+ * is mounted — wrong binding for stream-time `getFormSnapshot`), we
+ * expose a single ref whose `current` lazily initialises to a thin
+ * adapter that always reads the freshest store snapshot via
+ * `usePublishWizardStore.getState()`.
+ *
+ * The lazy-init pattern (`if (!formRef.current) formRef.current = ...`)
+ * runs once per mount. Subsequent renders no-op the assignment so the
+ * adapter identity is stable for `useChatActions`'s dep array.
+ *
+ * **Mode-aware `desc` routing**: in video mode the AI's `desc` lands in
+ * `wizard.content.desc`; in note mode it lands in `content.note`. The
+ * router reads `store.mode` at apply time, so a mid-stream mode
+ * toggle routes the apply-side correctly to whichever field the user
+ * is currently editing.
+ *
+ * **Truthy-only writes** (`if (result.title)` etc.) match the contract
+ * VideoForm/NoteForm established: an empty string is treated as "no
+ * change" rather than "clear this field". A user-facing "clear title"
+ * affordance, if ever added, would call `setContent({title: ''})`
+ * directly — it should not leak through this bridge.
+ */
+function useWizardFormHandle(): RefObject<FormHandle | null> {
+  const formRef = useRef<FormHandle | null>(null)
+  if (!formRef.current) {
+    formRef.current = {
+      applyAiResult(result) {
+        const state = usePublishWizardStore.getState()
+        const patch: Partial<WizardContent> = {}
+        if (result.title) patch.title = result.title
+        if (result.tags && result.tags.length > 0) {
+          // Symmetric truncation point with handleApplyVariant:
+          // clamp incoming AI tags to the platform's max so the form
+          // never ends up holding tags a downstream platform will
+          // reject (e.g. 11 tags from chat into a 5-tag platform).
+          const max = effectiveMaxTags(state.groupSelection?.platforms ?? [])
+          patch.tags = max !== undefined ? result.tags.slice(0, max) : result.tags
+        }
+        if (result.desc) {
+          if (state.mode === 'video') patch.desc = result.desc
+          else patch.note = result.desc
+        }
+        if (Object.keys(patch).length > 0) state.setContent(patch)
+      },
+      getFormSnapshot(): FormSnapshot {
+        const state = usePublishWizardStore.getState()
+        return {
+          title: state.content.title,
+          desc: state.mode === 'video' ? state.content.desc : state.content.note,
+          // Path C: native string[] — bridge consumers see array form.
+          tags: state.content.tags,
+        }
+      },
+    }
+  }
+  return formRef
+}
+
+/**
  * Two-column publish-center layout.
  *
- * Below lg (default 1024px): form spans full width, AI assistant is hidden
- * and surfaced via a floating action button → bottom-sheet drawer. We use
- * lg (not md=768) so the form keeps enough horizontal room for its
- * multi-select platform picker, dropzone, and schedule picker.
+ * `<lg` (default 1024px): the wizard spans full width, and the AI
+ * assistant is surfaced via a fixed floating action button (FAB) at
+ * the bottom-right → the FAB opens a `MobileAiDrawer` bottom-sheet
+ * hosting the same `PublishAiSidebar`. We use lg here (not md=768) so
+ * the wizard keeps enough horizontal room for its multi-select
+ * platform picker, dropzone, and schedule picker.
  *
- * lg and up: form takes the left 60%, AI assistant takes the right 40%
- * (resolves to `grid-cols-[3fr_2fr]`). OPT-3F adds `PanelRightClose` →
- * `PanelRightClose` toggle: when collapsed, the AI sidebar becomes a
- * 60px-wide rail (mirroring the main AppShell sidebar's collapsed-rail
- * pattern) and the form stretches to `[1fr_60px]`. State persists to
- * `localStorage['sau-publish-ai-collapsed']` so refresh keeps the
- * user's choice. The preview that used to live in its own aside is
- * now integrated into the AI sidebar as a collapsible section at the
- * bottom of the panel.
+ * `lg+`: CSS Grid `[2fr_3fr]` — wizard left 40% / AI sidebar right 60%.
+ * OPT-3F adds a collapse toggle: when collapsed, the right column shrinks
+ * to a 60px-wide rail (mirroring the main AppShell sidebar's
+ * collapsed-rail pattern) and the form stretches to `[1fr_60px]` (left
+ * takes the remaining space). The
+ * `collapsed` state persists to `localStorage['sau-publish-ai-collapsed']`
+ * so a refresh keeps the user's choice.
  */
 export default function PublishPage() {
   const navigate = useNavigate()
@@ -105,63 +158,64 @@ export default function PublishPage() {
   const submitSuccess = usePublishStore((s) => s.submitSuccess)
   const setLastTaskIds = usePublishStore((s) => s.setLastTaskIds)
   const setSubmitSuccess = usePublishStore((s) => s.setSubmitSuccess)
-
-  // OPT-3F: ai-collapsed state on PublishPage (single source of truth).
-  // Lazy init reads LS once; the syncing useEffect below is the only
-  // writer — it covers both the user-triggered toggle path AND any
-  // out-of-band mutations (devtools "set state", HMR edge cases).
-  // Mobile drawer mirror path stays unaffected (no `collapsed` prop
-  // passed there).
-  const [aiCollapsed, setAiCollapsed] = useState<boolean>(readAiCollapsedFromStorage)
-  const handleToggleAiCollapsed = useCallback(() => {
-    setAiCollapsed((prev) => !prev)
-  }, [])
-  // Single source of LS writes: when `aiCollapsed` flips, mirror it to
-  // LS. Comparing before write avoids unnecessary LS churn.
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(AI_COLLAPSED_STORAGE_KEY)
-      const want = String(aiCollapsed)
-      if (stored !== want) window.localStorage.setItem(AI_COLLAPSED_STORAGE_KEY, want)
-    } catch {
-      // Storage may be denied (private mode, quota); fail silent —
-      // toggling still works for the current session and LS catches up
-      // on the next page load if it succeeds then.
-    }
-  }, [aiCollapsed])
+  const wizardMode = usePublishWizardStore((s) => s.mode)
+  const activePlatform = usePublishWizardStore((s) => s.groupSelection?.platforms[0])
 
   // OPT-V-2: real-time tone for the "最近提交" stats card.
   const lastTaskTone = useMemo(() => deriveLastTaskTone(tasks, lastTaskIds), [tasks, lastTaskIds])
 
-  const [mode, setMode] = useState<'video' | 'note'>('video')
-  const [previewData, setPreviewData] = useState<FormPreviewData>({ title: '', desc: '', tags: '', fileUrls: [], fileType: null })
-  const [groupSelection, setGroupSelection] = useState<GroupSelection | null>(null)
+  // OPT-3F: imperative handles.
+  const formRef = useWizardFormHandle()
+  const { isMobile, isOpen, open, close } = useMobileDrawer()
 
-  const videoFormRef = useRef<VideoFormHandle>(null)
-  const noteFormRef = useRef<NoteFormHandle>(null)
-  // OPT-3I: cancellable auto-navigate. Replaces the previous 1500 ms
-  // one-shot `setTimeout` with a per-second tick so the banner can
-  // surface a countdown ("Xs 后跳转") and a user-clickable 取消
-  // escape hatch. The interval is held in a ref because unmount
-  // cleanup must reach the live setInterval handle; state alone
-  // can't reliably reach into a stale interval.
+  // OPT-3F: AI-sidebar collapsed state with localStorage persistence.
+  // Initialised lazily so SSR environments (and the first responsive
+  // tick before `window` is available) default to `false`. Subsequent
+  // renders re-write `localStorage[...] = 'true' | 'false'` whenever
+  // the user toggles, so reload restores their last choice exactly.
+  const [aiCollapsed, setAiCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return window.localStorage.getItem(PUBLISH_AI_COLLAPSED_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const want = String(aiCollapsed)
+      if (window.localStorage.getItem(PUBLISH_AI_COLLAPSED_KEY) !== want) {
+        window.localStorage.setItem(PUBLISH_AI_COLLAPSED_KEY, want)
+      }
+    } catch {
+      /* private mode / quota — ignore, in-memory state still consistent */
+    }
+  }, [aiCollapsed])
+
+  const handleToggleAiCollapsed = useCallback(() => {
+    setAiCollapsed((v) => !v)
+  }, [])
+
+  /**
+   * User taps "全部应用" on an AI result. Forward to the wizard via the
+   * same FormHandle adapter the chat pipeline uses for auto-apply —
+   * single source of truth for "{title, desc, tags} → wizard.content"
+   * routing keeps manual and auto apply paths observationally identical.
+   */
+  const handleAiGenerated = useCallback((result: AiGenerationResult) => {
+    formRef.current?.applyAiResult(result)
+  }, [])
+
+  // OPT-3I: cancellable auto-navigate countdown (preserved from before
+  // the AI sidebar was dropped). Reset intervals + cleanup on unmount.
   const [navigateCountdown, setNavigateCountdown] = useState<number | null>(null)
   const navigateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const NAVIGATE_AFTER_MS = 4000
   const NAVIGATE_TICK_MS = 1000
 
-  // Mobile bottom-drawer toggle. Above the md breakpoint the inline
-  // PublishAiSidebar takes over and the hook auto-closes the drawer.
-  const { isMobile, isOpen, open, close } = useMobileDrawer()
-
-  /**
-   * Stop the auto-navigate countdown — clear interval, drop the ref,
-   * reset visible countdown to null. Called by the manual-navigate
-   * path AND the cancel button; the navigation itself (when countdown
-   * reaches 0) is handled by a separate useEffect so the setState
-   * updater stays pure.
-   */
   const stopAutoNavigate = useCallback(() => {
     if (navigateIntervalRef.current) {
       clearInterval(navigateIntervalRef.current)
@@ -170,12 +224,6 @@ export default function PublishPage() {
     setNavigateCountdown(null)
   }, [])
 
-  // OPT-3I: when the countdown reaches zero, fire the navigation.
-  // Lives in a useEffect (rather than inside the interval callback)
-  // so the setState updater stays pure and there's exactly one place
-  // that decides "jump to /tasks now". Cancel + manual-navigate both
-  // short-circuit by setting `navigateCountdown` to null first, so
-  // this branch only fires on natural expiry.
   useEffect(() => {
     if (navigateCountdown === 0) {
       stopAutoNavigate()
@@ -183,7 +231,6 @@ export default function PublishPage() {
     }
   }, [navigateCountdown, navigate, stopAutoNavigate])
 
-  // Clear pending interval on unmount.
   useEffect(() => {
     return () => {
       if (navigateIntervalRef.current) clearInterval(navigateIntervalRef.current)
@@ -204,83 +251,9 @@ export default function PublishPage() {
     }, NAVIGATE_TICK_MS)
   }, [stopAutoNavigate])
 
-  /**
-   * OPT-3I: 取消 button handler. Clears the interval + drops
-   * `navigateCountdown` to null, which causes the banner pill to
-   * disappear (`cancelCountdown === null` ⇒ pill hidden). Banner
-   * itself stays because `submitSuccess` is untouched — the user
-   * can still click "查看任务状态" to navigate manually.
-   */
   const handleCancelAutoNavigate = useCallback(() => {
     stopAutoNavigate()
   }, [stopAutoNavigate])
-
-  // OPT-3G: controlled 'advanced' accordion state + per-platform
-  //         section highlight, owned here in PublishPage so
-  //         GroupPublishSelector's pending-platforms chip can drive
-  //         VideoForm's Accordion across the component boundary.
-  //         State is module-local because PublishPage is the only
-  //         tree that owns BOTH children at the same time.
-  const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [highlightedSection, setHighlightedSection] = useState<
-    PlatformSpecificSection | null
-  >(null)
-  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  /**
-   * OPT-3G: handler passed down to GroupPublishSelector's chip.
-   * Opens the advanced Accordion AND pins the highlightedSection ring
-   * on the matching platform for `HIGHLIGHT_MS` so the user can
-   * visually locate where to fill in platform-specific fields.
-   * Auto-clears: a reset-then-restart pattern so rapid double-clicks
-   * still get a fresh full window of highlight time.
-   */
-  const HIGHLIGHT_MS = 3000
-  const handleExpandAdvanced = useCallback(
-    (platform: PlatformSpecificSection) => {
-      setAdvancedOpen(true)
-      setHighlightedSection(platform)
-      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
-      highlightTimerRef.current = setTimeout(() => {
-        setHighlightedSection(null)
-        highlightTimerRef.current = null
-      }, HIGHLIGHT_MS)
-    },
-    [],
-  )
-
-  // Clear pending highlight timer on unmount.
-  useEffect(() => {
-    return () => {
-      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
-    }
-  }, [])
-
-  /**
-   * OPT-3G (R1 review): when the user switches group OR mode, drop the
-   * chip-driven Accordion + ring state. Otherwise:
-   *   - group A has `douyin` selected, user clicks the chip → ring on
-   *     douyin section. User switches to group B that excludes douyin
-   *     → `highlightedSection === 'douyin'` but the matching `<div
-   *     data-section="douyin">` is unmounted; ring is invisible while
-   *     the Accordion stays expanded — the "look here next" promise
-   *     is silently broken.
-   *   - video → note → video would re-open the Accordion simply
-   *     because `advancedOpen` survived the VideoForm unmount.
-   *
-   * Dep tuple `(groupSelection?.groupId, mode)` covers both cases.
-   * Safe on initial mount: setAdvancedOpen(false) is idempotent (the
-   * default), highlightTimerRef.current is null, setHighlightedSection
-   * (null) is idempotent — no spurious UX churn.
-   */
-  useEffect(() => {
-    setAdvancedOpen(false)
-    if (highlightTimerRef.current) {
-      clearTimeout(highlightTimerRef.current)
-      highlightTimerRef.current = null
-    }
-    setHighlightedSection(null)
-  }, [groupSelection?.groupId, mode])
 
   const handleSubmitSuccess = useCallback(
     (info: { count: number; taskIds: string[]; failedCount: number; mode: '视频' | '图文' }) => {
@@ -291,160 +264,100 @@ export default function PublishPage() {
     [setLastTaskIds, setSubmitSuccess, scheduleNavigateAfterSubmit],
   )
 
-  const noopError = useCallback(() => { /* form already toasted */ }, [])
-
-  const handleAiGenerated = useCallback(
-    (result: { title: string; desc: string; tags: string }) => {
-      if (mode === 'video') videoFormRef.current?.applyAiResult(result)
-      else noteFormRef.current?.applyAiResult(result)
-    },
-    [mode],
-  )
-
-  const handleFormChange = useCallback((data: FormPreviewData) => {
-    setPreviewData(data)
-  }, [])
-
   return (
-    <div className="p-6">
-      <PageHeader
-        title="发布中心"
-        description="发布视频或图文到多个平台"
-        icon={<Send className="h-5 w-5 text-muted-foreground" />}
-      />
+    <div className="flex flex-col h-full p-3 sm:p-6 overflow-x-hidden min-w-0 max-w-[1600px] mx-auto w-full">
+      {/* ── Fixed header section (flex-shrink-0) ──────────────────── */}
+      <div className="flex-shrink-0">
+        <PageHeader
+          title="发布中心"
+          description="发布视频或图文到多个平台"
+          icon={<Send className="h-5 w-5 text-muted-foreground" />}
+        />
 
-      <PublishSuccessBanner
-        info={submitSuccess}
-        onGoToTasks={handleGoToTasks}
-        cancelCountdown={navigateCountdown}
-        onCancelAutoNavigate={handleCancelAutoNavigate}
-      />
+        <PublishSuccessBanner
+          info={submitSuccess}
+          onGoToTasks={handleGoToTasks}
+          cancelCountdown={navigateCountdown}
+          onCancelAutoNavigate={handleCancelAutoNavigate}
+        />
 
-      <PublishStatsBar
-        accountCount={accountOptions.length}
-        lastTaskIds={lastTaskIds}
-        lastTaskTone={lastTaskTone}
-        onRefresh={() => void refetchAccounts()}
-      />
-
-      {/* ── Main content: form + AI sidebar (60/40 split at lg+) ──
-       *
-       * OPT-3F: `lg:grid-cols-[3fr_2fr]` when expanded; flips to
-       * `lg:grid-cols-[1fr_60px]` when collapsed so the form
-       * stretches and the AI panel becomes the 60px rail. Under lg
-       * (mobile), both classes collapse to single-column via the
-       * already-existing `grid-cols-1` base; the rail is desktop-only
-       * (MobileAiDrawer path doesn't receive `collapsed`). */}
-      <div
-        className={cn(
-          'mt-6 grid gap-6 grid-cols-1',
-          aiCollapsed ? 'lg:grid-cols-[1fr_60px]' : 'lg:grid-cols-[3fr_2fr]',
-        )}
-      >
-        {/* Left: form */}
-        <div className="min-w-0">
-          <Tabs
-            value={mode}
-            onValueChange={(v) => {
-              setMode(v as 'video' | 'note')
-              setGroupSelection(null)
-            }}
-          >
-            <TabsList className="w-full grid grid-cols-2 mb-4">
-              <TabsTrigger value="video" className="gap-2 transition-colors duration-150 data-[state=active]:bg-card/80 data-[state=active]:shadow-sm">
-                <Video className="h-4 w-4" />
-                发布视频
-              </TabsTrigger>
-              <TabsTrigger value="note" className="gap-2 transition-colors duration-150 data-[state=active]:bg-card/80 data-[state=active]:shadow-sm">
-                <ImageIcon className="h-4 w-4" />
-                发布图文
-              </TabsTrigger>
-            </TabsList>
-
-            {/* ── Group selector ──── */}
-            <GroupPublishSelector
-              groups={groups}
-              mode={mode}
-              value={groupSelection}
-              onChange={setGroupSelection}
-              onExpandAdvanced={handleExpandAdvanced}
-            />
-
-            <div className="mt-4">
-              <TabsContent value="video" className="mt-0 data-[state=inactive]:hidden">
-                <VideoForm
-                  ref={videoFormRef}
-                  groupSelection={groupSelection}
-                  onSuccess={handleSubmitSuccess}
-                  onError={noopError}
-                  onFormChange={handleFormChange}
-                  advancedOpen={advancedOpen}
-                  onAdvancedChange={setAdvancedOpen}
-                  highlightedSection={highlightedSection}
-                />
-              </TabsContent>
-              <TabsContent value="note" className="mt-0 data-[state=inactive]:hidden">
-                <NoteForm
-                  ref={noteFormRef}
-                  groupSelection={groupSelection}
-                  onSuccess={handleSubmitSuccess}
-                  onError={noopError}
-                  onFormChange={handleFormChange}
-                />
-              </TabsContent>
-            </div>
-          </Tabs>
-        </div>
-
-        {/* Right (lg+): sticky AI sidebar with collapsible preview.
-         * OPT-3F: when `aiCollapsed`, the PublishAiSidebar renders its
-         * own rail UI (the 60px-wide vertical strip) — no extra Card
-         * wrap needed here. */}
-        <div className="hidden lg:block lg:sticky lg:top-6 lg:self-start">
-          <div className="h-[calc(100vh-9rem)] min-h-[480px] flex flex-col">
-            <PublishAiSidebar
-              mode={mode}
-              platform={groupSelection?.platforms[0] ?? ''}
-              onGenerated={handleAiGenerated}
-              previewMode={mode}
-              previewData={previewData}
-              formRef={mode === 'video' ? videoFormRef : noteFormRef}
-              collapsed={aiCollapsed}
-              onToggleCollapsed={handleToggleAiCollapsed}
-            />
-          </div>
-        </div>
+        <PublishStatsBar
+          accountCount={accountOptions.length}
+          lastTaskIds={lastTaskIds}
+          lastTaskTone={lastTaskTone}
+          onRefresh={() => void refetchAccounts()}
+        />
       </div>
 
-      {/* ── Mobile (<lg): floating action button + drawer ─────────────
-       *
-       * Mobile drawer path deliberately does NOT pass `collapsed` /
-       * `onToggleCollapsed` because:
-       *   1. The bottom-drawer already gives a mobile-native "expand"
-       *      affordance — a 60px rail inside a drawer would be UX noise.
-       *   2. The state lives on PublishPage (so it survives a
-       *      desktop↔mobile viewport switch), but only the desktop
-       *      grid branch consumes it. */}
+      {/* ── Two-column layout: wizard + AI sidebar on lg+ ──────────
+          `flex-1 min-h-0` lets this area fill remaining height and
+          scroll independently — the page no longer scrolls as a whole. */}
+      <div
+        data-testid="publish-grid-container"
+        className={cn(
+          // Default `items-stretch` (no override) so the wizard column
+          // and the AI aside both fill the grid's row track height —
+          // their visible cards (wizard's Card chrome on the left, the
+          // AI sidebar's `rounded-xl border bg-card/50 shadow-sm` on
+          // the right) end at the same y-coordinate. Previously
+          // `items-start` left each item at its natural content height,
+          // which made the wizard card visibly shorter than the AI
+          // sidebar once the latter got explicitly `h-full` from the
+          // OPT-3F rewire.
+          'mt-4 sm:mt-6 flex-1 min-h-0 grid gap-4 sm:gap-6 overflow-y-auto',
+          aiCollapsed
+            ? 'lg:grid-cols-[1fr_60px]'
+            : 'lg:grid-cols-[2fr_3fr]',
+        )}
+      >
+        <div className="flex h-full flex-col gap-4 min-w-0 min-h-0">
+          <PublishWizard
+            groups={groups}
+            onSubmit={handleSubmitSuccess}
+          />
+        </div>
+
+        <aside
+          className="hidden lg:block sticky top-0 self-start h-full min-w-0"
+          aria-label="AI 助手"
+        >
+          <PublishAiSidebar
+            mode={wizardMode}
+            platform={activePlatform}
+            onGenerated={handleAiGenerated}
+            formRef={formRef}
+            collapsed={aiCollapsed}
+            onToggleCollapsed={handleToggleAiCollapsed}
+          />
+        </aside>
+      </div>
+
+      {/* ── Mobile (<lg): floating action button + bottom-sheet drawer ──
+          Conditional on `isMobile` rather than relying on `lg:hidden` CSS
+          alone — testing-library doesn't simulate viewport widths, so a
+          `data-testid="mobile-ai-trigger"` element must be a true
+          semantic signal of "FAB exists", not a CSS-hidden ghost node.
+          Above lg the right-column PublishAiSidebar takes over and the
+          drawer is dormant; useMobileDrawer auto-collapses `isOpen`
+          if the user resizes from mobile into desktop so no two panels
+          fight. */}
       {isMobile && (
         <Button
-          onClick={open}
-          size="lg"
-          className="fixed bottom-4 right-4 z-40 h-11 rounded-full px-4 shadow-lg shadow-primary/25"
           data-testid="mobile-ai-trigger"
+          onClick={open}
           aria-label="打开 AI 助手"
+          className="fixed bottom-20 right-6 z-30 h-14 w-14 rounded-full shadow-lg bg-primary text-primary-foreground hover:bg-primary/90"
         >
-          <Sparkles className="h-4 w-4 mr-1.5" />
-          AI 助手
+          <Sparkles className="h-6 w-6" />
         </Button>
       )}
-      <MobileAiDrawer open={isMobile && isOpen} onClose={close}>
+
+      <MobileAiDrawer open={isOpen} onClose={close}>
         <PublishAiSidebar
-          mode={mode}
-          platform={groupSelection?.platforms[0] ?? ''}
+          mode={wizardMode}
+          platform={activePlatform}
           onGenerated={handleAiGenerated}
-          previewMode={mode}
-          previewData={previewData}
-          formRef={mode === 'video' ? videoFormRef : noteFormRef}
+          formRef={formRef}
         />
       </MobileAiDrawer>
     </div>

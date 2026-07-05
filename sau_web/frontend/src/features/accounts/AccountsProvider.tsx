@@ -1,16 +1,15 @@
+/* eslint-disable react-refresh/only-export-components */
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type Dispatch,
   type ReactNode,
-  type SetStateAction,
 } from 'react'
-import { createContext, useContext } from 'react'
 import { arrayMove } from '@dnd-kit/helpers'
-import { useToast } from '@/components/ui/toast'
+import { useToast } from '@/Components/ui/toast'
+export { useAccountsState, useAccountsDispatch, validateGroupName } from './AccountsProvider.helpers'
 import { api, PLATFORMS, type AccountGroup } from '@/api/client'
 import {
   useAccountGroups,
@@ -21,113 +20,27 @@ import {
   useReorderAuthorizations,
   useRenameAccountGroup,
 } from '@/hooks/useAccountGroups'
+import {
+  validateGroupName,
+  AccountsStateCtx,
+  AccountsDispatchCtx,
+  type AccountsState,
+  type AccountsDispatch,
+  type DragEndEvent,
+} from './AccountsProvider.helpers'
 
 // ── Drag-end id prefixes — discriminates group vs auth drags under one
 //    single-root DragDropProvider.
 const GROUP_ID_PREFIX = 'group:'
 const AUTH_ID_PREFIX = 'auth:'
 
-// ── Group-name validation (mirrors backend `_validate_group_name`) ────────
-const _FORBIDDEN_NAME_RE = /[/\\:*?"<>|\x00-\x1F\x7F]/
-const _NAME_MAX_LEN = 64
-
-export type GroupNameValidation =
-  | { ok: true; cleaned: string }
-  | { ok: false; message: string }
-
-export function validateGroupName(value: unknown): GroupNameValidation {
-  if (typeof value !== 'string') return { ok: false, message: '分组名不能为空' }
-  const cleaned = value.trim()
-  if (!cleaned) return { ok: false, message: '分组名不能为空' }
-  if (cleaned.length > _NAME_MAX_LEN) {
-    return { ok: false, message: `分组名长度不能超过 ${_NAME_MAX_LEN} 个字符` }
-  }
-  if (_FORBIDDEN_NAME_RE.test(cleaned)) {
-    return { ok: false, message: '分组名包含不允许的字符（/\\:*?"<>|）' }
-  }
-  return { ok: true, cleaned }
-}
-
-// ── Drag-end event shape used by GroupGridArea + SortableAuthorizationItem. ──
-type DragEndEvent = {
-  operation: {
-    target: { id: string | number } | null
-    source: { id: string | number } | null
-  }
-}
-
-// ── State context (values that change on render / server updates) ────────
-// NOTE: React Query useMutation objects are intentionally NOT passed
-// through context — they return new object identities on every render,
-// which destabilises useMemo deps and triggers "Maximum update depth
-// exceeded".  Instead we expose only the primitive isPending flags that
-// consumers need for loading spinners / button-disabled state.
-export type AccountsState = {
-  groups: AccountGroup[]
-  isLoading: boolean
-  refetch: () => void
-
-  isCreatePending: boolean
-  isRenamePending: boolean
-  isReorderInFlight: boolean
-
-  localGroups: AccountGroup[]
-  filteredGroups: AccountGroup[]
-
-  searchQuery: string
-  validityFilter: 'all' | 'valid' | 'invalid'
-  viewMode: 'grid' | 'list'
-  selectedIds: Set<number>
-
-  newGroupName: string
-  createDialogOpen: boolean
-  batchDeleteOpen: boolean
-  authorizeDialogOpen: boolean
-  renameDialogOpen: boolean
-  renameDialogGroupId: number | null
-  renameDialogCurrentName: string
-  selectedGroupId: number | null
-  selectedPlatform: string
-  loginModalOpen: boolean
-
-  isCheckingStatus: boolean
-}
-
-// ── Dispatch context ─────────────────────────────────────────────────────
-export type AccountsDispatch = {
-  setSearchQuery: (q: string) => void
-  setValidityFilter: Dispatch<SetStateAction<'all' | 'valid' | 'invalid'>>
-  setViewMode: Dispatch<SetStateAction<'grid' | 'list'>>
-  setSelectedIds: Dispatch<SetStateAction<Set<number>>>
-  setNewGroupName: (n: string) => void
-  setCreateDialogOpen: (o: boolean) => void
-  setBatchDeleteOpen: (o: boolean) => void
-  setAuthorizeDialogOpen: (o: boolean) => void
-  setSelectedPlatform: (p: string) => void
-  setLoginModalOpen: (o: boolean) => void
-  setRenameDialogOpen: (o: boolean) => void
-
-  handleDragStart: () => void
-  handleDragEnd: (event: DragEndEvent) => void
-
-  handleSelectGroup: (id: number, checked: boolean) => void
-  handleSelectAll: () => void
-  handleBatchDelete: () => Promise<void>
-  handleCreateGroup: () => Promise<void>
-  handleDeleteGroup: (groupId: number, name: string) => Promise<void>
-  handleStartRename: (groupId: number, currentName: string) => void
-  handleRename: (groupId: number, newName: string) => Promise<void>
-  handleStartAuthorize: (groupId: number) => void
-  handleAuthorize: () => void
-  handleRemoveAuth: (groupId: number, platform: string) => Promise<void>
-  handleClearSearch: () => void
-  handleCheckAllStatus: () => Promise<void>
-
-  getPlatformLabel: (value: string) => string
-}
-
-const AccountsStateCtx = createContext<AccountsState | null>(null)
-const AccountsDispatchCtx = createContext<AccountsDispatch | null>(null)
+// OPT-follow-up-3-sweep-2: `validateGroupName`, `GroupNameValidation`,
+// `useAccountsState`, `useAccountsDispatch`, the `AccountsState` /
+// `AccountsDispatch` / `DragEndEvent` types, the `AccountsStateCtx` /
+// `AccountsDispatchCtx` React context objects, and the local
+// `_FORBIDDEN_NAME_RE` / `_NAME_MAX_LEN` consts moved to
+// `./AccountsProvider.helpers.ts`. This file's only remaining top-level
+// export is the `<AccountsProvider>` component.
 
 const _EMPTY_GROUPS: AccountGroup[] = []
 
@@ -261,10 +174,10 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     let result = localGroups
     if (safeValidityFilter === 'valid') {
       result = result.filter(
-        (g) => g.authorizations.length > 0 && g.authorizations.every((a) => a.valid),
+        (g) => g.authorizations.length > 0 && g.authorizations.every((a) => a.valid && !a.stale),
       )
     } else if (safeValidityFilter === 'invalid') {
-      result = result.filter((g) => g.authorizations.some((a) => !a.valid))
+      result = result.filter((g) => g.authorizations.some((a) => !a.valid || a.stale))
     }
 
     const query = searchQuery.trim().toLowerCase()
@@ -542,14 +455,20 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       if (res.success && res.data) {
         const total = res.data.length
         const valid = res.data.filter((d) => d.quick?.valid === true).length
+        const stale = res.data.filter((d) => d.quick?.stale === true).length
         const invalid = total - valid
         if (total === 0) {
           addToast('当前没有可检测的授权账号', 'info')
-        } else if (invalid === 0) {
+        } else if (invalid === 0 && stale === 0) {
           addToast(`已检测 ${total} 个授权，全部有效`, 'success')
+        } else if (invalid === 0 && stale > 0) {
+          addToast(
+            `已检测 ${total} 个授权：${valid - stale} 个有效，${stale} 个 Cookie 过期，请刷新`,
+            'warning',
+          )
         } else {
           addToast(
-            `已检测 ${total} 个授权：${valid} 个有效，${invalid} 个失效，请重新登录`,
+            `已检测 ${total} 个授权：${valid - stale} 个有效，${stale} 个过期，${invalid} 个失效`,
             'warning',
           )
         }
@@ -671,16 +590,4 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       <AccountsStateCtx.Provider value={state}>{children}</AccountsStateCtx.Provider>
     </AccountsDispatchCtx.Provider>
   )
-}
-
-export function useAccountsState(): AccountsState {
-  const ctx = useContext(AccountsStateCtx)
-  if (!ctx) throw new Error('useAccountsState must be used inside <AccountsProvider>')
-  return ctx
-}
-
-export function useAccountsDispatch(): AccountsDispatch {
-  const ctx = useContext(AccountsDispatchCtx)
-  if (!ctx) throw new Error('useAccountsDispatch must be used inside <AccountsProvider>')
-  return ctx
 }

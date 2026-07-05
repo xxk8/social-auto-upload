@@ -19,6 +19,14 @@
   - ✅ 已落地
   - ❌ 不做（说明理由）
 
+## Why this exists
+
+Web Shell 在发布中心 + 整体 UI 上仍有未被 pursuit 落实的细节(A11y、视觉一致性、移动端、信息密度等)。 本文是 PR 评审时的 reference surface:每条都带 ID + 现状 + 位置 + 建议 + 验收 + PR 拆分,reviewer 看到对应 ID 就能直接定位问题并把它们归到某个 PR-OPT-N 序列。 与 `docs/dev/VALUE-UPGRADE.md`(已落地的 quick-win polish)互补 — 本文讲"未做但应当做",`VALUE-UPGRADE`讲"已做的 polish"。
+
+## Prereqs
+
+假设 reader 已在 dev 模式跑起 Web Shell(`localhost:5180`) + Backend(`localhost:6001`);已读过 `docs/web-shell.md` + `docs/install.md`;熟悉 React + Tailwind CSS + shadcn/ui 形态(对应 `docs/dev/FRONTEND-UI-UPGRADE.md`)。 本文档中的 ID(V-1…V-5 / D / E / F / G / H / I / J / K / N)都是 `src/features/publish/PublishStatsBar.tsx` 等具体组件所在的 source-of-truth file:line 锚点,reviewer 按 ID 搜就能定位。
+
 ## 推荐落地顺序概览
 
 | 阶段 | 涉及 ID | 预估工作量 | 期望收益 |
@@ -426,3 +434,7 @@
 | 提交后取消自动跳转 | OPT-3I | `tests/e2e/opt-3i-cancel-navigate.spec.ts` |
 
 运行要求：Web Shell 已启动（`bash sau_web/start.sh`）；在 `sau_web/frontend/` 下 `pnpm e2e`。 可选 `E2E_BOOT_SERVER=1 pnpm e2e` 让 Playwright 自己拉起服务。
+
+## Cross-references
+
+- **Hub**: [docs/dev/INDEX.md#contributors](docs/dev/INDEX.md#contributors) — Contributors (writing code, merging PRs).

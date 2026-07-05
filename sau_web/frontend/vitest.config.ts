@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'happy-dom',
+    environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
@@ -20,9 +20,12 @@ export default defineConfig({
     // collection of plain `.test.ts` files under `src/features/` etc.,
     // which would route through the React plugin pipeline needlessly.
     include: ['src/lib/**/*.test.ts', 'src/**/*.test.tsx'],
-    // The form components import many Radix-based ui primitives that
-    // happy-dom can't fully simulate — we mock these via vi.mock in
-    // the test files themselves so each file controls its scope.
+    // jsdom 需要这些 polyfill 来支持常见浏览器 API
+    environmentOptions: {
+      jsdom: {
+        url: 'http://localhost',
+      },
+    },
     server: {
       deps: {
         inline: [/motion/, /@radix-ui/],

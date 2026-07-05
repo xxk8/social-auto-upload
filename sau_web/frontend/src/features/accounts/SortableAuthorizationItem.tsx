@@ -2,17 +2,16 @@ import { memo } from 'react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { GripVertical, MoreHorizontal, Unlink } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/Components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@/Components/ui/dropdown-menu'
 import { PlatformBadge } from './PlatformBadge'
 import type { AccountAuthorization } from '@/api/client'
-import { useAccountsDispatch } from './AccountsProvider'
-import { toneChipClasses, toneFillBgClass, type Tone } from '@/lib/tone'
+import {useAccountsDispatch} from './AccountsProvider.helpers';import { toneChipClasses, toneFillBgClass, type Tone } from '@/lib/tone'
 
 interface SortableAuthorizationItemProps {
   auth: AccountAuthorization
@@ -20,21 +19,26 @@ interface SortableAuthorizationItemProps {
   groupId: number
 }
 
-function AuthorizationStatusPill({ valid }: { valid: boolean }) {
-  // Drive the chip's tone from the `valid` flag. Valid → success (mint),
-  // Invalid → warning (amber) so the row reads as "needs attention"
-  // rather than "broken" (kept amber to preserve the prior visual signal
-  // — expiry isn't necessarily a fatal failure).
-  const tone: Tone = valid ? 'success' : 'warning'
+function AuthorizationStatusPill({ valid, stale, ageHours }: { valid: boolean; stale?: boolean; ageHours?: number | null }) {
+  // Three-band visual state:
+  //   valid && !stale  → success (mint) "有效"
+  //   valid && stale   → warning (amber) "过期" (cookie content expired)
+  //   !valid           → warning (amber) "失效" (file missing / broken)
+  const tone: Tone = valid && !stale ? 'success' : 'warning'
+  const label = !valid ? '失效' : stale ? '过期' : '有效'
+  const title = stale && ageHours != null
+    ? `Cookie 已过期 (${Math.round(ageHours)} 小时前刷新，需 24 小时内)`
+    : undefined
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap',
         toneChipClasses(tone),
       )}
+      title={title}
     >
       <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', toneFillBgClass(tone))} />
-      {valid ? '有效' : '失效'}
+      {label}
     </span>
   )
 }
@@ -88,7 +92,7 @@ function SortableAuthorizationItemImpl({
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
-        <AuthorizationStatusPill valid={auth.valid} />
+        <AuthorizationStatusPill valid={auth.valid} stale={auth.stale} ageHours={auth.age_hours} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogContent } from '@/Components/ui/dialog'
 import { useTasks } from '@/hooks/useTasks'
 import { cn } from '@/lib/utils'
 import { toneChipClasses, type Tone } from '@/lib/tone'

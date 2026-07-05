@@ -23,22 +23,29 @@ import { test, expect } from '@playwright/test'
  * fixtures the vitest tests already rely on.
  */
 test.describe('OPT-3F · AI sidebar collapse + LS persistence', () => {
-  test.beforeEach(async ({ page, context }) => {
+  // Explicit `test.use({ baseURL: 'http://localhost:5180' })` —
+  // mirrors the global `use.baseURL` already set in
+  // `playwright.config.ts`. Kept per-spec so every e2e spec in
+  // tests/e2e/ is self-contained about which port it targets,
+  // independent of any future global-config flip. Pre-merge this
+  // spec was authored against :5174 (the standalone marketing
+  // Vite, since removed via `sau_web/site/` deletion); post-merge
+  // :5180 is the merged SPA port serving both marketing + dashboard.
+  test.use({ baseURL: 'http://localhost:5180' })
+
+  test.beforeEach(async ({ page }) => {
     await mockShellApis(page)
-    // Clear storage from any prior run so we start in a known
-    // expanded state on every fresh test.
-    await context.clearCookies()
-    await page.addInitScript(() => {
-      try {
-        window.localStorage.clear()
-      } catch {
-        /* private mode — ignore */
-      }
-    })
+    // Playwright provides a fresh context per test (no storageState
+    // configured), so localStorage is already clean. Do NOT use
+    // addInitScript to clear LS — it fires on every page load
+    // including page.reload(), which breaks LS-persistence tests.
   })
 
   test('collapse → LS flips → reload restores collapsed rail', async ({ page }) => {
-    await page.goto('/publish')
+    // Navigate directly to /app/publish (the canonical route).
+    // /publish is a legacy shim that Navigates → /app/publish;
+    // going direct avoids the extra redirect tick.
+    await page.goto('/app/publish')
 
     // Sanity: expanded panel renders the close button + the panel
     // region id we anchor assertions on.
@@ -85,25 +92,54 @@ test.describe('OPT-3F · AI sidebar collapse + LS persistence', () => {
  * we exercise elsewhere are not reachable on this spec — by design.
  */
 async function mockShellApis(page: import('@playwright/test').Page) {
-  await page.route('**/api/account-groups', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([]),
-    }),
+  // Auth mock — needed for AuthGuard to flip isAuthenticated
+  // so the PublishPage (behind /app/* → AppShell) can mount.
+  // Function predicates: unambiguous pathname matching handles
+  // the axios _t=timestamp query param correctly.
+  await page.route(
+    (url) => url.pathname === '/api/auth/me',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { user: { id: 1, email: 'qa@example.com', role: 'admin', created_at: '2026-01-01T00:00:00Z', last_login: '2026-06-26T00:00:00Z' } } }),
+      }),
   )
-  await page.route('**/api/tasks', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([]),
-    }),
+  await page.route(
+    (url) => url.pathname === '/api/account-groups',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [] }),
+      }),
   )
-  await page.route('**/api/accounts', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([]),
-    }),
+  await page.route(
+    (url) => url.pathname === '/api/tasks',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [] }),
+      }),
+  )
+  await page.route(
+    (url) => url.pathname === '/api/accounts',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [] }),
+      }),
+  )
+
+  // Catch-all for unmocked /api/* endpoints — prevents connection-refused
+  // errors from triggering 3× axios retries (~7 s per unmocked call).
+  // Returns data:[] (empty array) — safe for hooks that destructure
+  // with `res.data ?? []` and call .map()/.some()/.length on the result.
+  await page.route(
+    (url) => url.pathname.startsWith('/api/') && !['/api/auth/me', '/api/account-groups', '/api/tasks', '/api/accounts'].includes(url.pathname),
+    (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
   )
 }

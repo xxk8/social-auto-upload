@@ -14,7 +14,7 @@ import {
 import { AddUrlForm } from './AddUrlForm'
 import { useMaterialPanelStore } from '@/stores/materialPanelStore'
 import { useMaterialAutoRecommend } from '@/hooks/useMaterialAutoRecommend'
-import { aiApi, type NormalizedImage } from '@/api/ai'
+import { type NormalizedImage } from '@/api/ai'
 import { useToast } from '@/Components/ui/toast'
 import { Camera, ImageOff, Sparkles, Send } from 'lucide-react'
 import { Input } from '@/Components/ui/input'

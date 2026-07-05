@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/Components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -7,9 +7,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from '@/Components/ui/dialog'
+import { Input } from '@/Components/ui/input'
+import { Label } from '@/Components/ui/label'
 import { Loader2 } from 'lucide-react'
 import { useAccountsDispatch, useAccountsState, validateGroupName } from '../AccountsProvider'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,7 @@ export function GroupRenameDialog() {
   const dispatch = useAccountsDispatch()
 
   const [newName, setNewName] = useState(state.renameDialogCurrentName)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (state.renameDialogOpen) setNewName(state.renameDialogCurrentName)
   }, [state.renameDialogOpen, state.renameDialogCurrentName])
@@ -46,8 +47,10 @@ export function GroupRenameDialog() {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <Label>新名称</Label>
+          <Label htmlFor="group-rename-name">新名称</Label>
           <Input
+            id="group-rename-name"
+            name="name"
             placeholder="例如：主账号、工作号"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}

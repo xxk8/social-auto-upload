@@ -1,0 +1,111 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - img [ref=e7]
+        - generic [ref=e9]:
+          - generic [ref=e10]: SAU Shell
+          - generic [ref=e11]: Social Auto Upload
+        - button "Collapse sidebar" [ref=e12]:
+          - img [ref=e13]
+      - navigation [ref=e19]:
+        - generic [ref=e20]: 导航
+        - generic [ref=e21]:
+          - link "账号管理" [ref=e22] [cursor=pointer]:
+            - /url: /
+            - img [ref=e23]
+            - generic [ref=e28]: 账号管理
+          - link "发布中心" [ref=e29] [cursor=pointer]:
+            - /url: /publish
+            - img [ref=e31]
+            - generic [ref=e34]: 发布中心
+          - link "任务列表" [ref=e35] [cursor=pointer]:
+            - /url: /tasks
+            - img [ref=e36]
+            - generic [ref=e38]: 任务列表
+          - link "运行日志" [ref=e39] [cursor=pointer]:
+            - /url: /logs
+            - img [ref=e40]
+            - generic [ref=e43]: 运行日志
+      - generic [ref=e45]:
+        - generic [ref=e47]: S
+        - generic [ref=e48]:
+          - generic [ref=e49]: SAU Admin
+          - generic [ref=e50]: v1.0.0
+        - button "重新引导" [ref=e51]:
+          - img [ref=e52]
+          - generic [ref=e55]: 重新引导
+        - button "切换到深色模式" [ref=e56]:
+          - img
+    - generic [ref=e57]:
+      - banner [ref=e58]:
+        - button "搜索 ⌘K" [ref=e59]:
+          - img
+          - generic [ref=e60]: 搜索
+          - generic [ref=e61]: ⌘K
+      - main [ref=e62]:
+        - generic [ref=e63]:
+          - generic [ref=e65]:
+            - img [ref=e68]
+            - generic [ref=e71]:
+              - heading "发布中心" [level=1] [ref=e72]
+              - paragraph [ref=e73]: 发布视频或图文到多个平台
+          - generic [ref=e74]:
+            - generic [ref=e75]:
+              - img [ref=e77]
+              - generic [ref=e82]:
+                - paragraph [ref=e83]: "0"
+                - paragraph [ref=e84]: 可用账号
+            - generic [ref=e85]:
+              - img [ref=e87]
+              - generic [ref=e91]:
+                - paragraph [ref=e92]: "7"
+                - paragraph [ref=e93]: 支持平台
+            - generic [ref=e94]:
+              - img [ref=e96]
+              - generic [ref=e98]:
+                - paragraph [ref=e100]: —
+                - paragraph [ref=e101]: 最近提交
+              - button "刷新账号列表" [ref=e102]:
+                - img
+          - generic [ref=e103]:
+            - generic [ref=e105]:
+              - tablist [ref=e106]:
+                - tab "发布视频" [selected] [ref=e107]
+                - tab "发布图文" [ref=e111]
+              - generic [ref=e117]:
+                - generic [ref=e119]
+                - generic [ref=e127]
+              - tabpanel "发布视频" [ref=e132]:
+                - generic [ref=e135]
+                - heading "高级选项" [level=3] [ref=e171]
+                - generic [ref=e181]
+            - generic [ref=e186]:
+              - generic [ref=e187]:
+                - generic [ref=e188]
+                - generic [ref=e193]: ·
+                - generic [ref=e194]
+              - generic [ref=e200]:
+                - img [ref=e203]
+                - generic [ref=e212]
+                - generic [ref=e227]
+                - generic [ref=e232]
+                - generic [ref=e243]
+                - paragraph [ref=e247]: AI 生成内容仅供参考，请根据实际情况调整后再发布
+              - button "内容预览" [ref=e249]:
+                - generic [ref=e250]
+                - generic [ref=e252]
+  - generic [ref=e253]:
+    - generic [ref=e254]:
+      - generic [ref=e255]:
+        - img [ref=e256]
+        - generic [ref=e259]: 运行日志
+        - generic [ref=e260]: "0"
+      - generic [ref=e261]:
+        - textbox "过滤..." [ref=e262]
+        - button "Minimize logs" [ref=e263]:
+          - img
+        - button "Close logs" [ref=e264]:
+          - img
+    - generic [ref=e269]: 暂无日志
+    - img [ref=e271]

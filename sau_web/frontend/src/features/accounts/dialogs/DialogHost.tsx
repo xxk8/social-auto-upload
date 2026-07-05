@@ -1,8 +1,11 @@
 import { useCallback } from 'react'
-import { LoginProgressModal } from '@/components/LoginProgressModal'
+import { LoginProgressModal } from '@/Components/LoginProgressModal'
+import {
+  BatchDeleteGroupConfirm,
+  type GroupSummary,
+} from '@/features/confirmDialog'
 import { useAccountsDispatch, useAccountsState } from '../AccountsProvider'
 import { AuthorizeDialog } from './AuthorizeDialog'
-import { BatchDeleteDialog } from './BatchDeleteDialog'
 import { CreateGroupDialog } from './CreateGroupDialog'
 import { GroupRenameDialog } from './GroupRenameDialog'
 
@@ -28,7 +31,18 @@ export function DialogHost() {
 
   return (
     <>
-      <BatchDeleteDialog />
+      {/* Round-OPT-prefs-dialog v7: BatchDeleteDialog →
+          BatchDeleteGroupConfirm (slice-owned). The
+          `as ReadonlyArray<GroupSummary>` cast is the single
+          boundary point — the dumb body only reads `id` +
+          `name` + `authorizations.length`. */}
+      <BatchDeleteGroupConfirm
+        selectedIds={state.selectedIds}
+        groups={state.groups as ReadonlyArray<GroupSummary>}
+        open={state.batchDeleteOpen}
+        onOpenChange={dispatch.setBatchDeleteOpen}
+        onConfirm={() => void dispatch.handleBatchDelete()}
+      />
       <CreateGroupDialog />
       <AuthorizeDialog />
       <GroupRenameDialog />

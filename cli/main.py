@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from cli.dispatchers import dispatch
 from cli.parser import build_parser

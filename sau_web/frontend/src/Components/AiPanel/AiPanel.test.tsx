@@ -1,12 +1,23 @@
+// ── shared mock prop shapes (see TaskTableRow.test.tsx for rationale) ──
+//
+//  covers HTMLAttributes + children + an open index signature
+//  so data-* / aria-* still flow through .
+type MockProps = HTMLAttributes<HTMLElement> & {
+  children?: ReactNode
+  [key: string]: unknown
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
+import type { HTMLAttributes, ReactNode } from 'react'
 
 // ── controlled mocks ──────────────────────────────────────────────────────
 
 const toolbarSpy = vi.hoisted(() => vi.fn())
 
 vi.mock('./AiPanelToolbar', () => ({
-  AiPanelToolbar: (props: any) => {
+  AiPanelToolbar: (props: MockProps) => {
     toolbarSpy(props)
     return (
       <div data-testid="ai-panel-toolbar">
@@ -31,7 +42,15 @@ vi.mock('motion/react', () => {
       get: (_t, tag: string) => {
         if (!motionCache.has(tag)) {
           motionCache.set(tag, (props: any) => {
-            const { children, animate, initial, transition, exit, ...rest } = props ?? {}
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { children, animate, initial: _initial, transition: _transition, exit, ...rest } =
+              (props ?? {}) as Record<string, unknown> & {
+                children?: ReactNode
+                animate?: { height?: number | string; opacity?: number }
+                initial?: unknown
+                transition?: unknown
+                exit?: { y?: number | string }
+              }
             return (
               <div
                 data-motion-tag={tag}
@@ -49,11 +68,11 @@ vi.mock('motion/react', () => {
       },
     },
   )
-  return { motion, AnimatePresence: ({ children }: any) => <>{children}</> }
+  return { motion, AnimatePresence: ({ children }: MockProps) => <>{children}</> }
 })
 
 vi.mock('lucide-react', () => ({
-  X: ({ className }: any) => <span data-icon="x" className={className} />,
+  X: ({ className }: MockProps) => <span data-icon="x" className={className} />,
 }))
 
 // ── imports (post-mock) ────────────────────────────────────────────────────

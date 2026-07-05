@@ -5,8 +5,6 @@ All table creation and index management now lives in web_runner/db.py (init_db()
 This file is kept for historical reference only. Do NOT run it directly.
 """
 import sqlite3
-import json
-import os
 
 # 数据库文件路径（如果不存在会自动创建）
 db_file = './database.db'

@@ -43,6 +43,18 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, loading, children, disabled, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
+    // `<Slot>` (and `<Slottable>`) require exactly ONE React element child.
+    // `loading && <Spinner/>` evaluates to `false`/`undefined` when `loading`
+    // is not set — Radix still counts that as an extra child slot and throws
+    // "Expected a single React element child or `Slottable`" (or now
+    // "Slot failed to slot onto its `Slottable`" when the spinner was
+    // wrapped in Slottable). Failure here shows up at the ErrorBoundary as
+    // a "页面出错了" card instead of the marketing/dashboard content.
+    //
+    // Canonical shadcn-style fix: when `asChild=true`, render `{children}`
+    // only. Spinner injection is suppressed on the asChild path; call sites
+    // that need a loading-state indicator on an `asChild` button can render
+    // their own spinner inside the wrapped child (Link / anchor / etc.).
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
@@ -50,17 +62,30 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         {...props}
       >
-        {loading && (
-          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {loading && (
+              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            )}
+            {children}
+          </>
         )}
-        {children}
       </Comp>
     )
   }
 )
 Button.displayName = "Button"
 
-export { Button, buttonVariants }
+export { Button }
+// Note: `buttonVariants` (the cva() recipe) is intentionally NOT re-exported.
+// It stays a module-private detail of `<Button>` and exists for exactly one
+// reason: a feature-local `cva()` clone forks from a recipe readers can't
+// import or grep against — the failure mode this invariant prevents. Every
+// top-level export of this file is now a React component, which satisfies
+// `react-refresh/only-export-components`. (Mirrors the badge fix pattern
+// documented in DESIGN-components.md `cross-cutting`.)

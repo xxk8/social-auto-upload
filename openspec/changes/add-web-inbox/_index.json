@@ -1,0 +1,13 @@
+{
+  "name": "add-web-inbox",
+  "created": "2026-06-27T00:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "在 Web 后端新增分享链接下载 + Whisper 转写的最小入口,前端 AiPanel 加粘贴链接按钮接通。整体 ~70 行新增代码 + 1 个新依赖 (yt-dlp)",
+    "design": "复用现有 usage_metering、before_request auth hook、/api/ai/enhance-prompt。0 新表、0 新 executor、0 SSE 进度通道。CLI 一行不动",
+    "tasks": { "total": 7, "completed": 0 }
+  },
+  "layers": ["api", "frontend"],
+  "platforms": [],
+  "applyReady": true
+}

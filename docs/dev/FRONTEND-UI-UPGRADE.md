@@ -8,6 +8,14 @@
 
 ---
 
+## Why this exists
+
+迁移前的 Ant Design 是"开箱即用 + 重主题",但其 CSS 变量体系与本项目的冷-钠/琥珀单色调美学相冲突; shadcn/ui + Tailwind v4 + Radix 原语层能让我们把品牌色精确控制到 `oklch()` token 粒度,且 Tailwind 的 `clamp()` + dark-mode 切换不需要额外打包 shim。 这份 migration 记录让 reviewer 能 (a) 验证组件是逐项替换而非"antd 全替换",(b) 找到替换 schema 中的 token 映射点,(c) 在新需求触及 UI primitives 时直接回到 shadcn/ui 形态而非退回 antd。
+
+## Prereqs
+
+假设 reader 已熟悉 React 18 + TypeScript + 组件化设计;已读过 `docs/dev/hot-reload-philosophy.md` 启动 dev 循环; 后端 `:6001` Flask API 可访问(运行 `python web_runner.py`) — 这份 migration 不涉及后端改动,但 dev 时需要 backend 数据流入 publish 页表单才能看出视觉对比。
+
 ## 1. 技术栈变更
 
 ### 旧技术栈
@@ -212,3 +220,7 @@
 2. 恢复各页面的 Ant Design 导入
 3. 恢复 `App.css` 和 `index.css` 的旧样式
 4. 删除 `src/components/ui/` 目录
+
+## Cross-references
+
+- **Hub**: [docs/dev/INDEX.md#contributors](docs/dev/INDEX.md#contributors) — Contributors (writing code, merging PRs).

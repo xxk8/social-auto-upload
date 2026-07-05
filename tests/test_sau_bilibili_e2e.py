@@ -66,7 +66,7 @@ class TestBilibiliE2ESmoke:
                 )
             )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
@@ -137,7 +137,7 @@ class TestBilibiliE2ESmoke:
                 )
             )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
@@ -189,7 +189,7 @@ class TestBilibiliE2ESmoke:
                 )
             )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
@@ -249,7 +249,7 @@ class TestBilibiliE2ESmoke:
                 )
             )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
@@ -292,7 +292,7 @@ class TestBilibiliE2ESmoke:
 
             # Do NOT create cookie file
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
@@ -342,7 +342,7 @@ class TestBilibiliE2ESmoke:
                 )
             )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
@@ -418,7 +418,7 @@ class TestBilibiliWebToCliIntegration:
             ]
             # Note: --headless is NOT in argv (web skips it for bilibili)
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),

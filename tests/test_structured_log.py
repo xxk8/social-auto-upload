@@ -18,6 +18,14 @@ def client():
 
     Each test purges its own ``error_events`` rows before and after so we don't
     pollute the rest of the suite.
+
+    COOKIES_DIR override applied BEFORE ``create_app()`` runs so the
+    walker (``web_runner/__init__.py::create_app`` boot path calls
+    ``_sync_cookie_files_to_db()`` which walks ``COOKIES_DIR``) reads the
+    empty tmp dir, NOT the real cookies dir. Fix for the TOCTOU
+    collision on real-cookies-dir residue — documented at
+    ``openspec/changes/audit-account-groups-unique-collision-2026q3/``
+    §Mechanism refinement + reopen-path (a).
     """
     import tempfile
     from pathlib import Path
@@ -25,11 +33,11 @@ def client():
     from web_runner import create_app
     from web_runner import utils as wr_utils
 
-    application = create_app()
-    application.config["TESTING"] = True
     with tempfile.TemporaryDirectory() as tmp_dir:
         orig_cookies_dir = wr_utils.COOKIES_DIR
         wr_utils.COOKIES_DIR = Path(tmp_dir)
+        application = create_app()
+        application.config["TESTING"] = True
         with application.test_client() as c:
             yield c
         wr_utils.COOKIES_DIR = orig_cookies_dir
@@ -224,7 +232,77 @@ class TestLogErrorEventHelper:
         assert rows == []
 
 
+# `TestErrorEventsApiRoute` — DROPPED 2026-07-02 → RESURRECTED 2026-Q3 post
+# reopen-path fix.
+#
+# Original drop rationale + root-cause analysis captured in openspec ticket:
+#   openspec/changes/drop-legacy-failing-tests-2026q3/
+#   (proposal.md §Why + tasks.md §2 + design.md §Branch B)
+#
+# Resurrection anchored at the follow-up audit:
+#   openspec/changes/audit-account-groups-unique-collision-2026q3/
+#   (design.md §Reopen-path recommendations + §Sqlite-vs-Postgres
+#   exception-flow differential + empirical evidence in
+#   `artifacts/repro-sqlite-N8-*.json`).
+#
+# Brief: the `client` fixture called `create_app()` BEFORE
+# `wr_utils.COOKIES_DIR = Path(tmp_dir)` was overridden. So
+# `web_runner/__init__.py::_sync_cookie_files_to_db()` walked the REAL
+# `cookies/` directory during fixture setup. 2 of the 4 tests
+# (`test_get_endpoint_returns_rows`, `test_get_endpoint_filters_by_account_and_exc_type`)
+# ERRORed with `RuntimeError("INSERT did not return id: ...")` raised by
+# `web_runner/db.py::SqliteDatabase.insert_returning_id`.
+#
+# Root cause (verified in the follow-up audit): the actual mechanism is
+# a TOCTOU race on `account_groups(name)` from CONCURRENT
+# `_sync_cookie_files_to_db` calls (two walkers both pass the SELECT
+# with `None` and race on the INSERT; the second's UNIQUE-collision
+# triggers `sqlite3.IntegrityError` (driver-rejection) AND/OR
+# `RuntimeError("INSERT did not return id")` (the no-row-RETURNING
+# fallback path under SQLite's WAL+busy_timeout). Empirical evidence
+# captured in the audit's `artifacts/repro-sqlite-N8-*.json`.
+#
+# Resurrected via:
+#   (a) fixture swap: `wr_utils.COOKIES_DIR = Path(tmp_dir)` overridden
+#       BEFORE `application = create_app()` runs (see `client()` fixture
+#       above);
+#   (b) walker INSERT-or-IGNORE + SELECT-by-name harden
+#       (FINAL form — supersedes prior UPSERT-with-RETURNING attempt
+#       which still fired `RuntimeError("INSERT did not return id")` 1/N
+#       times under concurrent load due to SQLite's RETURNING no-row-
+#       on-no-change quirk; `web_runner/utils.py::_sync_cookie_files_to_db`
+#       now uses `INSERT INTO account_groups ... ON CONFLICT (name) DO
+#       NOTHING` followed by `SELECT id FROM account_groups WHERE name = ?`
+#       which is bulletproof: step 1 is atomic idempotent (never raises
+#       on UNIQUE match), step 2 is deterministic by-unique-key lookup
+#       (always finds the row step 1 created or that pre-existed).
+#       Both ops are dialect-agnostic (PG + SQLite 3.24+ both support
+#       `INSERT ... ON CONFLICT DO NOTHING` natively) — no
+#       `_IS_POSTGRES` branching required.
+#   (c) the 4 `TestErrorEventsApiRoute` tests re-added below. With
+#       (a) + (b) in place, all 4 PASS — verified via
+#       `pytest tests/test_structured_log.py::TestErrorEventsApiRoute`.
 class TestErrorEventsApiRoute:
+    """Regression tests for GET /api/error-events at
+    `web_runner/routes/tasks.py:288`.
+
+    The route returns the dialect-agnostic
+    ``{success: True, data: rows}`` envelope (matches the rest of the
+    tasks app's JSON contract). Filter combination: `platform` +
+    `account` + `action` + `exc_type` + `after`. Pagination: `limit` +
+    `offset`. Ordering: `ts DESC, id DESC` (newest-first tiebreaker on
+    autoincrement id, per `_db_get_error_events` impl).
+
+    Coverage map (4 / 4 tests):
+      - `test_get_endpoint_returns_rows` — base case: N rows → JSON list
+      - `test_get_endpoint_filters_by_account_and_exc_type` — combined
+        filter combo narrows correctly (no cross-platform or wrong-
+        exc_type leakage)
+      - `test_get_endpoint_limit_offset` — pagination geometry
+      - `test_empty_filter_returns_empty_list` — empty result shape (NOT
+        null, NOT 404)
+    """
+
     def setup_method(self) -> None:
         _purge_error_events()
 
@@ -232,73 +310,141 @@ class TestErrorEventsApiRoute:
         _purge_error_events()
 
     def test_get_endpoint_returns_rows(self, client) -> None:
-        try:
-            raise OSError("transient I/O")
-        except OSError as exc:
+        """GET /api/error-events returns inserted rows in newest-first
+        order with the documented `{success, data}` envelope shape.
+        """
+        for i in range(3):
             _log_error_event(
                 phase="cli",
-                platform="tk",
-                account="acct-tk",
+                platform="douyin",
+                account=f"acct-{i}",
                 action="upload-video",
-                exc=exc,
+                exc_type="NonZeroExit",
+                exc_message=f"failure {i}",
+                status_code=1,
             )
 
-        resp = client.get("/api/error-events?platform=tk")
+        resp = client.get("/api/error-events")
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["success"] is True
-        assert isinstance(data["data"], list)
-        assert len(data["data"]) == 1
-        entry = data["data"][0]
-        assert entry["exc_type"] == "OSError"
-        assert entry["platform"] == "tk"
+        body = resp.get_json()
+        assert body["success"] is True
+        assert len(body["data"]) == 3
+        # Account + exc_message round-trip cleanly (sort by account to
+        # avoid coupling to provider-side id ordering for ordering).
+        acct_msgs = sorted([(r["account"], r["exc_message"]) for r in body["data"]])
+        assert acct_msgs == [
+            ("acct-0", "failure 0"),
+            ("acct-1", "failure 1"),
+            ("acct-2", "failure 2"),
+        ]
 
     def test_get_endpoint_filters_by_account_and_exc_type(self, client) -> None:
+        """Filter combination `account=ac-alice AND exc_type=NonZeroExit`
+        returns ONLY the matching row — no leakage from ac-bob (account
+        mismatch) or ac-carol (different exc_type).
+        """
         _log_error_event(
             phase="cli",
             platform="douyin",
-            account="alice-account",
+            account="ac-alice",
+            action="login",
             exc_type="NonZeroExit",
-            exc_message="x",
+            exc_message="alice login fail",
+            status_code=1,
+        )
+        _log_error_event(
+            phase="cli",
+            platform="douyin",
+            account="ac-bob",
+            action="upload-video",
+            exc_type="NonZeroExit",
+            exc_message="bob upload fail",
             status_code=2,
         )
         _log_error_event(
             phase="cli",
-            platform="douyin",
-            account="bob-account",
+            platform="bilibili",
+            account="ac-carol",
+            action="upload-video",
             exc_type="RuntimeError",
-            exc_message="different",
+            exc_message="carol race",
         )
 
-        resp_alice = client.get("/api/error-events?account=alice-account")
-        rows = resp_alice.get_json()["data"]
-        assert len(rows) == 1
-        assert rows[0]["exc_type"] == "NonZeroExit"
-
-        resp_runtime = client.get("/api/error-events?exc_type=RuntimeError")
-        rows = resp_runtime.get_json()["data"]
-        assert len(rows) == 1
-        assert rows[0]["account"] == "bob-account"
+        resp = client.get("/api/error-events?account=ac-alice&exc_type=NonZeroExit")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        assert len(body["data"]) == 1, (
+            f"expected 1 row for (ac-alice, NonZeroExit); got "
+            f"{[(r['account'], r['exc_type']) for r in body['data']]}"
+        )
+        row = body["data"][0]
+        assert row["account"] == "ac-alice"
+        assert row["exc_type"] == "NonZeroExit"
 
     def test_get_endpoint_limit_offset(self, client) -> None:
+        """Pagination contract: `limit=2 + offset=2` returns the 3rd and 4th
+        newest rows (id-DESC), disjoint from the 1st-and-2nd-newest page
+        at `offset=0`.
+
+        Note: `limit=2 + offset=1` would OVERLAP with `offset=0` on row 1
+        (the second-newest row appears in both pages). Standard SQL
+        semantics: `OFFSET N` skips the first N rows, NOT the first N
+        pages. So for N rows total with K per page, disjoint pages are
+        `offset=0`, `offset=K`, `offset=2K`, etc.
+        """
         for i in range(5):
             _log_error_event(
                 phase="cli",
+                platform="douyin",
                 account=f"acct-{i}",
+                action="upload-video",
                 exc_type="NonZeroExit",
-                exc_message=str(i),
+                exc_message=f"failure {i}",
                 status_code=1,
             )
 
-        resp = client.get("/api/error-events?limit=2&offset=1")
-        rows = resp.get_json()["data"]
-        assert len(rows) == 2
+        # offset=2 + limit=2 returns rows at id-DESC indices 2 and 3 —
+        # disjoint from offset=0 (id-DESC indices 0 and 1).
+        resp_offset2 = client.get("/api/error-events?limit=2&offset=2")
+        assert resp_offset2.status_code == 200
+        body = resp_offset2.get_json()
+        assert body["success"] is True
+        assert len(body["data"]) == 2
+        ids = [row["id"] for row in body["data"]]
+        assert ids == sorted(ids, reverse=True), (
+            f"limit+offset must yield newest-first id ordering; got {ids}"
+        )
+
+        # Cross-check: offset=0 yields the newest 2; offset=2 yields the
+        # next 2 (ids K and K+1 later). Standard SQL pagination semantics.
+        resp_p0 = client.get("/api/error-events?limit=2&offset=0")
+        ids_p0 = [row["id"] for row in resp_p0.get_json()["data"]]
+        assert set(ids_p0) & set(ids) == set(), (
+            f"offset=0 ({ids_p0}) and offset=2 ({ids}) pages must be disjoint"
+        )
 
     def test_empty_filter_returns_empty_list(self, client) -> None:
-        resp = client.get("/api/error-events?platform=does-not-exist")
-        data = resp.get_json()
-        assert data["success"] is True
-        assert data["data"] == []
+        """When the filter matches nothing, `data` is `[]` (NOT `null`,
+        NOT a 404 response).
+
+        Companion to `TestLogErrorEventHelper::test_after_filter_excludes_old_rows`
+        — the public-API route must mirror the helper's empty-result shape.
+        """
+        _log_error_event(
+            phase="cli",
+            platform="douyin",
+            account="ac-alice",
+            action="upload-video",
+            exc_type="NonZeroExit",
+            exc_message="alice fail",
+            status_code=1,
+        )
+        resp = client.get("/api/error-events?account=ac-NOPE")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["success"] is True
+        assert body["data"] == []
 
 
 class TestLogs:

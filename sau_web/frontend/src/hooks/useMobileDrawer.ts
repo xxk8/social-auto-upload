@@ -37,16 +37,24 @@ export function useMobileDrawer({
     typeof window !== 'undefined' ? window.innerWidth < breakpoint : false,
   )
 
+  // Resize handler: tracks viewport-vs-breakpoint AND auto-collapses
+  // the drawer when the user crosses into desktop. Both branches run
+  // in the resize EVENT handler (canonical setState-in-event-handler
+  // pattern) rather than inside a separate useEffect, which
+  // React 19's `react-hooks/set-state-in-effect` rule flags as a
+  // cascading-renders anti-pattern. `isOpen` is in the dep array so
+  // the handler closure always reads the latest drawer-state when
+  // the resize event fires.
+  const handler = useCallback(() => {
+    const mobile = window.innerWidth < breakpoint
+    setIsMobile(mobile)
+    if (!mobile && isOpen) setIsOpen(false)
+  }, [breakpoint, isOpen])
+
   useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < breakpoint)
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
-  }, [breakpoint])
-
-  // Auto-collapse when crossing the breakpoint into desktop.
-  useEffect(() => {
-    if (!isMobile && isOpen) setIsOpen(false)
-  }, [isMobile, isOpen])
+  }, [handler])
 
   const open = useCallback(() => setIsOpen(true), [])
   const close = useCallback(() => setIsOpen(false), [])

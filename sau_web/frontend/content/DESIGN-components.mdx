@@ -1,0 +1,224 @@
+---
+title: Component Catalog (live demos)
+status: per-component reference (renderable)
+description: |
+  Renderable sibling of `DESIGN-components.md` (the text-spec). Each of the
+  9 components has a `<Demo>` block that renders the canonical component
+  in the real Tailwind setup, so you can see the visual contract before
+  copy-pasting into your feature page.
+
+  Run `pnpm dev` from `sau_web/frontend/` and visit
+  `http://localhost:5180/catalog` to see this rendered live.
+---
+
+import { X, Plus, Search } from 'lucide-react'
+
+# Component Catalog (live demos)
+
+> 9 components · each with a live `<Demo>` block · runnable in `pnpm dev` at `/catalog`.
+
+Looking for the prose recipe, do/don't lists, or migration history? See the parallel text spec in [`DESIGN-components.md`](../../../DESIGN-components.md) — that file is the canonical offline-readable version, this file is the live demos.
+
+---
+
+# 1. Button
+
+The workhorse layout primitive. Six variants × four sizes. Icon-only buttons **must** carry `aria-label`.
+
+<Demo heading="Button — variants" caption="default · destructive · outline · secondary · ghost · link">
+  <Button>Default</Button>
+  <Button variant="destructive">Destructive</Button>
+  <Button variant="outline">Outline</Button>
+  <Button variant="secondary">Secondary</Button>
+  <Button variant="ghost">Ghost</Button>
+  <Button variant="link">Link</Button>
+</Demo>
+
+<Demo heading="Button — sizes">
+  <Button size="sm">Small</Button>
+  <Button size="default">Default</Button>
+  <Button size="lg">Large</Button>
+  <Button size="icon" aria-label="关闭"><X className="h-4 w-4" /></Button>
+  <Button size="icon" aria-label="添加"><Plus className="h-4 w-4" /></Button>
+  <Button size="icon" aria-label="搜索"><Search className="h-4 w-4" /></Button>
+</Demo>
+
+<Demo heading="Button — loading + asChild">
+  <Button loading>发布中…</Button>
+  <Button asChild variant="link"><a href="#">查看任务</a></Button>
+</Demo>
+
+---
+
+# 2. Card
+
+Compound surface with header + content + footer sub-components. Standard form uses `rounded-xl`; dense list forms override to `rounded-lg`. Pair with `border` (hairline) + `shadow` — never `shadow-md` or `shadow-lg`.
+
+<Demo heading="Card — standard form">
+  <div className="w-80">
+    <Card>
+      <CardHeader>
+        <CardTitle>账号组</CardTitle>
+        <CardDescription>今日新增 2 个账号</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm">这里放卡片正文内容，通常是一段短语或一组数据。</p>
+      </CardContent>
+    </Card>
+  </div>
+</Demo>
+
+<Demo heading="Card — with footer">
+  <div className="w-80">
+    <Card>
+      <CardHeader>
+        <CardTitle>确认删除</CardTitle>
+        <CardDescription>该账号组下的 3 个账号将被解绑，且无法撤销。</CardDescription>
+      </CardHeader>
+      <CardFooter className="justify-end gap-2">
+        <Button variant="outline">取消</Button>
+        <Button variant="destructive">确认删除</Button>
+      </CardFooter>
+    </Card>
+  </div>
+</Demo>
+
+---
+
+# 3. Input
+
+Single-line text input. Focus state shows amber halo at `focus-visible:ring`. Pair with a visible `<Label>` for accessibility — placeholder alone is NOT sufficient labelling.
+
+<Demo heading="Input — states">
+  <div className="grid w-72 gap-3">
+    <Input placeholder="账号名称" />
+    <Input placeholder="禁用" disabled />
+    <Input placeholder="aria-invalid 状态" aria-invalid />
+  </div>
+</Demo>
+
+<Demo heading="Input — paired with label" caption="Label + htmlFor OR aria-label; placeholder alone fails a11y tests.">
+  <div className="grid w-72 gap-2">
+    <label className="text-xs font-medium text-muted-foreground" htmlFor="demo-input">账号名称</label>
+    <Input id="demo-input" placeholder="留空将使用默认值" />
+  </div>
+</Demo>
+
+---
+
+# 4. Popover
+
+Anchored transient UI for pickers / filters / config. `Esc` + outside-click both close. Focus returns to trigger on close. `asChild` on the trigger for clean Radix Slot semantics.
+
+<Demo heading="Popover — anchored picker">
+  <Popover>
+    <PopoverTrigger asChild>
+      <Button variant="ghost">选择账号组</Button>
+    </PopoverTrigger>
+    <PopoverContent>
+      <div className="space-y-2">
+        <p className="text-sm font-medium">账号组</p>
+        <p className="text-xs text-muted-foreground">这里放选择列表，popover 内容由调用方决定。</p>
+      </div>
+    </PopoverContent>
+  </Popover>
+</Demo>
+
+---
+
+# 5. Dialog
+
+Modal blocking dialog. `<DialogTitle>` is REQUIRED for screen-reader announcement — without it, SR cannot announce purpose on open. Overlay is `bg-black/80` per system contract; do NOT lift modal backdrop to a non-dimmed overlay.
+
+<Demo heading="Dialog — destructive confirm">
+  <Dialog>
+    <DialogTrigger asChild>
+      <Button variant="destructive">删除账号组</Button>
+    </DialogTrigger>
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>确认删除</DialogTitle>
+        <DialogDescription>该账号组下的 3 个账号将被解绑，且无法撤销。</DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button variant="outline">取消</Button>
+        <Button variant="destructive">确认删除</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+</Demo>
+
+---
+
+# 6. SidebarRow
+
+Pattern lives inline in `src/App.tsx` — NOT a separate component file. Active row uses **ink + 2px primary strip**, NO row-level fill. Inactive rows use muted text + hover-only `bg-foreground/[0.04]` tint (subtle hover, NEVER steady-state).
+
+<Demo heading="SidebarRow — active vs inactive" caption="Active row (发布中心) shows the 2px primary strip; the strip is the active cue, not background fill. Two inactive rows show muted + hover-only tint.">
+  <SidebarRowDemo />
+</Demo>
+
+---
+
+# 7. StatusBadge
+
+State vocabulary pill. Six variants — `secondary` (neutral chrome), `outline`, `destructive`, and the 4-band semantic palette (`success` · `warning` · `info` · `error`). Tone comes from `@/lib/tone.ts`, shared with `<Alert>` and `<Toast>`.
+
+<Demo heading="StatusBadge — all 8 variants">
+  <Badge>Default (secondary)</Badge>
+  <Badge variant="secondary">Secondary</Badge>
+  <Badge variant="outline">Outline</Badge>
+  <Badge variant="destructive">Destructive</Badge>
+  <Badge variant="success">已连接</Badge>
+  <Badge variant="warning">轮询中</Badge>
+  <Badge variant="info">提示</Badge>
+  <Badge variant="error">失败</Badge>
+</Demo>
+
+<Demo heading="StatusBadge — semantic palette in context" caption="Real-world labels for the 4-band semantic palette.">
+  <div className="flex flex-wrap items-center gap-2">
+    <Badge variant="success">已发布</Badge>
+    <Badge variant="warning">即将过期</Badge>
+    <Badge variant="info">轮询中</Badge>
+    <Badge variant="error">已失效</Badge>
+  </div>
+</Demo>
+
+---
+
+# 8. ProgressBar
+
+Determinate linear progress. Fill animates via `transform: translateX()` (NOT via `width` mutations, to avoid layout thrash). Pair with a mono numeric label so SR users hear both the percentage and the context.
+
+<Demo heading="ProgressBar — values">
+  <div className="grid w-72 gap-3">
+    <Progress value={0} />
+    <Progress value={33} />
+    <Progress value={66} />
+    <Progress value={100} />
+  </div>
+</Demo>
+
+<Demo heading="ProgressBar — with mono label">
+  <div className="w-72 space-y-1">
+    <div className="flex justify-between text-xs text-muted-foreground">
+      <span>上传进度</span>
+      <span className="font-mono tabular-nums">45%</span>
+    </div>
+    <Progress value={45} />
+  </div>
+</Demo>
+
+---
+
+# 9. Toast
+
+Five types via `useToast()` — 4-band semantic (success / warning / info / error) + `default`. Auto-dismiss after 3s with a 300ms exit animation. Must run inside `<ToastProvider>` (CatalogPage wraps the whole page).
+
+<Demo heading="Toast — trigger all 5 types" caption="Click each button to fire a toast. Top-right z-[100] container; each toast has its own close button (escape sets the timer; Esc-key closing is per-toast, not global).">
+  <ToastDemo />
+</Demo>
+
+---
+
+Each demo above is a real React invocation of the canonical component. The full recipe, do/don't, and a11y notes live in [`DESIGN-components.md`](../../../DESIGN-components.md).

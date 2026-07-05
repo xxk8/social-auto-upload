@@ -1,8 +1,8 @@
 import * as React from "react"
 import { Check, ChevronDown, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Badge } from "@/Components/ui/badge"
+import { ScrollArea } from "@/Components/ui/scroll-area"
 
 export interface MultiSelectOption {
   label: string

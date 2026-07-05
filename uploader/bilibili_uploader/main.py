@@ -2,11 +2,14 @@ import asyncio
 import json
 import os
 from pathlib import Path
-import requests
-from patchright.async_api import Page
+
 import patchright
-from patchright.async_api import async_playwright
+import requests
+from patchright.async_api import Page, Playwright, async_playwright
+
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS
+from uploader.base_video import BaseVideoUploader
+from uploader.bilibili_uploader.note import _convert_biliup_cookies_to_storage_state
 from uploader.common import (
     _all_login_markers_hidden,
     _build_login_result,
@@ -14,14 +17,11 @@ from uploader.common import (
     _emit_qrcode_callback,
     _msg,
 )
+from utils.anti_detect import obfuscate_image, obfuscate_video
+from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
-from utils.login_qrcode import build_login_qrcode_path
-from utils.login_qrcode import decode_qrcode_from_path
-from utils.login_qrcode import print_terminal_qrcode
-from utils.login_qrcode import remove_qrcode_file
-from utils.login_qrcode import save_data_url_image
 from utils.log import bilibili_logger
-from uploader.bilibili_uploader.note import _convert_biliup_cookies_to_storage_state
+from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
 
 # ── Bilibili API endpoints for cookie verification ────────────────────────
 _BILIBILI_NAV_API = 'https://api.bilibili.com/x/web-interface/nav'
@@ -123,17 +123,16 @@ async def _extract_bilibili_qrcode_src(page: Page) -> str:
 
 async def _save_bilibili_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None=None, qrcode_callback=None) -> dict:
     qrcode_src = await _extract_bilibili_qrcode_src(page)
-    qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+    qrcode_path: Path | None = None
+    if qrcode_callback is None:
+        # CLI direct-path: write PNG so the user can scan via file viewer.
+        qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+        bilibili_logger.info(_msg('🖼️', f'二维码已经准备好啦，已保存到: {qrcode_path}'))
+        bilibili_logger.info(_msg('📲', f'请用B站APP扫码，或打开：file://{qrcode_path}'))
     if previous_qrcode_path and previous_qrcode_path != qrcode_path:
         if remove_qrcode_file(previous_qrcode_path):
             bilibili_logger.info(_msg('🧹', f'临时二维码文件已清理: {previous_qrcode_path}'))
-    bilibili_logger.info(_msg('🖼️', f'二维码已经准备好啦，已保存到: {qrcode_path}'))
-    qrcode_content = decode_qrcode_from_path(qrcode_path)
-    if qrcode_content:
-        print_terminal_qrcode(qrcode_content, qrcode_path, 'B站APP')
-    else:
-        bilibili_logger.warning(_msg('😵', f'终端没法完整显示二维码，请打开 {qrcode_path} 扫码'))
-    qrcode_info = {'image_path': str(qrcode_path), 'image_data_url': qrcode_src}
+    qrcode_info = {'image_path': str(qrcode_path) if qrcode_path else '', 'image_data_url': qrcode_src}
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
     return qrcode_info
 
@@ -144,7 +143,7 @@ async def _is_bilibili_login_completed(page: Page) -> bool:
     return await _all_login_markers_hidden(page, ['登录', '扫码登录'])
 
 async def _wait_for_bilibili_login(page: Page, account_file: str, qrcode_info: dict, qrcode_callback=None, poll_interval: int=3, max_checks: int=100) -> dict:
-    qrcode_path = Path(qrcode_info['image_path'])
+    qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None
     for _ in range(max_checks):
         if await _is_bilibili_login_completed(page):
             bilibili_logger.info(_msg('🥳', f'扫码成功，已经跳转到登录后页面: {page.url}'))
@@ -157,7 +156,7 @@ async def _wait_for_bilibili_login(page: Page, account_file: str, qrcode_info: d
             await expired_box.click()
             await asyncio.sleep(1)
             qrcode_info = await _save_bilibili_qrcode(page, account_file, qrcode_path, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info['image_path'])
+            qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None
         await asyncio.sleep(poll_interval)
     return _build_login_result(False, 'timeout', '等待B站扫码登录超时', account_file, qrcode_info, page.url)
 
@@ -174,7 +173,7 @@ async def bilibili_cookie_gen(account_file: str, qrcode_callback=None, poll_inte
             await page.wait_for_load_state('domcontentloaded')
             await asyncio.sleep(2)
             qrcode_info = await _save_bilibili_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info['image_path'])
+            qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None
             bilibili_logger.info(_msg('🧍', '请扫码，小人正在耐心等待登录完成'))
             result = await _wait_for_bilibili_login(page, account_file, qrcode_info, qrcode_callback=qrcode_callback, poll_interval=poll_interval, max_checks=max_checks)
             if result['success']:
@@ -219,3 +218,78 @@ async def bilibili_setup(account_file: str, handle=False, return_detail=False, q
         return result if return_detail else result['success']
     result = _build_login_result(True, 'cookie_valid', 'cookie有效', account_file)
     return result if return_detail else True
+
+
+class BilibiliVideo(BaseVideoUploader):
+    """B站视频上传器（Phase 4 §8.5 family pattern）。
+
+    提供视频混淆和封面混淆功能。
+    """
+
+    def __init__(self, title, file_path, tags, publish_date, account_file,
+                 desc: str | None = None, thumbnail_path: str | None = None,
+                 publish_strategy: str = "immediate"):
+        self.title = title
+        self.file_path = file_path
+        self.tags = tags or []
+        self.publish_date = publish_date
+        self.account_file = account_file
+        self.desc = desc or ''
+        self.thumbnail_path = thumbnail_path
+        self.publish_strategy = publish_strategy
+        self.debug = DEBUG_MODE
+        self.headless = LOCAL_CHROME_HEADLESS
+
+    async def validate_upload_args(self):
+        """Pre-flight validation before opening the browser."""
+        if not self.title or not str(self.title).strip():
+            raise ValueError("Bilibili 视频上传时，title 是必须的")
+        self.file_path = str(self.validate_video_file(self.file_path))
+
+        # ── Content fingerprint obfuscation (anti-duplicate-detection) ────────
+        config = get_config("bilibili")
+        obf_path = str(Path(self.file_path).with_suffix("")) + ".obf" + Path(self.file_path).suffix
+        obfuscated = obfuscate_video(
+            self.file_path,
+            obf_path,
+            crop_pixels=config.crop_pixels,
+            bitrate_variation=config.bitrate_variation,
+            add_noise=config.add_noise,
+            target_codec=config.target_codec,
+            brightness_range=config.brightness_range,
+            contrast_range=config.contrast_range,
+            min_bitrate_mbps=config.min_bitrate_mbps,
+            fast_mode=config.fast_mode,
+        )
+        if obfuscated.exists():
+            self.file_path = str(obfuscated)
+            bilibili_logger.info(_msg("🎭", "视频指纹已混淆，用于对抗平台重复检测"))
+
+        if self.thumbnail_path:
+            self.thumbnail_path = str(self.validate_image_file(self.thumbnail_path))
+            # Obfuscate thumbnail if provided
+            thumb_config = get_config("bilibili")
+            thumb_obf_path = str(Path(self.thumbnail_path).with_suffix("")) + ".obf" + Path(self.thumbnail_path).suffix
+            thumb_obf = obfuscate_image(
+                self.thumbnail_path,
+                thumb_obf_path,
+                quality=thumb_config.image_quality,
+                crop_pixels=thumb_config.image_crop_pixels,
+                brightness_range=thumb_config.brightness_range,
+            )
+            if thumb_obf.exists():
+                self.thumbnail_path = str(thumb_obf)
+                bilibili_logger.info(_msg("🎭", "封面指纹已混淆"))
+
+        self.publish_date = self.validate_publish_date(self.publish_date)
+
+    async def upload(self, playwright: Playwright) -> None:
+        """B站视频上传流程（待实现具体浏览器自动化）。"""
+        raise NotImplementedError(
+            "BilibiliVideo 的浏览器自动化流程尚未实现。"
+            "validate_upload_args 已包含混淆逻辑；upload() 需补充具体 DOM 操作。"
+        )
+
+    async def main(self):
+        async with async_playwright() as playwright:
+            await self.upload(playwright)

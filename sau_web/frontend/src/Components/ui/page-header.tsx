@@ -18,7 +18,7 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn("flex items-start justify-between gap-4 mb-6", className)}>
+    <div className={cn("flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-6", className)}>
       <div className="flex items-start gap-3">
         {icon && (
           <div
@@ -33,8 +33,9 @@ export function PageHeader({
               toneStyleClasses.info.bg,
             )}
           >
-            {/* Linear: single chromatic accent — a 2px lavender edge ties the
-                chip to the primary without a heavy fill. */}
+            {/* Single chromatic accent — a 2px amber edge ties the chip to
+                the brand without a heavy fill. (Sourced from the same
+                --status-info-fg token consumed by `lib/tone::info`.) */}
             <span
               className={cn(
                 'absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-r-full',
@@ -52,7 +53,15 @@ export function PageHeader({
         </div>
       </div>
       {actions && (
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div
+          className="flex items-center gap-2 flex-shrink-0"
+          data-testid="page-header-actions"
+        >
+          {/* data-testid is referenced by AccountsPage.test.tsx via
+            within(page-header-actions).getByRole('button', ...). If you
+            rename this testid, grep AccountsPage.test.tsx and update both
+            sides in the same PR — keeping the testid in sync is part of
+            the spec contract. */}
           {actions}
         </div>
       )}

@@ -1,11 +1,10 @@
-"""Shared utilities for web_runner routes."""
+"""Shared utilities for web_runner routes (PR2: dialect-aware Database)."""
 from __future__ import annotations
 
 import base64
 import binascii
 import json
 import os
-import queue as _queue
 import re
 import sqlite3
 import sys
@@ -16,11 +15,11 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Generator
 
 from utils.log import logger as _task_logger
+from web_runner.db import BASE_DIR, get_database
 
-from web_runner.db import DB_PATH, BASE_DIR, db_lock, get_connection
+dbi = get_database  # alias for shorter call-site reads
 
 COOKIES_DIR = BASE_DIR / "cookies"
 COOKIES_DIR.mkdir(exist_ok=True)
@@ -28,6 +27,14 @@ COOKIES_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR = BASE_DIR / ".sau_uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 
+# /api/inbox/download writes here (yt-dlp + patchright fallback). Canonical
+# `BASE_DIR`-derived path so a Docker / systemd / uwsgi CWD change can't make
+# the writer and the cleanup sweep disagree on which dir to walk.
+INBOX_DIR = BASE_DIR / "videos" / "inbox"
+INBOX_DIR.mkdir(parents=True, exist_ok=True)
+
+# Back-compat: keep task_executor for any external callers, but primary
+# task submission now goes through web_runner.executor.submit_task()
 task_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sau-task")
 _scheduled_timers: dict[str, threading.Timer] = {}
 _timer_lock = threading.Lock()
@@ -42,6 +49,17 @@ LOG_MAX_ROWS = 10_000
 _log_trim_counter = 0
 _error_event_trim_counter = 0
 MIN_UPLOAD_BYTES = 10240
+
+
+# Columns that hold JSON-encoded payloads (TEXT in sqlite; will become
+# JSON / JSONB in openspec PR3). When `_db_update_task` writes one of these
+# keys it routes the value through `db.json_dump` for canonical encoding.
+_JSON_COLUMNS = frozenset({"argv", "result", "publish_detail"})
+
+_TASK_COLUMNS = frozenset({
+    "status", "platform", "action", "account", "code", "error",
+    "argv", "result", "publish_detail", "priority", "scheduled_at",
+})
 
 
 class _LogCapture:
@@ -84,11 +102,38 @@ def _save_data_uri(data_uri: str) -> Path | None:
 
 def _download_url(url: str) -> Path | None:
     import http.client
+    import ipaddress
     import urllib.error
     import urllib.request
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("https", "http"):
+        log(f"[upload] rejected url with scheme: {parsed.scheme}")
+        return None
+
+    hostname = parsed.hostname or ""
     try:
-        with urllib.request.urlopen(url, timeout=30) as resp:
-            raw = resp.read()
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            log(f"[upload] rejected private/loopback ip: {hostname}")
+            return None
+    except ValueError:
+        if hostname in ("localhost",):
+            log("[upload] rejected localhost url")
+            return None
+
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content_length = resp.headers.get("Content-Length")
+            if content_length and int(content_length) > 50 * 1024 * 1024:
+                log(f"[upload] rejected url: Content-Length {content_length} exceeds 50MB")
+                return None
+            raw = resp.read(50 * 1024 * 1024 + 1)
+            if len(raw) > 50 * 1024 * 1024:
+                log("[upload] rejected url: response exceeds 50MB")
+                return None
         ext = Path(url.split("?")[0]).suffix or ".jpg"
         return _write_upload(raw, ext)
     except (http.client.HTTPException, urllib.error.HTTPError, urllib.error.URLError, OSError, TimeoutError, ValueError, TypeError) as exc:
@@ -116,48 +161,51 @@ def _db_insert_task(
     created: str,
     argv: list[str] | None = None,
 ) -> None:
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute(
-                "INSERT INTO tasks (task_id, status, platform, action, account, created, argv) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (task_id, status, platform, action, account, created, json.dumps(argv) if argv else None),
-            )
-            conn.commit()
+    db = dbi()
+    db.execute(
+        "INSERT INTO tasks (task_id, status, platform, action, account, created, argv) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (task_id, status, platform, action, account, created, db.json_dump(argv)),
+    )
 
 
 def _db_get_task(task_id: str) -> dict | None:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
-            return dict(row) if row else None
+    db = dbi()
+    return db.fetch_one("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
 
 
 def _db_update_task(task_id: str, **kwargs: str | int | None) -> None:
     if not kwargs:
         return
+    invalid = set(kwargs) - _TASK_COLUMNS
+    if invalid:
+        raise ValueError(f"Invalid task columns: {invalid}")
+    db = dbi()
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
-    values = list(kwargs.values()) + [task_id]
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = ?", values)
-            conn.commit()
+    payload: list = []
+    for k, v in kwargs.items():
+        if k in _JSON_COLUMNS:
+            payload.append(db.json_dump(v))
+        else:
+            payload.append(v)
+    values = payload + [task_id]
+    db.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = ?", tuple(values))
 
 
 def _db_get_all_tasks(limit: int | None = None, offset: int = 0) -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT * FROM tasks ORDER BY created DESC"
-            params: list = []
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+    """Return tasks ordered by newest-first; tiebreaker on task_id DESC so
+    pagination is deterministic when multiple tasks share the same
+    `created` ISO string (e.g. scheduled jobs appended in the same second).
+    """
+    db = dbi()
+    query = "SELECT * FROM tasks ORDER BY created DESC, task_id DESC"
+    params: list = []
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    if offset:
+        query += " OFFSET ?"
+        params.append(offset)
+    return db.fetch_all(query, tuple(params))
 
 
 def _new_task_id(prefix: str) -> str:
@@ -166,46 +214,62 @@ def _new_task_id(prefix: str) -> str:
     return f"{prefix}-{ts}-{short_uuid}"
 
 
+_IS_POSTGRES = os.environ.get("SAU_DB_DIALECT", "postgres").lower() == "postgres"
+
+
 def _db_insert_log(ts: str, message: str) -> None:
+    """Insert a log row + opportunistically trim to `LOG_MAX_ROWS` rows."""
     global _log_trim_counter
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute("INSERT INTO logs (ts, message) VALUES (?, ?)", (ts, message))
-            conn.commit()
-            _log_trim_counter += 1
-            if _log_trim_counter >= 200:
-                _log_trim_counter = 0
-                conn.execute(
-                    "DELETE FROM logs WHERE ts NOT IN (SELECT ts FROM logs ORDER BY ts DESC LIMIT ?)",
-                    (LOG_MAX_ROWS,),
-                )
-                conn.commit()
+    db = dbi()
+    db.execute("INSERT INTO logs (ts, message) VALUES (?, ?)", (ts, message))
+    _log_trim_counter += 1
+    if _log_trim_counter >= 200:
+        _log_trim_counter = 0
+        if _IS_POSTGRES:
+            db.execute(
+                "DELETE FROM logs WHERE id < (SELECT id FROM logs "
+                "ORDER BY id DESC LIMIT 1 OFFSET ?)",
+                (LOG_MAX_ROWS,),
+            )
+        else:
+            db.execute(
+                "DELETE FROM logs WHERE rowid < (SELECT rowid FROM logs "
+                "ORDER BY rowid DESC LIMIT 1 OFFSET ?)",
+                (LOG_MAX_ROWS,),
+            )
 
 
 def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0) -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT ts, message FROM logs"
-            conditions: list[str] = []
-            params: list = []
-            if after:
-                conditions.append("ts > ?")
-                params.append(after)
-            if task_id:
-                conditions.append("message LIKE ?")
-                params.append(f"%{task_id}%")
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY ts ASC"
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+    """Return log rows. Filters:
+      - `after`: ISO ts; keeps rows strictly newer.
+      - `task_id`: prefix match `[{task_id}]`, leveraging the canonical
+        log message format used by `_run_sau(...)`. The `[...]` braces
+        prevent `run-1` from accidentally matching `[run-12] ...`. Tied
+        with `ORDER BY ts ASC, rowid ASC` for deterministic pagination.
+    """
+    db = dbi()
+    query = "SELECT ts, message FROM logs"
+    conditions: list[str] = []
+    params: list = []
+    if after:
+        conditions.append("ts > ?")
+        params.append(after)
+    if task_id:
+        conditions.append("message LIKE ?")
+        params.append(f"[{task_id}]%")
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    if _IS_POSTGRES:
+        query += " ORDER BY ts ASC, id ASC"
+    else:
+        query += " ORDER BY ts ASC, rowid ASC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    if offset:
+        query += " OFFSET ?"
+        params.append(offset)
+    return db.fetch_all(query, tuple(params))
 
 
 def _log_error_event(
@@ -231,27 +295,27 @@ def _log_error_event(
         exc_message = str(exc)
     if tb is None and exc is not None:
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute(
-                """INSERT INTO error_events
-                   (ts, task_id, level, phase, platform, account, action,
-                    exc_type, exc_message, traceback, argv, attempt_no, retry_count, status_code)
-                   VALUES (?, ?, 'error', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (now, task_id, phase, platform, account, action,
-                 exc_type, exc_message, tb,
-                 json.dumps(argv) if argv else None,
-                 attempt_no, retry_count, status_code),
-            )
-            conn.commit()
-            _error_event_trim_counter += 1
-            if _error_event_trim_counter >= 100:
-                _error_event_trim_counter = 0
-                conn.execute(
-                    "DELETE FROM error_events WHERE id NOT IN (SELECT id FROM error_events ORDER BY ts DESC LIMIT ?)",
-                    (LOG_MAX_ROWS,),
-                )
-                conn.commit()
+    db = dbi()
+    db.execute(
+        """INSERT INTO error_events
+           (ts, task_id, level, phase, platform, account, action,
+            exc_type, exc_message, traceback, argv, attempt_no, retry_count, status_code)
+           VALUES (?, ?, 'error', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            now, task_id, phase, platform, account, action,
+            exc_type, exc_message, tb,
+            db.json_dump(argv),
+            attempt_no, retry_count, status_code,
+        ),
+    )
+    _error_event_trim_counter += 1
+    if _error_event_trim_counter >= 100:
+        _error_event_trim_counter = 0
+        db.execute(
+            "DELETE FROM error_events WHERE id < "
+            "(SELECT id FROM error_events ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            (LOG_MAX_ROWS,),
+        )
 
 
 def _db_get_error_events(
@@ -263,54 +327,48 @@ def _db_get_error_events(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT * FROM error_events"
-            conditions: list[str] = []
-            params: list = []
-            if after:
-                conditions.append("ts > ?")
-                params.append(after)
-            if platform:
-                conditions.append("platform = ?")
-                params.append(platform)
-            if account:
-                conditions.append("account = ?")
-                params.append(account)
-            if action:
-                conditions.append("action = ?")
-                params.append(action)
-            if exc_type:
-                conditions.append("exc_type = ?")
-                params.append(exc_type)
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY ts DESC"
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+    db = dbi()
+    query = "SELECT * FROM error_events"
+    conditions: list[str] = []
+    params: list = []
+    if after:
+        conditions.append("ts > ?")
+        params.append(after)
+    if platform:
+        conditions.append("platform = ?")
+        params.append(platform)
+    if account:
+        conditions.append("account = ?")
+        params.append(account)
+    if action:
+        conditions.append("action = ?")
+        params.append(action)
+    if exc_type:
+        conditions.append("exc_type = ?")
+        params.append(exc_type)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY ts DESC, id DESC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    if offset:
+        query += " OFFSET ?"
+        params.append(offset)
+    return db.fetch_all(query, tuple(params))
 
 
 def _recover_orphaned_tasks() -> None:
-    with db_lock:
-        with get_connection() as conn:
-            orphans = conn.execute(
-                "SELECT task_id, argv FROM tasks WHERE status = 'running'"
-            ).fetchall()
-            for row in orphans:
-                task_id, argv_json = row
-                conn.execute(
-                    "UPDATE tasks SET status = 'error', error = ? WHERE task_id = ?",
-                    ("Orphaned: server restarted while task was running", task_id),
-                )
-                log(f"[recover] marked orphaned task as error: {task_id}")
-            conn.commit()
+    db = dbi()
+    orphans = db.fetch_all("SELECT task_id FROM tasks WHERE status = 'running'")
+    if not orphans:
+        return
+    db.execute(
+        "UPDATE tasks SET status = 'error', error = ? WHERE status = 'running'",
+        ("Orphaned: server restarted while task was running",),
+    )
+    for row in orphans:
+        log(f"[recover] marked orphaned task as error: {row['task_id']}")
 
 
 def _start_orphan_watchdog(interval_seconds: int = 120) -> None:
@@ -327,41 +385,99 @@ def _start_orphan_watchdog(interval_seconds: int = 120) -> None:
 
 
 def _sync_cookie_files_to_db() -> None:
+    """Reconcile on-disk `COOKIES_DIR/*.json` into `account_authorizations`.
+
+    Each call is autocommit (`db.execute` + `db.last_insert_id`) — partial
+    failures are surfaced via the row-id return; we don't aggregate into
+    one big txn because legacy code didn't either, and the openspec §2.8
+    callable-style migration simplifies control flow.
+    """
     if not COOKIES_DIR.exists():
         return
-    with db_lock:
-        with get_connection() as conn:
-            for cookie_file in COOKIES_DIR.glob("*.json"):
-                name = cookie_file.stem
-                parts = name.split("_", 1)
-                if len(parts) != 2:
-                    continue
-                platform, account_name = parts
-                existing = conn.execute(
-                    "SELECT aa.id FROM account_authorizations aa "
-                    "JOIN account_groups ag ON aa.group_id = ag.id "
-                    "WHERE ag.name = ? AND aa.platform = ?",
-                    (account_name, platform),
-                ).fetchone()
-                if existing:
-                    continue
-                group = conn.execute(
-                    "SELECT id FROM account_groups WHERE name = ?",
-                    (account_name,),
-                ).fetchone()
-                if group:
-                    group_id = group[0]
-                else:
-                    conn.execute(
-                        "INSERT INTO account_groups (name, created) VALUES (?, ?)",
-                        (account_name, datetime.now().isoformat(timespec="seconds")),
-                    )
-                    group_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                conn.execute(
-                    "INSERT OR IGNORE INTO account_authorizations (group_id, platform, cookie_file, created) VALUES (?, ?, ?, ?)",
-                    (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
+    db = dbi()
+    for cookie_file in COOKIES_DIR.glob("*.json"):
+        name = cookie_file.stem
+        parts = name.split("_", 1)
+        if len(parts) != 2:
+            continue
+        platform, account_name = parts
+        existing = db.fetch_one(
+            "SELECT aa.id FROM account_authorizations aa "
+            "JOIN account_groups ag ON aa.group_id = ag.id "
+            "WHERE ag.name = ? AND aa.platform = ?",
+            (account_name, platform),
+        )
+        if existing:
+            continue
+        group = db.fetch_one("SELECT id FROM account_groups WHERE name = ?", (account_name,))
+        if group:
+            group_id = group["id"]
+        else:
+            # INSERT-or-IGNORE + SELECT-by-name harden (final reopen-path fix;
+            # supersedes the prior UPSERT-with-RETURNING approach). The UPSERT-
+            # RETURNING pattern is fragile to SQLite's documented `RETURNING`
+            # quirk: when `ON CONFLICT DO UPDATE` doesn't actually change any
+            # column values (no-op UPDATE — values identical), `RETURNING`
+            # yields zero rows even though the row exists in the DB. Even with
+            # microsecond precision, N concurrent walkers can occasionally
+            # collide on identical microsecond timestamps when the system
+            # clock's resolution collapses under heavy concurrent load.
+            # Empirical evidence: `scripts/audit_account_groups_unique_collision.py
+            # --threads 8` captured this pattern under the UPSERT-RETURNING
+            # harden (1/8 thread raised `RuntimeError("INSERT did not return id")`
+            # from `web_runner/db.py::SqliteDatabase.insert_returning_id`'s
+            # `if not row` fallback).
+            #
+            # The INSERT-or-IGNORE + SELECT-by-name pair is bulletproof
+            # because (a) `ON CONFLICT (name) DO NOTHING` is atomic and
+            # idempotent — never raises on UNIQUE match; (b) the subsequent
+            # SELECT-by-unique-key is deterministic — exactly one row matches
+            # `WHERE name = ?` after the atomic INSERT-or-IGNORE step, by
+            # construction. Cross-dialect correctness: `INSERT ... ON
+            # CONFLICT DO NOTHING` is native PG syntax AND SQLite 3.24+
+            # standard form — a single statement handles both dialects
+            # without `_IS_POSTGRES` branching (the `account_authorizations`
+            # INSERT below still uses dialect branching because SQLite's
+            # `INSERT OR IGNORE` combines differently with `ON CONFLICT`).
+            #
+            # Bonus semantic: `account_groups.created` is now locked at
+            # row-creation time (the first walker to INSERT wins), making
+            # it a stable "first_seen" timestamp. The prior DO-UPDATE
+            # pattern artificially bumped `created` on every reconciliation
+            # pass which obscured the audit trail.
+            db.execute(
+                "INSERT INTO account_groups (name, created) VALUES (?, ?) "
+                "ON CONFLICT (name) DO NOTHING",
+                (account_name, datetime.now().isoformat(timespec="microseconds")),
+            )
+            group = db.fetch_one(
+                "SELECT id FROM account_groups WHERE name = ?",
+                (account_name,),
+            )
+            if group is None:
+                # Should be impossible: the atomic INSERT-or-IGNORE step
+                # either inserted a fresh row OR no-op'd on the existing
+                # one — both branches guarantee at least one row now
+                # matches `WHERE name = ?`. Theoretically unreachable;
+                # surface as a hard error so it shows up in CI / on-call
+                # if invariant ever breaks (e.g. schema migration drops
+                # the UNIQUE constraint).
+                raise RuntimeError(
+                    f"INSERT-or-IGNORE + SELECT returned no row for "
+                    f"account_groups(name={account_name!r}); UNIQUE-invariant broken"
                 )
-            conn.commit()
+            group_id = group["id"]  # noqa: PLW2901 — rebind to outer-scope name for symmetry with the prior branch
+        if _IS_POSTGRES:
+            db.execute(
+                "INSERT INTO account_authorizations (group_id, platform, cookie_file, created) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT (group_id, platform) DO NOTHING",
+                (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
+            )
+        else:
+            db.execute(
+                "INSERT OR IGNORE INTO account_authorizations (group_id, platform, cookie_file, created) VALUES (?, ?, ?, ?)",
+                (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
+            )
 
 
 def _account_files(platform: str | None = None) -> list[dict]:
@@ -380,23 +496,28 @@ def _account_files(platform: str | None = None) -> list[dict]:
     return results
 
 
+_COOKIE_STALE_HOURS = 24
+
+
 def _quick_check_cookie(platform: str, account: str) -> dict:
     cookie_path = COOKIES_DIR / f"{platform}_{account}.json"
     if not cookie_path.exists():
-        return {"valid": False, "reason": "no_file", "age_hours": None, "file_size": None}
+        return {"valid": False, "reason": "no_file", "age_hours": None, "file_size": None, "stale": False}
     try:
         stat = cookie_path.stat()
         age_hours = (time.time() - stat.st_mtime) / 3600
         file_size = stat.st_size
         if file_size < 10:
-            return {"valid": False, "reason": "empty_file", "age_hours": round(age_hours, 1), "file_size": file_size}
+            return {"valid": False, "reason": "empty_file", "age_hours": round(age_hours, 1), "file_size": file_size, "stale": False}
         with open(cookie_path) as f:
             data = json.load(f)
         if not data:
-            return {"valid": False, "reason": "empty_json", "age_hours": round(age_hours, 1), "file_size": file_size}
-        return {"valid": True, "reason": "ok", "age_hours": round(age_hours, 1), "file_size": file_size}
+            return {"valid": False, "reason": "empty_json", "age_hours": round(age_hours, 1), "file_size": file_size, "stale": False}
+        stale = age_hours > _COOKIE_STALE_HOURS
+        reason = "stale" if stale else "ok"
+        return {"valid": True, "reason": reason, "age_hours": round(age_hours, 1), "file_size": file_size, "stale": stale}
     except (json.JSONDecodeError, OSError):
-        return {"valid": False, "reason": "invalid_json", "age_hours": None, "file_size": None}
+        return {"valid": False, "reason": "invalid_json", "age_hours": None, "file_size": None, "stale": False}
 
 
 def _parse_upload_result(stdout: str) -> str | None:
@@ -407,9 +528,15 @@ def _parse_upload_result(stdout: str) -> str | None:
 
 
 def _store_result(task_id: str, stdout: str) -> None:
+    """Persist the upstream CLI's ``[UPLOAD_RESULT]<json>`` payload verbatim.
+
+    The extracted text is already valid JSON; route it through
+    ``db.json_dump`` (string passthrough branch) for symmetry with the
+    test-side ``json.loads``.
+    """
     result_json = _parse_upload_result(stdout)
     if result_json:
-        _db_update_task(task_id, result=result_json)
+        _db_update_task(task_id, result=result_json.strip())
 
 
 def _run_sau(task_id: str, argv: list[str]) -> None:
@@ -463,11 +590,34 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
 
 
 def _schedule_task(task_id: str, argv: list[str], schedule_time: datetime) -> None:
+    """Schedule a task for future execution.
+
+    Persists scheduled_at to DB so tasks survive restarts. Also sets
+    a Timer as a best-effort immediate trigger if the server stays up.
+    """
+    # Persist to DB
+    try:
+        db = get_database()
+        db.execute(
+            "UPDATE tasks SET scheduled_at = ? WHERE task_id = ?",
+            (schedule_time.isoformat(timespec="seconds"), task_id),
+        )
+    except Exception as exc:
+        log(f"[{task_id}] warning: failed to persist scheduled_at: {exc}")
+
     delay = (schedule_time - datetime.now()).total_seconds()
     if delay <= 0:
-        task_executor.submit(_run_sau, task_id, argv)
+        # Use new executor if available, fall back to legacy
+        try:
+            from web_runner.executor import PRIORITY_NORMAL, submit_task
+            # Extract platform from argv
+            platform = argv[0] if argv and not argv[0].startswith("-") else ""
+            submit_task(_run_sau, task_id, argv, priority=PRIORITY_NORMAL, platform=platform, task_id=task_id)
+        except Exception:
+            task_executor.submit(_run_sau, task_id, argv)
         return
     log(f"[{task_id}] scheduled for {schedule_time.isoformat()} (in {delay:.0f}s)")
+    # Best-effort timer (DB persistence is the source of truth)
     timer = threading.Timer(delay, lambda: task_executor.submit(_run_sau, task_id, argv))
     timer.daemon = True
     with _timer_lock:
@@ -513,12 +663,18 @@ def _cleanup_old_uploads() -> None:
     now = time.time()
     max_age = 24 * 60 * 60
     count = 0
-    for f in UPLOADS_DIR.iterdir():
-        if f.is_file() and (now - f.stat().st_mtime) > max_age:
-            f.unlink(missing_ok=True)
-            count += 1
+    # ponytail: sweep BOTH upload dirs. INBOX_DIR is canonical in this
+    # module (`BASE_DIR` / "videos" / "inbox", see above) so CWD-relative
+    # surprises can't desync writer vs. cleanup.
+    for root in (UPLOADS_DIR, INBOX_DIR):
+        if not root.exists():
+            continue
+        for f in root.iterdir():
+            if f.is_file() and (now - f.stat().st_mtime) > max_age:
+                f.unlink(missing_ok=True)
+                count += 1
     if count:
-        print(f"[startup] cleaned {count} old temp files from {UPLOADS_DIR}")
+        print(f"[startup] cleaned {count} old temp files from {UPLOADS_DIR} + {INBOX_DIR}")
 
 
 PLATFORM_CONFIG: dict[str, dict] = {
@@ -535,4 +691,4 @@ DESC_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent"}
 THUMBNAIL_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent"}
 THUMBNAIL_DUAL_PLATFORMS = {"douyin", "tencent"}
 NOTE_PLATFORMS = {p for p, cfg in PLATFORM_CONFIG.items() if cfg.get("note")}
-_QR_LOGIN_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent", "bilibili", "tiktok", "baijiahao"}
+_QR_LOGIN_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent", "tiktok", "baijiahao"}

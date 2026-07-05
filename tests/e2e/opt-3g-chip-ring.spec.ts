@@ -22,25 +22,35 @@ import { test, expect } from '@playwright/test'
  * `data-state="open"` on the panel.
  */
 test.describe('OPT-3G · chip → controlled Accordion + per-platform ring', () => {
+  // Explicit `test.use({ baseURL: 'http://localhost:5180' })` —
+  // mirrors the global `use.baseURL` already set in
+  // `playwright.config.ts`. Kept per-spec so every e2e spec in
+  // tests/e2e/ is self-contained about which port it targets,
+  // independent of any future global-config flip. Pre-merge this
+  // spec was authored against :5174 (the standalone marketing
+  // Vite, since removed via `sau_web/site/` deletion); post-merge
+  // :5180 is the merged SPA port serving both marketing + dashboard.
+  test.use({ baseURL: 'http://localhost:5180' })
+
   test.beforeEach(async ({ page }) => {
     await mockShellApisWithBilibiliGroup(page)
   })
 
   test('click chip ⇒ opens accordion + highlights first pending platform', async ({ page }) => {
-    await page.goto('/publish')
+    // Navigate directly to /app/publish (the canonical route).
+    await page.goto('/app/publish')
 
-    // Pick the bilibili group from the dropdown. The chip only shows
-    // when at least one checked platform matches a platform-specific
-    // section (douyin / bilibili / tencent).
+    // Pick the bilibili group from the dropdown. GroupPublishSelector's
+    // `handleGroupChange` auto-checks every platform the group holds —
+    // for this fixture (one bilibili auth) that means bilibili is in
+    // `value.platforms` immediately after the option click. The chip
+    // only renders when at least one checked platform matches a
+    // platform-specific section (douyin / bilibili / tencent), so the
+    // auto-check is enough to surface the chip — we deliberately do
+    // NOT click the bilibili row, which would TOGGLE bilibili off and
+    // collapse the chip before the assertion fires.
     await page.getByRole('combobox').first().click()
     await page.getByRole('option', { name: /bilibili-测试账号组/ }).click()
-
-    // The bilibili row in the platform list: the row has aria for the
-    // bilibili label. Clicking the row toggles the Checkbox.
-    const bilibiliRow = page.locator('.auth-row', {
-      has: page.locator('text=Bilibili'),
-    })
-    await bilibiliRow.click()
 
     // The chip should now be present and announce `1 项平台专属待配置`.
     const chip = page.getByTestId('pending-platform-configs-chip')
@@ -70,11 +80,27 @@ test.describe('OPT-3G · chip → controlled Accordion + per-platform ring', () 
 async function mockShellApisWithBilibiliGroup(
   page: import('@playwright/test').Page,
 ) {
-  await page.route('**/api/account-groups', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([
+  // Auth mock — needed for AuthGuard to flip isAuthenticated
+  // so the PublishPage (behind /app/* → AppShell) can mount.
+  // Function predicates: unambiguous pathname matching handles
+  // the axios _t=timestamp query param correctly.
+  await page.route(
+    (url) => url.pathname === '/api/auth/me',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { user: { id: 1, email: 'qa@example.com', role: 'admin', created_at: '2026-01-01T00:00:00Z', last_login: '2026-06-26T00:00:00Z' } } }),
+      }),
+  )
+
+  await page.route(
+    (url) => url.pathname === '/api/account-groups',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [
         {
           id: 99,
           name: 'bilibili-测试账号组',
@@ -90,13 +116,27 @@ async function mockShellApisWithBilibiliGroup(
           ],
           created: '2025-01-01T00:00:00Z',
         },
-      ]),
-    }),
+      ] }),
+      }),
   )
-  await page.route('**/api/tasks', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  await page.route(
+    (url) => url.pathname === '/api/tasks',
+    (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
   )
-  await page.route('**/api/accounts', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  await page.route(
+    (url) => url.pathname === '/api/accounts',
+    (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
+  )
+
+  // Catch-all for unmocked /api/* endpoints — prevents connection-refused
+  // errors from triggering 3× axios retries (~7 s per unmocked call).
+  // Returns data:[] (empty array) — safe for hooks that destructure
+  // with `res.data ?? []` and call .map()/.some()/.length on the result.
+  await page.route(
+    (url) => url.pathname.startsWith('/api/') && !['/api/auth/me', '/api/account-groups', '/api/tasks', '/api/accounts'].includes(url.pathname),
+    (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
   )
 }

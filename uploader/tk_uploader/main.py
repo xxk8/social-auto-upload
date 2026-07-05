@@ -1,21 +1,23 @@
+import asyncio
+import os
 import re
 from datetime import datetime
 from pathlib import Path
-from patchright.async_api import Page, Playwright, async_playwright
+
 import patchright
-import os
-import asyncio
-from uploader.tk_uploader.tk_config import Tk_Locator
+from patchright.async_api import Page, Playwright, async_playwright
+
+from conf import LOCAL_CHROME_HEADLESS
+from uploader.base_video import BaseVideoUploader
 from uploader.common import _build_login_result, _emit_qrcode_callback, _msg
+from uploader.tk_uploader.tk_config import Tk_Locator
+from utils.anti_detect import obfuscate_image, obfuscate_video
+from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.files_times import get_absolute_path
-from utils.login_qrcode import build_login_qrcode_path
-from utils.login_qrcode import decode_qrcode_from_path
-from utils.login_qrcode import print_terminal_qrcode
-from utils.login_qrcode import remove_qrcode_file
-from utils.login_qrcode import save_data_url_image
 from utils.log import tiktok_logger
-from conf import LOCAL_CHROME_HEADLESS
+from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
+
 TIKTOK_LOGIN_QRCODE_URL = 'https://www.tiktok.com/login/qrcode'
 
 async def cookie_auth(account_file):
@@ -55,17 +57,16 @@ async def _extract_tiktok_qrcode_src(page: Page) -> str:
 
 async def _save_tiktok_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None=None, qrcode_callback=None) -> dict:
     qrcode_src = await _extract_tiktok_qrcode_src(page)
-    qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+    qrcode_path: Path | None = None
+    if qrcode_callback is None:
+        # CLI direct-path: write PNG so the user can scan via file viewer.
+        qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
+        tiktok_logger.info(_msg('🖼️', f'QR code saved to: {qrcode_path}'))
+        tiktok_logger.info(_msg('📲', f'Please scan with TikTok APP or open: file://{qrcode_path}'))
     if previous_qrcode_path and previous_qrcode_path != qrcode_path:
         if remove_qrcode_file(previous_qrcode_path):
             tiktok_logger.info(_msg('🧹', f'Temporary QR file cleaned: {previous_qrcode_path}'))
-    tiktok_logger.info(_msg('🖼️', f'QR code saved to: {qrcode_path}'))
-    qrcode_content = decode_qrcode_from_path(qrcode_path)
-    if qrcode_content:
-        print_terminal_qrcode(qrcode_content, qrcode_path, 'TikTok APP')
-    else:
-        tiktok_logger.warning(_msg('😵', f'Cannot render QR in terminal, open {qrcode_path} to scan'))
-    qrcode_info = {'image_path': str(qrcode_path), 'image_data_url': qrcode_src}
+    qrcode_info = {'image_path': str(qrcode_path) if qrcode_path else '', 'image_data_url': qrcode_src}
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
     return qrcode_info
 
@@ -84,7 +85,6 @@ async def _is_tiktok_login_completed(page: Page) -> bool:
     return False
 
 async def _wait_for_tiktok_login(page: Page, account_file: str, qrcode_info: dict, qrcode_callback=None, poll_interval: int=3, max_checks: int=100) -> dict:
-    qrcode_path = Path(qrcode_info['image_path'])
     for _ in range(max_checks):
         if await _is_tiktok_login_completed(page):
             tiktok_logger.info(_msg('🥳', f'QR scan succeeded, redirected to: {page.url}'))
@@ -117,7 +117,7 @@ async def get_tiktok_cookie(account_file, qrcode_callback=None, headless: bool=L
             await page.wait_for_load_state('domcontentloaded')
             await asyncio.sleep(2)
             qrcode_info = await _save_tiktok_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info['image_path'])
+            qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None  # noqa: F841  # used in finally block below
             tiktok_logger.info(_msg('🧍', '请扫码，正在等待TikTok登录完成'))
             result = await _wait_for_tiktok_login(page, account_file, qrcode_info, qrcode_callback=qrcode_callback, poll_interval=poll_interval, max_checks=max_checks)
             if result['success']:
@@ -136,7 +136,11 @@ async def get_tiktok_cookie(account_file, qrcode_callback=None, headless: bool=L
             await browser.close()
         return result
 
-class TiktokVideo(object):
+class TiktokVideo(BaseVideoUploader):
+    # NOTE(deviation-from-spec): tasks §5.1 写 "加 super().__init__(publish_date, account_file) 调用",
+    # 但 BaseVideoUploader 当前是 stateless namespace (无 __init__)。这里走 Phase 1 DouYinBaseUploader
+    # 相同 pattern: derived class 直接设置 shared attrs。给 base 加 __init__ 须同步更新全部 7 个 platform
+    # class, 超 AC 范围。详见 tasks.md §5.1 deviation note。
 
     def __init__(self, title, file_path, tags, publish_date, account_file):
         self.title = title
@@ -146,6 +150,40 @@ class TiktokVideo(object):
         self.account_file = account_file
         self.headless = LOCAL_CHROME_HEADLESS
         self.locator_base = None
+
+    async def validate_upload_args(self):
+        """Pre-flight validation before opening the browser (Phase 3 pattern).
+
+        Mirrors ``DouYinVideo.validate_upload_args``:
+          * title is non-empty
+          * file exists + supported video extension (via ``BaseVideoUploader.validate_video_file``)
+          * publish_date, if scheduled (datetime), is at least ``MIN_SCHEDULE_LEAD_TIME`` in the future
+            (via ``BaseVideoUploader.validate_publish_date``; short-circuits on ``0`` for immediate publish)
+        """
+        if not self.title or not str(self.title).strip():
+            raise ValueError("TikTok video mode requires title")
+        self.file_path = str(self.validate_video_file(self.file_path))
+
+        # ── Content fingerprint obfuscation (anti-duplicate-detection) ────────
+        config = get_config("tiktok")
+        obf_path = str(Path(self.file_path).with_suffix("")) + ".obf" + Path(self.file_path).suffix
+        obfuscated = obfuscate_video(
+            self.file_path,
+            obf_path,
+            crop_pixels=config.crop_pixels,
+            bitrate_variation=config.bitrate_variation,
+            add_noise=config.add_noise,
+            target_codec=config.target_codec,
+            brightness_range=config.brightness_range,
+            contrast_range=config.contrast_range,
+            min_bitrate_mbps=config.min_bitrate_mbps,
+            fast_mode=config.fast_mode,
+        )
+        if obfuscated.exists():
+            self.file_path = str(obfuscated)
+            tiktok_logger.info(_msg("🎭", "视频指纹已混淆，用于对抗平台重复检测"))
+
+        self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def set_schedule_time(self, page, publish_date):
         schedule_input_element = self.locator_base.get_by_label('Schedule')
@@ -191,6 +229,7 @@ class TiktokVideo(object):
         await file_chooser.set_files(self.file_path)
 
     async def upload(self, playwright: Playwright) -> None:
+        await self.validate_upload_args()
         browser = await playwright.firefox.launch(headless=self.headless)
         context = await browser.new_context(storage_state=f'{self.account_file}')
         context = await set_init_script(context)
@@ -201,7 +240,7 @@ class TiktokVideo(object):
         try:
             await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
             tiktok_logger.info('Either iframe or div appeared.')
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             tiktok_logger.error('Neither iframe nor div appeared within the timeout.')
         await self.choose_base_locator(page)
         upload_button = self.locator_base.locator('button:has-text("Select video"):visible')
@@ -234,7 +273,7 @@ class TiktokVideo(object):
         await page.keyboard.press('End')
         await page.keyboard.press('Enter')
         for index, tag in enumerate(self.tags, start=1):
-            tiktok_logger.info('Setting the %s tag' % index)
+            tiktok_logger.info(f'Setting the {index} tag')
             await page.keyboard.press('End')
             await page.wait_for_timeout(1000)
             await page.keyboard.insert_text('#' + tag + ' ')
@@ -295,6 +334,116 @@ class TiktokVideo(object):
             self.locator_base = page.frame_locator(Tk_Locator.tk_iframe)
         else:
             self.locator_base = page.locator(Tk_Locator.default)
+
+    async def main(self):
+        async with async_playwright() as playwright:
+            await self.upload(playwright)
+
+
+class TiktokNote(BaseVideoUploader):
+    """TikTok Photo Post (image carousel) uploader — Phase 5 migration.
+
+    Inherits ``BaseVideoUploader`` and applies the shared
+    ``validate_upload_args`` consolidation (matches BilibiliNote /
+    KSNote / DouYinNote / TencentNote / XiaoHongShuNote). The actual
+    ``upload()`` body is stubbed with ``NotImplementedError`` —
+    TikTok Studio's Photo Post UI flow is not yet wired through
+    the patchright automation pattern. The pre-flight validator IS
+    real + tested (mirrors §8.4.3's TencentNote sub-design-decision:
+    validation runs BEFORE the not-yet-implemented upload body, so
+    the lock-in test only exercises the real validator without
+    driving a real TikTok session).
+
+    NOTE(deviation-from-spec): same as TiktokVideo — derived class
+    directly sets shared attrs (no ``super().__init__()``).
+    ``BaseVideoUploader`` is a stateless namespace for classmethods.
+    Details: tasks.md §5.1 deviation note.
+    """
+
+    # Per-class cap (matches BilibiliNote.MAX_IMAGES shape). TikTok Studio's
+    # Photo Post carousel is 35 images as of 2024 (storage-side limit; the
+    # upload UI's hot path is 9 with the rest accessed via a "see more"
+    # affordance). Per BilibiliNote's pattern, the cap is enforced in
+    # ``validate_upload_args`` BEFORE the per-image loop so we fail fast on
+    # shape — not on the 36th individual image validation.
+    MAX_IMAGES = 35
+
+    def __init__(self, *, title, note, image_files, tags, publish_date,
+                 account_file, headless=LOCAL_CHROME_HEADLESS):
+        self.title = title
+        self.note = note
+        # Store as-passed (list[str] | list[Path]) — ``validate_image_file``
+        # does the ``Path(...).expanduser().resolve()`` normalisation
+        # internally, so per-item conversion here would be redundant. This
+        # matches BilibiliNote's shape (which also stores as-passed).
+        self.image_files = list(image_files)
+        self.tags = tags
+        self.publish_date = publish_date
+        self.account_file = account_file
+        self.headless = headless
+
+    async def validate_upload_args(self):
+        """Pre-flight validation before opening the browser (Phase 4 §8.4 family pattern).
+
+        The order mirrors ``BilibiliNote`` (the closest analog per the
+        §8.4.5 family audit):
+          * title non-empty (matches base pattern across all 11 prior
+            classes + the new YouTubeVideo)
+          * note non-empty (TikTok Photo Post caption requirement;
+            mirrors ``BilibiliNote`` shape)
+          * image_files non-empty + within ``MAX_IMAGES`` cap
+          * each image validates via the consolidated
+            ``BaseVideoUploader.validate_image_file`` (cross-platform
+            ``SUPPORTED_IMAGE_EXTENSIONS`` set; resolves to ``Path``,
+            normalised back to ``str`` for symmetry with the rest of
+            the family)
+          * publish_date unconditional via
+            ``BaseVideoUploader.validate_publish_date``; short-circuits
+            on ``0``/``None`` for immediate publish.
+        """
+        if not self.title or not str(self.title).strip():
+            raise ValueError("TikTok note mode requires title")
+        if not self.note or not str(self.note).strip():
+            raise ValueError("TikTok note mode requires note text")
+        if not self.image_files:
+            raise ValueError("TikTok note mode requires at least one image")
+        if len(self.image_files) > self.MAX_IMAGES:
+            raise ValueError(
+                f"TikTok note mode supports at most {self.MAX_IMAGES} images "
+                f"(got {len(self.image_files)})"
+            )
+        self.image_files = [str(self.validate_image_file(p)) for p in self.image_files]
+
+        # ── Image fingerprint obfuscation (anti-duplicate-detection) ──────────
+        config = get_config("tiktok")
+        obfuscated_images = []
+        for img_path in self.image_files:
+            p = Path(img_path)
+            obf_path = str(p.with_suffix("")) + ".obf" + p.suffix
+            obf = obfuscate_image(
+                img_path,
+                obf_path,
+                quality=config.image_quality,
+                crop_pixels=config.image_crop_pixels,
+                brightness_range=config.brightness_range,
+            )
+            if obf.exists():
+                obfuscated_images.append(str(obf))
+        if obfuscated_images:
+            self.image_files = obfuscated_images
+            tiktok_logger.info(_msg("🎭", f"{len(obfuscated_images)} 张图片指纹已混淆"))
+
+        self.publish_date = self.validate_publish_date(self.publish_date)
+
+    async def upload(self, playwright: Playwright) -> None:
+        await self.validate_upload_args()
+        raise NotImplementedError(
+            "TikTok Photo Post upload is not yet wired through patchright "
+            "automation (Phase 5 marker). The pre-flight validate_upload_args "
+            "IS real + tested; the body stub prevents the test from accidentally "
+            "driving a real TikTok Studio session. Swap in the browser "
+            "automation when TikTok Studio's Photo Post UI flow is wired."
+        )
 
     async def main(self):
         async with async_playwright() as playwright:

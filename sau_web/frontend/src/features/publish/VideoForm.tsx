@@ -10,7 +10,7 @@ import {
 } from 'react'
 import type { FormPreviewData } from './previewTypes'
 import type { GroupSelection, PlatformSpecificSection } from './GroupPublishSelector'
-import type { ApplyAttempt, FormHandle } from '@/lib/chat/chatFormBridge'
+import type { FormHandle } from '@/lib/chat/chatFormBridge'
 import {
   Accordion,
   AccordionContent,

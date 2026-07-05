@@ -37,6 +37,16 @@ import { join } from 'node:path'
  *       pill vanishes and the URL stays on /publish.
  */
 test.describe('OPT-3I · cancel post-submit 退回避免自动跳转', () => {
+  // Explicit `test.use({ baseURL: 'http://localhost:5180' })` —
+  // mirrors the global `use.baseURL` already set in
+  // `playwright.config.ts`. Kept per-spec so every e2e spec in
+  // tests/e2e/ is self-contained about which port it targets,
+  // independent of any future global-config flip. Pre-merge this
+  // spec was authored against :5174 (the standalone marketing
+  // Vite, since removed via `sau_web/site/` deletion); post-merge
+  // :5180 is the merged SPA port serving both marketing + dashboard.
+  test.use({ baseURL: 'http://localhost:5180' })
+
   test.beforeEach(async ({ page }) => {
     await mockShellApis(page)
     // Stub the upload so the form can complete the submit pipeline
@@ -47,31 +57,55 @@ test.describe('OPT-3I · cancel post-submit 退回避免自动跳转', () => {
   })
 
   test('submit → countdown pill shows → 点击取消 → 不跳转', async ({ page }) => {
-    await page.goto('/publish')
+    // Navigate directly to /app/publish (the canonical route).
+    // PublishWizard defaults to step 0 (Upload), so we walk Upload →
+    // Content → Review before submitting — the legacy single-form
+    // anchor references (#video-file-input, 「提交视频」) were replaced
+    // by the wizard when the 3-step flow landed.
+    await page.goto('/app/publish')
 
-    // Pick a bilibili group so the form has a row to submit against.
+    // ── Step 0 (Upload) ────────────────────────────────────────────
+    // Pick the bilibili group so the form has a row to submit against.
+    // GroupPublishSelector's `handleGroupChange` auto-checks every
+    // platform auth in the chosen group — for this fixture (one
+    // bilibili auth) that puts bilibili in `groupSelection.platforms`
+    // *immediately after the option click*. We deliberately do NOT
+    // click the bilibili auth-row; doing so would TOGGLE bilibili
+    // off (mirrors the OPT-3G fix in the sibling spec) and gate the
+    // step-0 `canProceed()` on an empty group.
     await page.getByRole('combobox').first().click()
     await page.getByRole('option', { name: /platform-group/ }).click()
-    await page
-      .locator('.auth-row', { has: page.locator('text=Bilibili') })
-      .click()
 
-    // Fill the required title. The submit pipeline also requires a
-    // file, which we attach via a tiny temp .mp4 stub. check() makes
-    // the Checkbox read `checked` so the publish call uses it.
-    await page.getByLabel('标题').fill('OPT-3I e2e 验证取消按钮')
-
-    // We need a real <input type=file> to drive the upload. Stage a
-    // tiny file in the OS tempdir and point Playwright at it.
+    // We need a real <input type=file> at step 0. The wizard's dropzone
+    // wraps the input in a <label> with aria-label="上传视频文件" — so
+    // we drive the sr-only input through its accessible name (the id
+    // itself is generated via useId() and unstable across mounts).
+    // Stage a tiny file in the OS tempdir and point Playwright at it.
     const dir = mkdtempSync(join(tmpdir(), 'opt3i-e2e-'))
     const filePath = join(dir, 'sample.mp4')
     writeFileSync(filePath, Buffer.from([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]))
-    await page.locator('#video-file-input').setInputFiles(filePath)
+    await page.getByLabel('上传视频文件').setInputFiles(filePath)
 
-    // Submit. The pipeline POSTs /api/videos/upload per group mapping;
-    // our mock returns success so the form emits handleSubmitSuccess
-    // → PublishPage schedules the 4 s countdown + sets submitSuccess.
-    await page.getByRole('button', { name: '提交视频' }).click()
+    // Step 0 → 1. WizardNav's 下一步 is enabled once canProceed() is
+    // true (groupSelection non-empty + files.file set).
+    await page.getByRole('button', { name: '下一步' }).click()
+
+    // ── Step 1 (Content) ───────────────────────────────────────────
+    // Fill the required title. ContentStep's <Label htmlFor=
+    // 「wizard-content-title」> now resolves via getByLabel('标题').
+    await page.getByLabel('标题').fill('OPT-3I e2e 验证取消按钮')
+
+    // Step 1 → 2. canProceed() at step 1 requires content.title.trim()
+    // non-empty; filled above.
+    await page.getByRole('button', { name: '下一步' }).click()
+
+    // ── Step 2 (Review) ────────────────────────────────────────────
+    // WizardNav's final-step button label is 「提交」(STEP_LABELS[2]).
+    // Submit. The pipeline POSTs /api/upload/video per group mapping;
+    // our mock returns success → ReviewStep's onSubmit fires →
+    // PublishPage's handleSubmitSuccess sets `submitSuccess` +
+    // schedules the 4 s countdown.
+    await page.getByRole('button', { name: '提交' }).click()
 
     // Pill should be visible with `Xs 后跳转到任务列表 · 取消` copy.
     // The aria-label is `剩 X 秒自动跳转到任务列表，点击取消`.
@@ -85,9 +119,9 @@ test.describe('OPT-3I · cancel post-submit 退回避免自动跳转', () => {
     await cancelPill.click()
     await expect(cancelPill).toHaveCount(0)
 
-    // URL invariant: still on /publish (no auto-nav).
+    // URL invariant: still on the publish page (no auto-nav).
     await page.waitForTimeout(200) // window for any pending navigate tick
-    expect(new URL(page.url()).pathname).toBe('/publish')
+    expect(new URL(page.url()).pathname).toBe('/app/publish')
 
     // The 手动 导航 affordance should still be there — banner is
     // visible because submitSuccess is non-null even after cancel.
@@ -98,11 +132,27 @@ test.describe('OPT-3I · cancel post-submit 退回避免自动跳转', () => {
 })
 
 async function mockShellApis(page: import('@playwright/test').Page) {
-  await page.route('**/api/account-groups', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([
+  // Auth mock — needed for AuthGuard to flip isAuthenticated
+  // so the PublishPage (behind /app/* → AppShell) can mount.
+  // Function predicates: unambiguous pathname matching handles
+  // the axios _t=timestamp query param correctly.
+  await page.route(
+    (url) => url.pathname === '/api/auth/me',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { user: { id: 1, email: 'qa@example.com', role: 'admin', created_at: '2026-01-01T00:00:00Z', last_login: '2026-06-26T00:00:00Z' } } }),
+      }),
+  )
+
+  await page.route(
+    (url) => url.pathname === '/api/account-groups',
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [
         {
           id: 42,
           name: 'platform-group',
@@ -118,19 +168,35 @@ async function mockShellApis(page: import('@playwright/test').Page) {
           ],
           created: '2025-01-01T00:00:00Z',
         },
-      ]),
-    }),
+      ] }),
+      }),
   )
-  await page.route('**/api/tasks', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  await page.route(
+    (url) => url.pathname === '/api/tasks',
+    (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   )
-  await page.route('**/api/accounts', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  await page.route(
+    (url) => url.pathname === '/api/accounts',
+    (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+
+  // Catch-all for unmocked /api/* endpoints — prevents connection-refused
+  // errors from triggering 3× axios retries (~7 s per unmocked call).
+  // Returns data:[] (empty array) — safe for hooks that destructure
+  // with `res.data ?? []` and call .map()/.some()/.length on the result.
+  await page.route(
+    (url) => url.pathname.startsWith('/api/') && !['/api/auth/me', '/api/account-groups', '/api/tasks', '/api/accounts'].includes(url.pathname),
+    (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
   )
 }
 
 async function mockUploadSuccess(page: import('@playwright/test').Page) {
-  await page.route('**/api/upload/video', async (route) => {
+  // POST request — no _t timestamp param, so glob matching is safe.
+  // Still use pathname predicate for consistency with the rest of the file.
+  await page.route((url) => url.pathname === '/api/upload/video', async (route) => {
     // The VideoForm POSTs multipart with `platform` + `account` etc.
     // We acknowledge any variant with a stub success body.
     await route.fulfill({

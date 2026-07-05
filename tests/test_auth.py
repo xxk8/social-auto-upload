@@ -160,6 +160,247 @@ class TestMe:
         assert data["success"] is True
         assert data["data"]["user"]["email"] == "me@test.com"
 
+    def test_shape_extended_with_profile_contract(self, app):
+        """Round 7 — GET /api/auth/me returns {name, avatar, tier}.
+
+        Pins the round-7 extension: ProfilePage reads `name`,
+        SettingsPage reads `tier`, UserMenu reads `avatar`. New
+        `name` and `avatar` columns default to NULL on fresh rows;
+        `tier` falls back to 'legacy' if license_tier is unpopulated.
+        """
+        _login_as(app, "shape@test.com")
+        resp = app.get("/api/auth/me")
+        assert resp.status_code == 200
+        user = resp.get_json()["data"]["user"]
+        for key in ("id", "email", "role", "name", "avatar", "tier",
+                    "created_at", "last_login"):
+            assert key in user, f"missing key: {key}"
+        assert user["name"] is None
+        assert user["avatar"] is None
+        # license_tier column defaults to 'legacy' — a fresh user
+        # never went through the license-activate route so falls
+        # back to legacy.
+        assert user["tier"] == "legacy"
+
+    def test_auth_disabled_branch_has_universal_shape(self, app_no_auth):
+        """The auth-disabled branch (SAU_AUTH_ENABLED=false) returns
+        the SAME shape as the auth-enabled branch — frontend never
+        branches on `user.tier !== undefined`.
+
+        Synthetic user: id=0, email='local@sau.dev', role='admin',
+        name='local', avatar=null, tier='legacy'.
+        """
+        resp = app_no_auth.get("/api/auth/me")
+        assert resp.status_code == 200
+        user = resp.get_json()["data"]["user"]
+        assert user["id"] == 0
+        assert user["email"] == "local@sau.dev"
+        assert user["role"] == "admin"
+        assert user["name"] == "local"
+        assert user["avatar"] is None
+        assert user["tier"] == "legacy"
+
+
+class TestPatchMe:
+    """Round 7 — PATCH /api/auth/me partial-update contract.
+
+    Validates the mutation surface against:
+      * happy path (name + avatar write)
+      * field allow-list (role / tier / id mass-assignment rejected)
+      * field validation (name length, avatar URL scheme)
+      * clearing via null / empty-string
+      * auth gating (401 when unauthenticated)
+      * response shape (returns updated user via _serialize_user)
+    """
+
+    def test_unauthenticated(self, app):
+        resp = app.patch("/api/auth/me", json={"name": "x"})
+        assert resp.status_code == 401
+
+    def test_happy_path_name(self, app):
+        _login_as(app, "patch_name@test.com")
+        resp = app.patch("/api/auth/me", json={"name": "补丁测试"})
+        assert resp.status_code == 200
+        user = resp.get_json()["data"]["user"]
+        assert user["name"] == "补丁测试"
+        # Round-trips through GET /api/auth/me
+        assert app.get("/api/auth/me").get_json()["data"]["user"]["name"] == "补丁测试"
+
+    def test_happy_path_avatar(self, app):
+        _login_as(app, "patch_avatar@test.com")
+        url = "https://avatars.githubusercontent.com/u/12345?v=4"
+        resp = app.patch("/api/auth/me", json={"avatar": url})
+        assert resp.status_code == 200
+        user = resp.get_json()["data"]["user"]
+        assert user["avatar"] == url
+
+    def test_clear_via_null(self, app):
+        _login_as(app, "patch_clear@test.com")
+        # Seed values
+        app.patch("/api/auth/me", json={"name": "seed", "avatar": "https://x.test/a.png"})
+        # Clear both in one call
+        resp = app.patch("/api/auth/me", json={"name": None, "avatar": None})
+        assert resp.status_code == 200
+        user = resp.get_json()["data"]["user"]
+        assert user["name"] is None
+        assert user["avatar"] is None
+
+    def test_clear_via_empty_string(self, app):
+        _login_as(app, "patch_clear2@test.com")
+        app.patch("/api/auth/me", json={"name": "seed"})
+        resp = app.patch("/api/auth/me", json={"name": "   "})
+        # Whitespace-only string maps to NULL (per spec — empty +
+        # null both clear the column to NULL).
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["user"]["name"] is None
+
+    def test_name_strips_whitespace(self, app):
+        _login_as(app, "patch_strip@test.com")
+        resp = app.patch("/api/auth/me", json={"name": "  前后空白  "})
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["user"]["name"] == "前后空白"
+
+    def test_name_too_long_422(self, app):
+        _login_as(app, "patch_long@test.com")
+        resp = app.patch("/api/auth/me", json={"name": "x" * 81})
+        assert resp.status_code == 422
+        assert "长度不能超过" in resp.get_json()["message"]
+
+    def test_name_max_len_accepted(self, app):
+        _login_as(app, "patch_maxlen@test.com")
+        resp = app.patch("/api/auth/me", json={"name": "x" * 80})
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["user"]["name"] == "x" * 80
+
+    def test_name_non_string_422(self, app):
+        _login_as(app, "patch_int@test.com")
+        resp = app.patch("/api/auth/me", json={"name": 12345})
+        assert resp.status_code == 422
+        assert "字符串" in resp.get_json()["message"]
+
+    def test_avatar_javascript_scheme_rejected(self, app):
+        _login_as(app, "patch_js@test.com")
+        resp = app.patch("/api/auth/me", json={"avatar": "javascript:alert(1)"})
+        assert resp.status_code == 422
+        assert "http://" in resp.get_json()["message"]
+
+    def test_avatar_data_scheme_rejected(self, app):
+        _login_as(app, "patch_data@test.com")
+        # 64KB base64 inline data URL — sample only.
+        b64 = "A" * 100
+        resp = app.patch("/api/auth/me", json={"avatar": f"data:image/png;base64,{b64}"})
+        assert resp.status_code == 422
+
+    def test_avatar_file_scheme_rejected(self, app):
+        _login_as(app, "patch_file@test.com")
+        resp = app.patch("/api/auth/me", json={"avatar": "file:///etc/passwd"})
+        assert resp.status_code == 422
+
+    def test_avatar_too_long_422(self, app):
+        _login_as(app, "patch_longurl@test.com")
+        resp = app.patch(
+            "/api/auth/me",
+            json={"avatar": "https://x.test/" + "a" * 2050},
+        )
+        assert resp.status_code == 422
+        assert "URL 长度" in resp.get_json()["message"]
+
+    def test_role_mass_assignment_422(self, app):
+        """Anti-privilege-escalation: PATCH must NOT accept `role`.
+
+        The frontend never sends it (no form-like surface exposes
+        the field). A misconfigured client that does must hit a 422
+        with an explicit message so the bug surfaces loudly rather
+        than silently dropping (which would let the client think
+        self-escalation worked).
+        """
+        _login_as(app, "patch_role@test.com")
+        resp = app.patch("/api/auth/me", json={"role": "admin"})
+        assert resp.status_code == 422
+        body = resp.get_json()
+        assert "role" in body["message"]
+
+    def test_tier_mass_assignment_422(self, app):
+        """Same anti-escalation guard for `tier` / `license_tier`."""
+        _login_as(app, "patch_tier@test.com")
+        for forbidden in ("tier", "license_tier"):
+            resp = app.patch("/api/auth/me", json={forbidden: "pro"})
+            assert resp.status_code == 422, f"{forbidden}: expected 422, got {resp.status_code}"
+            assert forbidden in resp.get_json()["message"]
+
+    def test_email_mass_assignment_422(self, app):
+        """Identity-bound fields (`email`, `id`) cannot be PATCHed.
+
+        Email-change would require re-verification flow; out of
+        scope for round 7. Treat as 422 with explicit message.
+        """
+        _login_as(app, "patch_email@test.com")
+        resp = app.patch("/api/auth/me", json={"email": "evil@test.com"})
+        assert resp.status_code == 422
+        assert "email" in resp.get_json()["message"]
+
+    def test_empty_payload_400(self, app):
+        _login_as(app, "patch_empty@test.com")
+        # Empty body — no allowed fields.
+        resp = app.patch("/api/auth/me", json={})
+        assert resp.status_code == 400
+        assert "无更新字段" in resp.get_json()["message"]
+
+    def test_unknown_field_silently_dropped(self, app):
+        """Forward-compat: unknown fields are dropped, not 422'd.
+
+        Lets the frontend ship newer clients (e.g. an eventual
+        `theme` field) without a synchronous backend deploy —
+        additive tolerance is a different contract from
+        privilege escalation.
+        """
+        _login_as(app, "patch_unk@test.com")
+        resp = app.patch(
+            "/api/auth/me",
+            json={"name": "valid", "displayName": "typo"},  # unknown -> drop
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["user"]["name"] == "valid"
+
+    def test_only_patches_own_row(self, app):
+        """PATCH only mutates the session's own uid — no horizontal-priv.
+
+        Login as user A. Confirm user B (created via raw DB insert
+        before login) is unchanged after user A PATCHes their own
+        name.
+        """
+        from web_runner.db import get_database
+        from web_runner.routes.auth import _now_iso
+
+        # Seed user B BEFORE we log in as user A (first user = admin
+        # would be user A, but we manually create user B so user A
+        # stays admin-not-the-only-existing-row pattern).
+        db = get_database()
+        _login_as(app, "patch_priv_admin@test.com")  # admin session for insert path
+        db.execute(
+            "INSERT INTO users (email, role, created_at) VALUES (?, 'user', ?)",
+            ("patch_priv_b@test.com", _now_iso()),
+        )
+        db.execute(
+            "UPDATE users SET name = ? WHERE email = ?",
+            ("BEFORE", "patch_priv_b@test.com"),
+        )
+
+        # Now login fresh as user B (re-auth flow).
+        _login_as(app, "patch_priv_b@test.com")
+
+        resp = app.patch("/api/auth/me", json={"name": "AFTER_MINE"})
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["user"]["name"] == "AFTER_MINE"
+
+        # user A's name is unaffected.
+        a_row = db.fetch_one("SELECT name FROM users WHERE email = ?", ("patch_priv_admin@test.com",))
+        assert a_row is None or a_row["name"] is None  # user A never set a name
+
+        # Sanity: user B's name in DB matches what PATCH reported.
+        b_row = db.fetch_one("SELECT name FROM users WHERE email = ?", ("patch_priv_b@test.com",))
+        assert b_row["name"] == "AFTER_MINE"
+
 
 class TestLogout:
     def test_logout(self, app):

@@ -7,19 +7,15 @@ from pathlib import Path
 
 from uploader.douyin_uploader.main import (
     DOUYIN_PUBLISH_STRATEGY_IMMEDIATE,
-    DOUYIN_PUBLISH_STRATEGY_SCHEDULED,
 )
 from uploader.ks_uploader.main import (
     KUAISHOU_PUBLISH_STRATEGY_IMMEDIATE,
-    KUAISHOU_PUBLISH_STRATEGY_SCHEDULED,
 )
 from uploader.tencent_uploader.main import (
     TENCENT_PUBLISH_STRATEGY_IMMEDIATE,
-    TENCENT_PUBLISH_STRATEGY_SCHEDULED,
 )
 from uploader.xiaohongshu_uploader.main import (
     XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE,
-    XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED,
 )
 
 

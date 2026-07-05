@@ -1,0 +1,13 @@
+{
+  "name": "cli-uploader-architecture-consistency",
+  "created": "2026-07-02T00:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "CLI parser 改注册表驱动 + sau_cli.py 瘦身 + 百家号/TikTok 迁移到 BaseVideoUploader,新平台接入成本从 ~200 行降到 ≤ 50 行",
+    "design": "PlatformParserConfig dataclass + lambda-driven 平台特有参数 + 保留 uploader 主流程不重写 + 已知 bug 留到下个 change",
+    "tasks": { "total": 26, "completed": 0 }
+  },
+  "layers": ["cli", "uploader"],
+  "platforms": ["baijiahao", "tiktok", "douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent"],
+  "applyReady": true
+}

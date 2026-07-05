@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /static/
+Sitemap: https://sau.dev/sitemap.xml

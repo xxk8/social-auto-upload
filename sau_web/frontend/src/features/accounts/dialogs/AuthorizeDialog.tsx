@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button'
+import { Button } from '@/Components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -6,19 +6,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
+} from '@/Components/ui/dialog'
+import { Label } from '@/Components/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from '@/Components/ui/select'
 import { PLATFORMS } from '@/api/client'
-import { useAccountsDispatch, useAccountsState } from '../AccountsProvider'
-
-/**
+import {useAccountsDispatch, useAccountsState} from '../AccountsProvider.helpers';/**
  * Add-platform-to-group modal. Validates selection, then delegates the
  * actual login flow to the LoginProgressModal.
  */
@@ -38,7 +36,7 @@ export function AuthorizeDialog() {
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>选择平台</Label>
+            <span className="text-sm font-medium leading-none">选择平台</span>
             <Select
               value={state.selectedPlatform}
               onValueChange={dispatch.setSelectedPlatform}

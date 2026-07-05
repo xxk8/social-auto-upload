@@ -56,6 +56,7 @@ os.environ.setdefault("SAU_DB_DIALECT", "sqlite")
 import sqlite3
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 from web_runner import db as wr_db
@@ -142,3 +143,36 @@ def db_dialect(request):
         def test_x(db_dialect): ...    # noqa: ERA001
     """
     return getattr(request, "param", "sqlite")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def qr_zeros_array():
+    """Session-wide shared BGR ndarray for QR-decoder test mocks (lifted
+    from the prior function-scoped ``fake_qr_ndarray`` fixture in
+    ``tests/test_login_qrcode.py``).
+
+    Demonstrates the ``python-testing`` skill's
+    ``@pytest.fixture(autouse=True)`` pattern at session scope —
+    every test requests this fixture implicitly. The single
+    ``np.zeros((10, 10, 3), dtype=np.uint8)`` allocation runs ONCE
+    at session start instead of ONCE per test (8 tests in the current
+    suite).
+
+    Why scope="session" is safe here:
+      * Pure computation: zero side effects, no monkeypatch, no I/O
+        → no per-test teardown required.
+      * The ndarray is read-only at call sites (returned from the
+        ``cv2.imread`` mock, never mutated by tests). Reuse across
+        tests cannot cause cross-test pollution.
+      * Function-scoped ``mock_cv2`` (still in
+        ``tests/test_login_qrcode.py``) consumes this session-scoped
+        fixture via dependency injection; pytest caches the session
+        instance, so every test in the session gets the SAME ndarray
+        — even with the session→function scope nesting.
+
+    Amortized vs. the prior function-scoped alternative:
+    ``import numpy`` paid ONCE per session; ``np.zeros(10×10×3)``
+    allocated ONCE per session vs. ONCE per test × 8 arrays.
+    Per-test lookup after first invocation is dict-cache-hit (≈ 0 ns).
+    """
+    return np.zeros((10, 10, 3), dtype=np.uint8)

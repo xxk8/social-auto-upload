@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import asyncio
@@ -7,12 +6,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from patchright.async_api import Page
-from patchright.async_api import Playwright
-from patchright.async_api import async_playwright
+from patchright.async_api import Page, Playwright, async_playwright
 
 from conf import BASE_DIR, DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
+from utils.anti_detect import obfuscate_image, obfuscate_video
+from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.log import tencent_logger
 
@@ -75,16 +74,19 @@ def _build_launch_kwargs(headless: bool) -> dict:
 
 
 def _get_qrcode_utils():
-    from utils.login_qrcode import build_login_qrcode_path
-    from utils.login_qrcode import decode_qrcode_from_path
-    from utils.login_qrcode import print_terminal_qrcode
-    from utils.login_qrcode import remove_qrcode_file
-    from utils.login_qrcode import save_data_url_image
+    """Lazy helper dict for tencent's QR utilities.
+
+    Trims the original lazydict to only the helpers still consumed by
+    the tencent login flow after the SSE/CDP swap. ``decode_qrcode_from_path``
+    + ``print_terminal_qrcode`` are intentionally dropped here — the
+    migration sidesteps zxing-decode → terminal-ASCII entirely (see
+    ``uploader/douyin_uploader/main.py`` for the canonical rationale,
+    which is uniform across all 5 non-Douyin uploaders).
+    """
+    from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
 
     return {
         "build_login_qrcode_path": build_login_qrcode_path,
-        "decode_qrcode_from_path": decode_qrcode_from_path,
-        "print_terminal_qrcode": print_terminal_qrcode,
         "remove_qrcode_file": remove_qrcode_file,
         "save_data_url_image": save_data_url_image,
     }
@@ -168,28 +170,23 @@ async def _extract_tencent_qrcode_src(page: Page) -> str:
 async def _save_tencent_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None = None, qrcode_callback=None) -> dict:
     qrcode_utils = _get_qrcode_utils()
     qrcode_src = await _extract_tencent_qrcode_src(page)
-    qrcode_path = qrcode_utils["save_data_url_image"](
-        qrcode_src,
-        qrcode_utils["build_login_qrcode_path"](account_file, suffix="tencent_login_qrcode"),
-    )
+    qrcode_path: Path | None = None
+
+    if qrcode_callback is None:
+        # CLI direct-path: write PNG so the user can scan via file viewer.
+        qrcode_path = qrcode_utils["save_data_url_image"](
+            qrcode_src,
+            qrcode_utils["build_login_qrcode_path"](account_file, suffix="tencent_login_qrcode"),
+        )
+        tencent_logger.info(_msg("🖼️", f"二维码已经准备好啦，已保存到: {qrcode_path}"))
+        tencent_logger.info(_msg("📲", f"请用微信扫码，或打开：file://{qrcode_path}"))
+
     if previous_qrcode_path and previous_qrcode_path != qrcode_path:
         if qrcode_utils["remove_qrcode_file"](previous_qrcode_path):
             tencent_logger.info(_msg("🧹", f"临时二维码文件已清理: {previous_qrcode_path}"))
 
-    tencent_logger.info(_msg("🖼️", f"二维码已经准备好啦，已保存到: {qrcode_path}"))
-    qrcode_content = qrcode_utils["decode_qrcode_from_path"](qrcode_path)
-    if qrcode_content:
-        qrcode_utils["print_terminal_qrcode"](qrcode_content, qrcode_path, "微信")
-    else:
-        tencent_logger.warning(
-            _msg(
-                "😵",
-                f"没能从二维码图片里解析出可打印内容，所以这次没法在终端重绘二维码；请直接打开 {qrcode_path} 扫码",
-            )
-        )
-
     qrcode_info = {
-        "image_path": str(qrcode_path),
+        "image_path": str(qrcode_path) if qrcode_path else "",
         "image_data_url": qrcode_src,
     }
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
@@ -311,7 +308,7 @@ async def _wait_for_tencent_login(
     poll_interval: int = 3,
     max_checks: int = 100,
 ) -> dict:
-    qrcode_path = Path(qrcode_info["image_path"])
+    qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
     scanned_logged = False
     for _ in range(max_checks):
         if await _is_tencent_login_completed(page):
@@ -332,7 +329,7 @@ async def _wait_for_tencent_login(
                 previous_qrcode_path=qrcode_path,
                 qrcode_callback=qrcode_callback,
             )
-            qrcode_path = Path(qrcode_info["image_path"])
+            qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
 
         await asyncio.sleep(poll_interval)
 
@@ -358,7 +355,7 @@ async def tencent_cookie_gen(
             page = await context.new_page()
             await page.goto(TENCENT_LOGIN_URL)
             qrcode_info = await _save_tencent_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info["image_path"])
+            qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
             tencent_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
             result = await _wait_for_tencent_login(
                 page,
@@ -464,11 +461,11 @@ class TencentBaseUploader(BaseVideoUploader):
             raise RuntimeError(f"cookie文件已失效，请先完成视频号登录: {self.account_file}")
         if self.publish_strategy not in {TENCENT_PUBLISH_STRATEGY_IMMEDIATE, TENCENT_PUBLISH_STRATEGY_SCHEDULED}:
             raise ValueError(f"不支持的发布策略: {self.publish_strategy}")
-
-        if self.publish_strategy == TENCENT_PUBLISH_STRATEGY_SCHEDULED:
-            self.publish_date = self.validate_publish_date(self.publish_date)
-        else:
-            self.publish_date = 0
+        # Phase 4 §8.7 migration (2026-07-02): strategy-conditional publish_date block
+        # removed. Validation is now unconditional in the derived-class `validate_upload_args`
+        # (matches the `BaiJiaHaoVideo` / `DouYinVideo` / `KSBaseUploader` / `XiaoHongShuBaseUploader`
+        # shared pattern; fixes the latent "IMMEDIATE strategy + datetime input → silently
+        # overwritten to 0" bug).
 
     async def set_schedule_time_tencent(self, page: Page, publish_date: datetime):
         label_element = page.locator("label").filter(has_text="定时").nth(1)
@@ -758,10 +755,59 @@ class TencentVideo(TencentBaseUploader):
         if not self.title or not str(self.title).strip():
             raise ValueError("视频模式下，title 是必须的")
         self.file_path = str(self.validate_video_file(self.file_path))
+
+        # ── Content fingerprint obfuscation (anti-duplicate-detection) ────────
+        config = get_config("tencent")
+        obf_path = str(Path(self.file_path).with_suffix("")) + ".obf" + Path(self.file_path).suffix
+        obfuscated = obfuscate_video(
+            self.file_path,
+            obf_path,
+            crop_pixels=config.crop_pixels,
+            bitrate_variation=config.bitrate_variation,
+            add_noise=config.add_noise,
+            target_codec=config.target_codec,
+            brightness_range=config.brightness_range,
+            contrast_range=config.contrast_range,
+            min_bitrate_mbps=config.min_bitrate_mbps,
+            fast_mode=config.fast_mode,
+        )
+        if obfuscated.exists():
+            self.file_path = str(obfuscated)
+            tencent_logger.info(_msg("🎭", "视频指纹已混淆，用于对抗平台重复检测"))
+
         if self.thumbnail_landscape_path:
             self.thumbnail_landscape_path = str(self.validate_image_file(self.thumbnail_landscape_path))
+            # Obfuscate landscape thumbnail if provided
+            thumb_config = get_config("tencent")
+            thumb_obf_path = str(Path(self.thumbnail_landscape_path).with_suffix("")) + ".obf" + Path(self.thumbnail_landscape_path).suffix
+            thumb_obf = obfuscate_image(
+                self.thumbnail_landscape_path,
+                thumb_obf_path,
+                quality=thumb_config.image_quality,
+                crop_pixels=thumb_config.image_crop_pixels,
+                brightness_range=thumb_config.brightness_range,
+            )
+            if thumb_obf.exists():
+                self.thumbnail_landscape_path = str(thumb_obf)
+                tencent_logger.info(_msg("🎭", "横版封面指纹已混淆"))
+
         if self.thumbnail_portrait_path:
             self.thumbnail_portrait_path = str(self.validate_image_file(self.thumbnail_portrait_path))
+            # Obfuscate portrait thumbnail if provided
+            thumb_config = get_config("tencent")
+            thumb_obf_path = str(Path(self.thumbnail_portrait_path).with_suffix("")) + ".obf" + Path(self.thumbnail_portrait_path).suffix
+            thumb_obf = obfuscate_image(
+                self.thumbnail_portrait_path,
+                thumb_obf_path,
+                quality=thumb_config.image_quality,
+                crop_pixels=thumb_config.image_crop_pixels,
+                brightness_range=thumb_config.brightness_range,
+            )
+            if thumb_obf.exists():
+                self.thumbnail_portrait_path = str(thumb_obf)
+                tencent_logger.info(_msg("🎭", "竖版封面指纹已混淆"))
+
+        self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def handle_upload_error(self, page: Page) -> None:
         tencent_logger.info(_msg("😵", "视频出错了，重新上传中"))
@@ -957,7 +1003,27 @@ class TencentNote(TencentBaseUploader):
         normalized_image_paths = []
         for image_path in self.image_paths:
             normalized_image_paths.append(str(self.validate_image_file(image_path)))
-        self.image_paths = normalized_image_paths
+
+        # ── Image fingerprint obfuscation (anti-duplicate-detection) ──────────
+        config = get_config("tencent")
+        obfuscated_images = []
+        for img_path in normalized_image_paths:
+            p = Path(img_path)
+            obf_path = str(p.with_suffix("")) + ".obf" + p.suffix
+            obf = obfuscate_image(
+                img_path,
+                obf_path,
+                quality=config.image_quality,
+                crop_pixels=config.image_crop_pixels,
+                brightness_range=config.brightness_range,
+            )
+            if obf.exists():
+                obfuscated_images.append(str(obf))
+        if obfuscated_images:
+            self.image_paths = obfuscated_images
+            tencent_logger.info(_msg("🎭", f"{len(obfuscated_images)} 张图片指纹已混淆"))
+
+        self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def switch_to_note_mode(self, page: Page) -> None:
         raise NotImplementedError("请在 TencentNote.switch_to_note_mode 中补充视频号切换到图文发布模式的逻辑")

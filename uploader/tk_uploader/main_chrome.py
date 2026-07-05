@@ -1,14 +1,17 @@
+import asyncio
+import os
 import re
 from datetime import datetime
+
 import patchright
 from patchright.async_api import Playwright, async_playwright
-import os
-import asyncio
-from conf import LOCAL_CHROME_PATH, LOCAL_CHROME_HEADLESS
+
+from conf import LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.tk_uploader.tk_config import Tk_Locator
 from utils.base_social_media import set_init_script
 from utils.files_times import get_absolute_path
 from utils.log import tiktok_logger
+
 
 async def cookie_auth(account_file):
     async with async_playwright() as playwright:
@@ -51,7 +54,7 @@ async def get_tiktok_cookie(account_file):
         await page.pause()
         await context.storage_state(path=account_file)
 
-class TiktokVideo(object):
+class TiktokVideo:
 
     def __init__(self, title, file_path, tags, publish_date, account_file, thumbnail_path=None):
         self.title = title
@@ -119,7 +122,7 @@ class TiktokVideo(object):
         try:
             await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
             tiktok_logger.info('Either iframe or div appeared.')
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             tiktok_logger.error('Neither iframe nor div appeared within the timeout.')
         await self.choose_base_locator(page)
         upload_button = self.locator_base.locator('button:has-text("Select video"):visible')
@@ -156,7 +159,7 @@ class TiktokVideo(object):
         await page.keyboard.press('End')
         await page.keyboard.press('Enter')
         for index, tag in enumerate(self.tags, start=1):
-            tiktok_logger.info('Setting the %s tag' % index)
+            tiktok_logger.info(f'Setting the {index} tag')
             await page.keyboard.press('End')
             await page.wait_for_timeout(1000)
             await page.keyboard.insert_text('#' + tag + ' ')
@@ -186,7 +189,6 @@ class TiktokVideo(object):
         await page.locator('#creator-tools-selection-menu-header >> text=English (US)').click()
 
     async def click_publish(self, page):
-        success_flag_div = 'div.common-modal-confirm-modal'
         while True:
             try:
                 publish_button = self.locator_base.locator('div.button-group button').nth(0)

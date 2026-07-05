@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, render, renderHook } from '@testing-library/react'
-import { makeQueryClient, TestProviders } from '@/test/render-harness'
+import { TestProviders } from '@/test/render-harness'
+import { makeQueryClient } from '@/test/render-harness.helpers'
 import type { AccountGroup } from '@/api/client'
 
 // ── stable mock data refs (avoid infinite loops from new-array-on-every-call) ──
@@ -10,7 +11,8 @@ let _currentMockData: AccountGroup[] = _defaultGroups
 
 // ── mocks (must precede under-test imports) ─────────────────────────────
 
-vi.mock('@/components/ui/toast', () => ({
+vi.mock('@/Components/ui/toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useToast: () => ({ addToast: vi.fn() }),
 }))
 
@@ -68,9 +70,8 @@ vi.mock('@/api/client', () => ({
 
 // ── imports (post-mock) ────────────────────────────────────────────────
 
-import { AccountsProvider, useAccountsState, useAccountsDispatch, validateGroupName } from './AccountsProvider'
-
-// ── helpers: render context hooks inside AccountsProvider ───────────────
+import {AccountsProvider} from './AccountsProvider';
+import {useAccountsState, useAccountsDispatch, validateGroupName} from './AccountsProvider.helpers';// ── helpers: render context hooks inside AccountsProvider ───────────────
 
 /**
  * Render a combined hook that returns both state and dispatch from the

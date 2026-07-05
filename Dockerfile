@@ -35,4 +35,4 @@ RUN mkdir -p /app/cookiesFile
 
 EXPOSE 6001
 
-CMD ["python", "web_runner.py"]
+CMD ["python", "run.py"]

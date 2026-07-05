@@ -29,7 +29,6 @@ from cli.platforms import (
     xiaohongshu,
 )
 from cli.utils import parse_image_files, parse_tags
-
 from uploader.douyin_uploader.main import (
     DOUYIN_PUBLISH_STRATEGY_IMMEDIATE,
     DOUYIN_PUBLISH_STRATEGY_SCHEDULED,
