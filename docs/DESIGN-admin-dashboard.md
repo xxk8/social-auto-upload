@@ -401,7 +401,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at
 | 操作 | 文件 | 说明 |
 |---|---|---|
 | **新建** | `sau_web/frontend/src/features/admin/AdminOverviewPage.tsx` | 概览页 + 后续 v3-mini sparkline + v3-trends-export CSV 按钮 + v3-trends days-picker |
-| **新建** | `sau_web/frontend/src/features/admin/AdminDashboard.test.tsx` | 概览/用户/审计页单元测试 + v3-mini / v3-table / v3-trends / v3-trends-export / days-picker 控测 |
+| **新建** | `sau_web/frontend/src/features/admin/AdminDashboard.test.tsx` | 概览/用户/审计页单元测试 + v3-mini / v3-table / v3-trends / v3-trends-export / days-picker 测试 |
 | **修改** | `web_runner/routes/admin.py` | 添加 overview/system 端点 + 后续 v3-trends trends 端点 + v3-trends-export CSV 端点 |
 
 ### v1.0
