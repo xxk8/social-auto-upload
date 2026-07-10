@@ -1,6 +1,6 @@
 // ── Platform chip strip — language-only chip row, active-state CSS ────────
 //
-// The "支持下载" row that lives below the URL input on `/app/inbox` was
+// The "支持下载" row that lives below the URL input on `/dashboard/inbox` was
 // originally inlined in `InboxPage.tsx`. After a multi-turn refactor
 // path (per-platform colored SVGs → 15 in-sync BrandGlyph cursors →
 // language-only chips with sodium-amber active-state wash) the strip's

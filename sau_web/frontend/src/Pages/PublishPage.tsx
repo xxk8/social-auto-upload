@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '@/Components/ui/page-header'
 import { useAccounts, useTasks } from '../hooks/useTasks'
 import { useAccountGroups } from '../hooks/useAccountGroups'
@@ -23,6 +23,7 @@ import type { Tone } from '@/lib/tone'
 import type { AiGenerationResult } from '@/Components/AiSidebar/AiSidebar'
 import type { FormHandle, FormSnapshot } from '@/lib/chat/chatFormBridge'
 
+import { ROUTES } from '@/routes'
 /**
  * OPT-3F: shared storage key with AppShell's sidebar collapsed state. The
  * keys live alongside each other so an operator who toggles both panels
@@ -168,6 +169,62 @@ export default function PublishPage() {
   const formRef = useWizardFormHandle()
   const { isMobile, isOpen, open, close } = useMobileDrawer()
 
+  // ── ?group_id= deep-link (NT-22: AccountsPage "去发布此分组") ──────
+  // AccountsPage's <SortableGroup>/<GroupListItem> render an always-
+  // visible Send icon button on the group's title bar. Clicking it
+  // navigates to `?group_id=<id>` so this page can pre-select the
+  // group in the wizard. Validates on first effect pass:
+  //   • group_id is a positive integer                 → else clear + bail
+  //   • group EXISTS in `useAccountGroups().data`      → else clear + bail
+  //   • group has ≥1 authorization                    → else clear + bail
+  //     (an empty-selection wizard is useless + blocks step 0)
+  // After the seed OR clear, the param is stripped via setSearchParams(
+  // {}, { replace: true }) so a refresh doesn't re-apply the deep-link.
+  // `appliedRef` guards against re-runs: groups may arrive async but
+  // must only seed once. The dep array omits `appliedRef` on purpose —
+  // it's a closure-only sentinel, never a render trigger.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const appliedDeepLinkRef = useRef(false)
+  useEffect(() => {
+    if (appliedDeepLinkRef.current) return
+    const raw = searchParams.get('group_id')
+    if (raw === null) return
+    const groupId = Number(raw)
+    const group =
+      Number.isInteger(groupId) && groupId > 0
+        ? groups.find((g) => g.id === groupId)
+        : undefined
+    if (group && group.authorizations.length > 0) {
+      const platforms = group.authorizations.map((a) => a.platform)
+      const mappings = group.authorizations.map((a) => ({
+        platform: a.platform,
+        cookieFile: a.cookie_file,
+        authId: a.id,
+      }))
+      const wizardStore = usePublishWizardStore.getState()
+      wizardStore.setGroupSelection({
+        groupId: group.id,
+        groupName: group.name,
+        platforms,
+        mappings,
+      })
+      // Reset wizard pointer to step 0 so a user landing mid-session
+      // (e.g. via /dashboard → /publish?group_id=N with a stale
+      // currentStep from a prior use) doesn't face a wizard pointing
+      // at a step whose content was filled FOR A DIFFERENT group.
+      // Files / content / advanced are intentionally preserved —
+      // only the navigation pointer moves. `reset()` would be
+      // destructive (wipes files); `setStep(0)` is the lower-risk
+      // middle ground that's also exercised by the test contract
+      // (see PublishPage.test.tsx → "currentStep === 0 after seed").
+      wizardStore.setStep(0)
+    }
+    appliedDeepLinkRef.current = true
+    setSearchParams({}, { replace: true })
+    // intentionally narrow deps: only re-run when groups arrive. The
+    // `appliedDeepLinkRef` guard makes further re-runs no-ops.
+  }, [groups, searchParams, setSearchParams])
+
   // OPT-3F: AI-sidebar collapsed state with localStorage persistence.
   // Initialised lazily so SSR environments (and the first responsive
   // tick before `window` is available) default to `false`. Subsequent
@@ -231,7 +288,7 @@ export default function PublishPage() {
   useEffect(() => {
     if (navigateCountdown === 0) {
       stopAutoNavigate()
-      navigate('/tasks')
+      navigate(ROUTES.dashboard.tasks)
     }
   }, [navigateCountdown, navigate, stopAutoNavigate])
 

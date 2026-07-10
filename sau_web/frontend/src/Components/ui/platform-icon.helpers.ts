@@ -52,3 +52,45 @@ export const PLATFORM_BORDER_LEFT: Record<string, string> = {
   tiktok: 'border-l-neutral-800 dark:border-l-neutral-300',
   baijiahao: 'border-l-[#D7000F]/70',
 }
+
+/**
+ * Hex brand values (`#RRGGBB`) — `PLATFORM_COLORS` exposes Tailwind
+ * class strings for chip-style surfaces, but the calendar
+ * (Features/calendar/CalendarEvent.tsx) needs HARDCODED hex to drive
+ * `react-big-calendar`'s `eventPropGetter.style.backgroundColor`.
+ * Tailwind JIT won't compile runtime-generated class names, so
+ * the calendar can't reuse `bg-[#FF4906]`; we materialise the
+ * brand hex here as a sibling constant.
+ *
+ * SSoT pairing: each entry corresponds to the `bg-[#XXXXXX]`
+ * literal in `PLATFORM_COLORS`. Update both together when
+ * rebranding. Douyin + TikTok deliberately stay neutral `#000`
+ * to match the monochrome-logo convention encoded in
+ * `PLATFORM_COLORS`.
+ */
+export const PLATFORM_HEX: Record<string, string> = {
+  douyin: '#000000',
+  kuaishou: '#FF4906',
+  xiaohongshu: '#FE2C55',
+  tencent: '#07C160',
+  bilibili: '#00A1D6',
+  tiktok: '#000000',
+  baijiahao: '#D7000F',
+}
+
+/**
+ * Resolve a brand hex for any platform key. Known platforms use the
+ * curated `PLATFORM_HEX` swatch; unknown platforms (e.g. youtube /
+ * twitter / weibo) get a deterministic HSL derived from the key so the
+ * calendar never falls back to a flat gray cell that reads as "broken"
+ * next to the colored ones.
+ */
+export function platformHex(platform: string): string {
+  const known = PLATFORM_HEX[platform]
+  if (known) return known
+  let h = 0
+  for (let i = 0; i < platform.length; i++) {
+    h = (h * 31 + platform.charCodeAt(i)) >>> 0
+  }
+  return `hsl(${h % 360} 60% 45%)`
+}

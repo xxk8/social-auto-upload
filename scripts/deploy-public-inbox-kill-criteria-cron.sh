@@ -88,7 +88,7 @@ validate() {
     #
     # The pre-deploy supports SAU_DB_PATH_OVERRIDE + SAU_LOGS_DIR_OVERRIDE for
     # test isolation; in production both env vars are unset and the pre-deploy
-    # uses the canonical ${REPO_ROOT}/db/database.db + ${REPO_ROOT}/.sau-logs.
+    # uses $DATABASE_URL (PG) + the canonical ${REPO_ROOT}/.sau-logs.
     if [ "$failed" -eq 0 ]; then
         if ! _run_pre_deploy_check; then
             failed=1
@@ -141,7 +141,8 @@ _run_pre_deploy_check() {
             rm -f "$log_file"
             return 0
         else
-            echo "✗ FAILED: Week-0 baseline placeholder not created in ${REPO_ROOT}/.sau-logs"
+            echo "✗ FAILED: Week-0 baseline placeholder not created in ${REPO_ROOT}/.sau-logs ($baseline_dir)"
+            echo "  Expected: .public-inbox-kill-criteria-baseline-YYYY-MM-DD.json"
             echo "  Expected: .public-inbox-kill-criteria-baseline-YYYY-MM-DD.json"
             cat "$log_file" | sed 's/^/  /'
             rm -f "$log_file"

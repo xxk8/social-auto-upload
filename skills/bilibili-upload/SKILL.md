@@ -39,7 +39,7 @@ description: 当 agent 需要通过已安装的 `sau` CLI 完成 Bilibili 登录
 - 第一次运行 Bilibili 命令时，程序可能会自动联网准备 `biliup`
 - 对 agent 来说，不要在非交互环境里硬跑 `sau bilibili login`
 - 正确做法是让用户自己在本地终端执行 `sau bilibili login --account <name>`
-- 如果终端里的二维码显示不完整，提醒用户直接打开当前目录下的 `qrcode.png` 扫码
+- **不要**提醒用户打开 `qrcode.png` 扫码（该文件已不再生成，round-OPT-acct-qr cleanup 2026-07-10）。替代方案：用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`），或在本地终端去掉 `--headless` 让浏览器里直接展示平台自己的二维码
 
 ## 模板文件
 

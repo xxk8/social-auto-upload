@@ -34,7 +34,6 @@ export const VariantCard = memo(function VariantCard({
   const descId = useId()
   const [edited, setEdited] = useState<ContentVariant>({ ...variant })
   const [applied, setApplied] = useState(false)
-  const isError = 'error' in variant && variant.error
 
   const handleApply = useCallback(() => {
     onApply(edited)
@@ -42,7 +41,17 @@ export const VariantCard = memo(function VariantCard({
     setTimeout(() => setApplied(false), 2000)
   }, [edited, onApply])
 
-  if (isError) {
+  // Inlined type guard so TypeScript narrows `variant` to
+  // `VariantError` inside the if-block AND to `ContentVariant`
+  // after the early-return. See the matching comment in
+  // PlatformResultCard for the rationale — same TS2339 root cause
+  // at `variant.parseError`. Inlining operates on `variant`
+  // itself, which TS's discriminated-union narrowing tracks.
+  // Same type-guard narrowing pattern as PlatformResultCard (the
+  // `&& variant.error` truthy check would keep the union across
+  // the early-return boundary; drop it so `variant.parseError`
+  // resolves to `boolean | undefined` post-return).
+  if ('error' in variant) {
     return (
       <Card className="border-destructive/30">
         <CardContent className="p-4 space-y-2">
@@ -59,7 +68,7 @@ export const VariantCard = memo(function VariantCard({
           </div>
           <div className="flex items-center gap-2 text-destructive text-sm">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{(variant as VariantError).error}</span>
+            <span>{variant.error}</span>
           </div>
         </CardContent>
       </Card>

@@ -13,7 +13,7 @@ interface AddUrlFormProps {
   formRef: RefObject<FormHandle | null>
   /**
    * Optional sticky URL — if the publish page surfaces a "deep link
-   * from /app/inbox" affordance later, we'd prefill this. Today it's
+   * from /dashboard/inbox" affordance later, we'd prefill this. Today it's
    * not wired; reserved for the future P1.
    */
   initialUrl?: string
@@ -152,7 +152,7 @@ export const AddUrlForm = memo(function AddUrlForm({
         </div>
       )}
       <p className="text-[10px] text-muted-foreground/80 leading-tight">
-        解析下载复用 <span className="font-mono">/app/inbox</span> 的 yt-dlp + 浏览器兜底；cookie 文件需先在 <span className="font-mono">/app/accounts</span> 扫码登录。
+        解析下载复用 <span className="font-mono">/dashboard/inbox</span> 的 yt-dlp + 浏览器兜底；cookie 文件需先在 <span className="font-mono">/dashboard</span> 扫码登录。
       </p>
     </div>
   )

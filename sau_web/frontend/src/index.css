@@ -74,14 +74,26 @@
   /* Tightened radii (industrial-tool density): button-md is 4px,
    * card-lg is 6px. The xl ceiling (10px) keeps modals/dialogs from
    * feeling pin-sharp. */
-  --radius: 0.375rem;
+  --radius: 0.5rem;
+
+  /* ============================================================
+   * Accent hue — single source of truth for the brand accent.
+   * All --primary / --ring / --chart-* / --sidebar-* tokens derive
+   * hue from this variable. Change it via JS (ThemeProvider) to
+   * switch between preset accent colours without touching the
+   * rest of the palette.
+   * Default 145 = GitHub green. Other presets (amber 45, blue 240,
+   * purple 280, red 15, teal 175) are available in the Preferences
+   * dialog under 个性化 → 主题色.
+   * ============================================================ */
+  --accent-hue: 145;
 
   /* ============================================================
    * DESIGN — light theme.
    * Cold-neutral canvas (slight blue tint at hue=240 with chroma
    * ≤ 0.003 keeps it from drifting to warm-gray or violet-pastel).
-   * Sodium amber as the single chromatic accent (hue 90, chroma
-   * 0.14) reads as industrial control-panel signaling. Reserve
+   * GitHub green as the single chromatic accent (hue 145, chroma
+   * 0.17) reads as fresh, natural signaling. Reserve
    * to brand mark, sidebar active strip, primary CTA, focus
    * ring, and link emphasis — never decorative. Migration
    * history of this palette is documented in DESIGN.md.
@@ -93,8 +105,8 @@
   --popover: oklch(0.965 0.002 240);
   --popover-foreground: oklch(0.18 0.003 240);
 
-  /* Sodium amber — the single accent */
-  --primary: oklch(0.62 0.14 90);
+  /* Brand accent — hue inherits from --accent-hue */
+  --primary: oklch(0.55 0.17 var(--accent-hue));
   --primary-foreground: oklch(0.99 0 0);
 
   --secondary: oklch(0.93 0.005 240);
@@ -103,31 +115,31 @@
   --muted: oklch(0.93 0.005 240);
   --muted-foreground: oklch(0.46 0.005 240);
 
-  --accent: oklch(0.91 0.020 90);                  /* faint amber wash */
+  --accent: oklch(0.93 0.03 var(--accent-hue));                  /* faint accent wash */
   --accent-foreground: oklch(0.20 0.003 240);
 
   --destructive: oklch(0.55 0.20 25);
 
   --border: oklch(0.86 0.005 240);
   --input: oklch(0.86 0.005 240);
-  --ring: oklch(0.62 0.14 90);                     /* amber focus ring */
+  --ring: oklch(0.55 0.17 var(--accent-hue));                     /* accent focus ring */
 
-  /* Charts — amber is the primary series, the other three are
+  /* Charts — accent is the primary series, the other three are
    * reserved semantic channels (success/error/subtle) */
-  --chart-1: oklch(0.62 0.14 90);                  /* sodium amber */
-  --chart-2: oklch(0.55 0.14 145);
-  --chart-3: oklch(0.50 0.10 90);
+  --chart-1: oklch(0.55 0.17 var(--accent-hue));                  /* brand accent */
+  --chart-2: oklch(0.55 0.14 var(--accent-hue));
+  --chart-3: oklch(0.50 0.10 var(--accent-hue));
   --chart-4: oklch(0.55 0.20 25);
   --chart-5: oklch(0.50 0.05 240);
 
   /* Focus ring alpha */
-  --ring-alpha: oklch(0.62 0.14 90 / 0.22);
+  --ring-alpha: oklch(0.55 0.17 var(--accent-hue) / 0.22);
 
   /* ============================================================
    * Status semantic palette (`success` / `warning` / `info` / `error`).
    * `info` is a low-chroma steel cyan (hue 200) — kept distinct
-   * from primary amber across both light AND dark surfaces by
-   * ~110° of hue separation. Warning shares the primary hue
+   * from primary green across both light AND dark surfaces by
+   * ~55° of hue separation. Warning shares the primary hue
    * family but at lower chroma so it doesn't compete with the
    * single accent. Success / error sit on forest-green and red
    * respectively. The 4-band contract is consumed by
@@ -148,12 +160,12 @@
   /* Sidebar (light) */
   --sidebar: oklch(0.965 0.002 240);
   --sidebar-foreground: oklch(0.18 0.003 240);
-  --sidebar-primary: oklch(0.62 0.14 90);
+  --sidebar-primary: oklch(0.55 0.17 var(--accent-hue));
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent: oklch(0.93 0.005 240);
   --sidebar-accent-foreground: oklch(0.18 0.003 240);
   --sidebar-border: oklch(0.86 0.005 240);
-  --sidebar-ring: oklch(0.62 0.14 90);
+  --sidebar-ring: oklch(0.55 0.17 var(--accent-hue));
 
   /* ============================================================
    * Stat typography tokens (round 7) — see DESIGN.md
@@ -179,7 +191,7 @@
   /* ============================================================
    * DESIGN — dark canvas.
    * Cold deep gray (hue 240 chroma 0.003) — neutral product
-   * canvas. Sodium amber (hue 90, chroma 0.14) pops on the dark
+   * canvas. GitHub green (hue 145, chroma 0.17) pops on the dark
    * surface without competing with light-mode foreground ink.
    * Surface ladder for hierarchy runs canvas → card → popover →
    * secondary fill, with incremental luminance lift per level
@@ -194,7 +206,7 @@
    *   ink          #eff1f3 — primary text
    *   ink-muted    #9ca0a6 — secondary text
    *   ink-subtle   #5c6066 — tertiary text
-   *   primary      sodium amber — CTA, brand mark, focus
+   *   primary      GitHub green — CTA, brand mark, focus
    * ============================================================ */
   --background: oklch(0.16 0.003 240);
   --foreground: oklch(0.94 0.003 240);
@@ -204,8 +216,8 @@
   --popover: oklch(0.23 0.003 240);
   --popover-foreground: oklch(0.94 0.003 240);
 
-  /* Sodium amber — single accent */
-  --primary: oklch(0.78 0.14 90);
+  /* Brand accent — hue inherits from --accent-hue */
+  --primary: oklch(0.72 0.17 var(--accent-hue));
   --primary-foreground: oklch(0.18 0.003 240);
 
   --secondary: oklch(0.26 0.003 240);
@@ -214,26 +226,26 @@
   --muted: oklch(0.24 0.003 240);
   --muted-foreground: oklch(0.62 0.005 240);
 
-  --accent: oklch(0.30 0.020 90);
+  --accent: oklch(0.30 0.03 var(--accent-hue));
   --accent-foreground: oklch(0.94 0.003 240);
 
   --destructive: oklch(0.65 0.20 25);
 
   --border: oklch(0.32 0.005 240);
   --input: oklch(0.32 0.005 240);
-  --ring: oklch(0.78 0.14 90);
+  --ring: oklch(0.72 0.17 var(--accent-hue));
 
-  --chart-1: oklch(0.78 0.14 90);
-  --chart-2: oklch(0.65 0.16 145);
-  --chart-3: oklch(0.70 0.10 90);
+  --chart-1: oklch(0.72 0.17 var(--accent-hue));
+  --chart-2: oklch(0.65 0.16 var(--accent-hue));
+  --chart-3: oklch(0.70 0.10 var(--accent-hue));
   --chart-4: oklch(0.65 0.20 25);
   --chart-5: oklch(0.55 0.05 240);
 
-  --ring-alpha: oklch(0.78 0.14 90 / 0.24);
+  --ring-alpha: oklch(0.72 0.17 var(--accent-hue) / 0.24);
 
   /* ============================================================
    * Status dark palette — info = low-chroma steel cyan, distinct
-   * from primary amber.
+   * from primary green.
    * ============================================================ */
   --status-success-bg: oklch(0.22 0.06 145);
   --status-success-fg: oklch(0.74 0.16 145);
@@ -251,12 +263,12 @@
   /* Sidebar (dark) */
   --sidebar: oklch(0.18 0.003 240);
   --sidebar-foreground: oklch(0.94 0.003 240);
-  --sidebar-primary: oklch(0.78 0.14 90);
+  --sidebar-primary: oklch(0.72 0.17 var(--accent-hue));
   --sidebar-primary-foreground: oklch(0.18 0.003 240);
   --sidebar-accent: oklch(0.24 0.003 240);
   --sidebar-accent-foreground: oklch(0.94 0.003 240);
   --sidebar-border: oklch(0.32 0.005 240);
-  --sidebar-ring: oklch(0.78 0.14 90);
+  --sidebar-ring: oklch(0.72 0.17 var(--accent-hue));
 }
 
 @layer base {
@@ -301,12 +313,12 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────────
- * Recommended-tier amber hairline accent (PricingPage) — placed via
+ * Recommended-tier green hairline accent (PricingPage) — placed via
  * `box-shadow: inset 0 -1px 0 0 ...` so the highlight sits one pixel
  * inside the rounded card border, not overlapping it. Engineering-tool
  * honest signal — distinguishable from the existing `border-foreground/45`
  * ring because the inset shadow lives AT THE BOTTOM only, not as a
- * full perimeter. The amber tint at 45% opacity keeps it tasteful
+ * full perimeter. The green tint at 45% opacity keeps it tasteful
  * when stacked against the cold-neutral canvas + hairline-border chrome.
  * Compositioned onto `<TierCardBlock>` when `tier.highlight` is true.
  * ────────────────────────────────────────────────────────────────────── */
@@ -416,6 +428,55 @@
 .dark .card-refined:hover {
   border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
   box-shadow: 0 1px 2px color-mix(in oklab, var(--primary) 14%, transparent);
+}
+
+/* Card outline — single SSoT for outer card border density
+ *
+ * (Subsection comment inside the `/* ===== Card ===== */` block.
+ *  Deliberately uses plain `/* ... */` rather than the 5-equals
+ *  `/* ===== X ===== */` section-header pattern — the SSoT regression
+ *  test at `src/lib/card-outline.test.ts` scans for `\n/* ===== ` as
+ *  a section-boundary anchor, so any subsection comment that mimics
+ *  the section-header shape would prematurely truncate the slice and
+ *  leave the test pinned to the wrong block. Stay plain.)
+ *
+ * Companion utility for the `border` keyword on full-card outer
+ * wrappers on the **dashboard surface**. The 25% alpha on `var(--border)`
+ * reads as a soft hairline in BOTH light and dark mode without
+ * separate per-theme tuning:
+ *
+ *   light:  border (oklch 0.86) over card (oklch 0.965) ~ 0.025 visible
+ *   dark:   border (oklch 0.32) over card (oklch 0.20)  ~ 0.030 visible
+ *
+ * Those are close enough that a single 25% mix reads consistently
+ * across themes — no need for a separate dark rule.
+ *
+ * Use INSTEAD of `border border-border/40` on dashboard outer-card
+ * wrappers — AccountCard / TasksCard / InboxRow / HomepageOverview /
+ * GroupGrid tile / BatchRefreshDialog panel / etc. — so a future
+ * density tweak lives in one place. The contract is pinned by
+ * `src/lib/card-outline.test.ts` — bumping the percent or
+ * accidentally re-declaring it under a non-Card block both trip the
+ * gate.
+ *
+ * NOT to be used on:
+ *   - Inline row dividers (`border-y border-border/N`) — different
+ *     role (separating rows inside a parent card); keep their literal
+ *     /N so the divider density stays intentional.
+ *   - Inputs / buttons / tab strips / segment controls — interactive
+ *     chrome needs functional stroke weight; keep their /40-60 literals.
+ *   - Cards under `pulse-anim` skeletons — the skeleton glow wins,
+ *     outline density is irrelevant.
+ *   - Visitor / marketing surface hero cards — LandingPage / PricingPage
+ *     / AboutPage / HotListPage (uses MarketingTopBar + MarketingFooter,
+ *     so it IS a marketing surface) / MagicSuggestions tile. Those
+ *     use a deliberately stronger `border border-border/40` for visual
+ *     punch against a content-light canvas. Migrating them would
+ *     flatten the marketing aesthetic. The SSoT scope is dashboard
+ *     functional cards; marketing has its own visual language.
+ */
+.card-outline {
+  border-color: color-mix(in oklab, var(--border) 25%, transparent);
 }
 
 /* ===== Button ===== */
@@ -726,3 +787,300 @@
 }
 
 /* =====================================================================
+ * react-big-calendar — dark-mode overrides.
+ *
+ * react-big-calendar v1.x ships a hardcoded light-mode stylesheet
+ * (imported in `Pages/CalendarPage.tsx`). The library has no native
+ * theme respect, so when ThemeProvider flips `.dark` on `<html>` the
+ * calendar body keeps a white grid on dark chrome — the calendar
+ * reads as a "white window" pasted onto the dark dashboard and
+ * every `.rbc-*` hairline, day number, and toolbar button is set
+ * to library defaults that don't adapt.
+ *
+ * Selectors are written `.dark .rbc-*` (specificity 0,2,0) so they
+ * beat the library's bare `.rbc-*` (0,1,0) regardless of CSS
+ * cascade order. Order matters less than specificity in practice:
+ * Vite loads the library's stylesheet after `index.css` in some
+ * bundling modes, but `.dark .X` always wins against `.X` for
+ * same-cascade ties.
+ *
+ * Paint contract: cell canvas = `--card` (so dark-mode cards blend
+ * seamlessly); HEADER strip = `--popover` for a 1-step luminance
+ * lift (visual hierarchy); OFF-RANGE dates drop to muted at 45%
+ * opacity so neighbouring-month cells don't compete; TODAY's
+ * cell = low-chroma `--primary` wash so the marker stays
+ * secondary to the brand-coloured events at first glance;
+ * SELECTION cell = slightly stronger `--primary` wash; EVENTS
+ * keep the per-brand backgrounds (`eventPropGetter` already
+ * paints them) — only the default 1px library border is
+ * suppressed so the chip blends into its brand fill.
+ * Event text remains white (set in `eventPropGetter`) — works on
+ * every saturated platform colour in the brand palette.
+ *
+ * Originally verified against react-big-calendar v1.13+ via the
+ * 8-oxo repository's pinned dep in `package.json`. Bumping the
+ * library past a major version should re-verify these selectors
+ * (most affected: `.rbc-time-slot`, `.rbc-timeslot-group`,
+ * `.rbc-current .rbc-button-link`).
+ * ===================================================================== */
+.dark .rbc-calendar,
+.dark .rbc-month-view,
+.dark .rbc-time-view,
+.dark .rbc-agenda-view {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border-color: var(--rbc-grid-line) !important;
+  /* Scoped token for dense grid lines — cell grid, header strip,
+   * agenda row borders. The 18% mix (round 1 was 45%; round 2 dialed
+   * to 30%; this third pass drops to 18% per operator escalation
+   * 2026-07-10 「我说的是边框太艳了，再暗色的时候」 — they were
+   * still finding the 30% grid too prismatic against the deep
+   * dark canvas. Aggressive softening here + matching wrapper
+   * border /12 in `CalendarPage.tsx` keeps the dense monthly grid
+   * as a glint-row cue rather than as visible dividers cutting
+   * through the canvas. The outer calendar shell + toolbar button
+   * borders still use the full-strength `var(--border)` so the
+   * calendar's perimeter reads as a contained widget. */
+   --rbc-grid-line: color-mix(in oklab, var(--border) 10%, transparent);
+}
+
+.dark .rbc-toolbar {
+  color: var(--card-foreground);
+}
+.dark .rbc-toolbar button {
+  color: var(--card-foreground);
+  background-color: transparent;
+  border-color: var(--border);
+}
+.dark .rbc-toolbar button:hover,
+.dark .rbc-toolbar button:focus {
+  background-color: var(--accent);
+  border-color: var(--border);
+  color: var(--accent-foreground);
+}
+.dark .rbc-toolbar button.rbc-active,
+.dark .rbc-toolbar button:active {
+  background-color: var(--accent);
+  border-color: var(--primary);
+  color: var(--accent-foreground);
+}
+
+.dark .rbc-header {
+  background-color: var(--popover);
+  border-color: var(--rbc-grid-line) !important;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.dark .rbc-month-row,
+.dark .rbc-day-bg {
+  background-color: var(--card);
+  border-color: var(--rbc-grid-line) !important;
+}
+.dark .rbc-off-range-bg {
+  background-color: var(--muted);
+}
+.dark .rbc-off-range {
+  color: var(--muted-foreground);
+  opacity: 0.45;
+}
+.dark .rbc-today {
+  background-color: color-mix(in oklab, var(--primary) 8%, var(--card));
+}
+
+.dark .rbc-current .rbc-button-link {
+  color: var(--primary);
+  font-weight: 600;
+}
+.dark .rbc-selected-cell {
+  background-color: color-mix(in oklab, var(--primary) 14%, transparent);
+}
+
+.dark .rbc-time-header,
+.dark .rbc-time-header-content,
+.dark .rbc-time-content,
+.dark .rbc-time-gutter,
+.dark .rbc-time-slot,
+.dark .rbc-timeslot-group,
+.dark .rbc-day-slot {
+  border-color: var(--rbc-grid-line) !important;
+  color: var(--card-foreground);
+}
+
+.dark .rbc-agenda-view table.rbc-agenda-table {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border-color: var(--border);
+}
+.dark .rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  background-color: var(--popover);
+  color: var(--muted-foreground);
+  border-color: var(--rbc-grid-line) !important;
+}
+.dark .rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  border-color: var(--rbc-grid-line) !important;
+}
+
+.dark .rbc-show-more {
+  color: var(--primary);
+  background-color: transparent;
+  font-weight: 500;
+}
+.dark .rbc-show-more:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* Catch-all: suppress every rbc border in dark mode so the library's
+ * default bright borders (hardcoded #ddd, #ccc) don't leak through. */
+.dark [class*="rbc"] {
+  border-color: var(--rbc-grid-line) !important;
+}
+
+/* Preserve event chip styling — `eventPropGetter` already applies
+ * platform-colour backgrounds + white text per event. Only the
+ * library's default 1px border needs suppressing so the chip
+ * blends into its brand background instead of carrying a hairline
+ * that lights up oddly against the saturated fills in dark mode. */
+.dark .rbc-event {
+  border: none;
+}
+
+/* =====================================================================
+ * Calendar table polish — Round 4 (OPT-cal-table-beautify, 2026-07-10).
+ *
+ * Five surgical additions to the existing rbc dark-mode override
+ * block. Each one is scoped inside `.dark` so the light theme
+ * surface is untouched, and each one preserves the existing
+ * hairline-density contract (var(--rbc-grid-line) 18% mix) — the
+ * polish only changes how the *visible* elements feel, not how
+ * the dividers read.
+ *
+ *   1. Header roster typography — `.dark .rbc-header` switches to
+ *      IBM Plex Mono + uppercase + 0.08em tracking so the Sun / Mon
+ *      / … / Sat row reads as a "weekday roster" instead of generic
+ *      sans title-case. Same `--popover` / `--rbc-grid-line` chrome,
+ *      only the typography changes.
+ *
+ *   2. Today accent strip — `.dark .rbc-month-view .rbc-today`
+ *      gets a 2px var(--primary) `box-shadow: inset` along the
+ *      top edge. Linear-style callout constrained to the top so
+ *      it doesn't compete with the full-cell brand-color fills of
+ *      the event chips below. The existing 8% primary wash is
+ *      untouched (still defined on `.dark .rbc-today` higher in
+ *      the file).
+ *
+ *   3. Today date-number typography — `.dark .rbc-current
+ *      .rbc-button-link` switches to IBM Plex Mono + 600 + 13px
+ *      + an `今日 · ` ::before eyebrow. Today reads as
+ *      「今日 · 10」with the prefix in muted-foreground 9px sans
+ *      and the number in primary 13px mono — operator can spot
+ *      today at one glance without losing scan-ability of the
+ *      other 41 date numbers.
+ *
+ *   4. Weekend soft tint — Sat/Sun day-bg cells (`.rbc-weekend-bg`
+ *      in rbc's own class; belt-and-suspenders `.rbc-row-bg
+ *      .rbc-day-bg:nth-child(6|7)` for versions that diverge)
+ *      get a 50% muted + 50% card mix so the workweek columns
+ *      visually breathe against the weekend columns without
+ *      breaking visual rhythm.
+ *
+ *   5. Off-range dim — `.dark .rbc-off-range` opacity drops from
+ *      0.45 → 0.30 so neighbor-month spillover dates read
+ *      clearly as "not this month" against the current-month sat
+ *      at 1.0.
+ *
+ * Invariants (pinned in `CalendarPage.dark-mode.test.tsx`):
+ *   - The `--rbc-grid-line` 18% mix (round-3 contract) is UNCHANGED.
+ *   - The softenedSelector list (12 selectors referencing
+ *     `var(--rbc-grid-line)`) is UNCHANGED.
+ *   - The perimeterSelector list (toolbar button + agenda table
+ *     outer table using `var(--border)`) is UNCHANGED.
+ * =====================================================================
+ */
+
+/* ── 1. Header roster typography ──
+ * Extends the existing `.dark .rbc-header` rule higher in the file
+ * (which sets background/border/color/font-weight) — only typography
+ * + padding properties are added here so source order remains the
+ * single source of truth for the cell chrome. */
+.dark .rbc-header {
+  font-family: var(--font-jetbrains-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 6px;
+}
+
+/* ── 2. Today accent strip ──
+ * 2px primary top edge via inset box-shadow so the strip sits one
+ * pixel INSIDE the cell border rather than overlapping it. Builds
+ * on the existing 8% primary wash on `.dark .rbc-today`. The
+ * `inset 0 2px 0 0` shape is the same idiom used by TierCardBlock's
+ * `tier-recommended-accent` (see "TierCard" section
+ * higher in the file) so the engineering-tool honest-signal
+ * pattern stays consistent across surfaces. */
+.dark .rbc-month-view .rbc-today {
+  box-shadow: inset 0 2px 0 0 var(--primary);
+}
+
+/* ── 3. Today date-number typography ──
+ * Mono + 600 + 13px + 今日 · ::before eyebrow. The eyebrow uses
+ * `content: '今日 · '` so no custom JSX / BigCalendar `components`
+ * override is needed — purely CSS-driven so changing the locale
+ * (or updating 「今日」to 今周 or similar) is a single-token edit. */
+.dark .rbc-current .rbc-button-link {
+  font-family: var(--font-jetbrains-mono);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  padding: 2px 4px 2px;
+  display: block;
+  text-align: left;
+  width: 100%;
+}
+.dark .rbc-current .rbc-button-link::before {
+  content: '今日 · ';
+  font-size: 9px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  color: var(--muted-foreground);
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: 1px;
+}
+
+/* ── 4. Weekend soft tint ──
+ * Selector `.rbc-weekend-bg` is rbc's own class applied to Sat/Sun
+ * day-bg cells; the `:nth-child(6|7)` version is belt-and-suspenders
+ * in case a future rbc release drops the weekend-bg class on a
+ * subset of viewports. Both selector branches paint the same
+ * muted/card 50/50 mix so semantic intent is preserved. */
+.dark .rbc-month-view .rbc-weekend-bg,
+.dark .rbc-month-view .rbc-row-bg .rbc-day-bg:nth-child(6),
+.dark .rbc-month-view .rbc-row-bg .rbc-day-bg:nth-child(7) {
+  background-color: color-mix(in oklab, var(--muted) 50%, var(--card));
+}
+
+/* ── 5. Off-range dim ──
+ * Extends the existing `.dark .rbc-off-range` rule (which sets
+ * `color: var(--muted-foreground)`); only opacity is overridden
+ * here. 0.30 reads as "clearly another month" against the
+ * current-month dates at 1.0 — somewhere between a footnote and
+ * a watermark. If the grid later needs neighbor-month dates to
+ * still be clickable for cross-month range selection, this is
+ * the knob. */
+.dark .rbc-off-range {
+  opacity: 0.30;
+}
+
+/* ── Selected cell ring (Phase-2 quick-create prerequisite) ──
+ * Click a cell → future Phase-2 quick-create modal opens to that
+ * date. Without a clear ring the click feedback was inconsistent
+ * vs. the toolbar buttons (which keep full var(--border)). 1px
+ * primary inset ring + the existing 14% primary wash — both
+ * `inset` so the ring sits inside the cell instead of overlapping
+ * the 18% hairline. */
+.dark .rbc-month-view .rbc-selected-cell {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+

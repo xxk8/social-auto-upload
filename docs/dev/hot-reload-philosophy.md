@@ -146,7 +146,7 @@ Dev 视角的关键决策(各对应 review 修过一轮):
 
 | 场景 | 不适合 C 的理由 | 建议替代 |
 |---|---|---|
-| 生产部署 (`/app/accounts` 在公网) | dev 1–3 s restart window 不允许,watchdog 在生产机器上是攻击面 | 走 supervisord / systemd / k8s probe |
+| 生产部署 (`/dashboard/accounts` 在公网) | dev 1–3 s restart window 不允许,watchdog 在生产机器上是攻击面 | 走 supervisord / systemd / k8s probe |
 | 长任务 (e.g. `cloudupload` worker 跑 30 min) | restart 截断任务,重做代价高 | 走 k8s Job / task queue + retry |
 | 多 backend 实例 (load-balanced N=3) | C 只跟踪一个 PID,不能 fan-out | 走 k8s Deployment + ConfigMap rolling restart |
 | 容器内 dev (Docker / Podman 里调试) | watchdog 在容器里需要 `--add-host` + `fs.inotify.max_user_watches` 调优 | 走 volume mount + `ddev` / `skaffold` |

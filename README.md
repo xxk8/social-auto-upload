@@ -29,15 +29,6 @@
           ClawPower 是一家稳定可靠 AI 大模型中转服务商，提供 Claude、GPT、Gemini 60+ 大模型接入。无论是 OpenClaw、Hermes 智能体自动化场景，Claude Code、Codex 编程工具接入，还是公众号、小红书内容创作；都能获得稳定、顺滑、可长期使用的模型服务体验。低至官方价格的 30%，点击<a href="http://t.clawpower.vip/1005">免费领取 5 刀现金</a>体验券
         </td>
       </tr>
-  <tr>
-    <td width="25%" align="center" valign="middle">
-      <img src="static/wechat.png" alt="Sponsor Contact" width="150">
-    </td>
-    <td width="75%" align="left" valign="middle">
-      <strong>成为赞助商</strong><br>
-      如果您有意赞助本项目，请扫描左侧微信二维码（添加时请注明来意：<strong>赞助</strong>）。
-    </td>
-  </tr>
 </table>
 
 ---
@@ -54,10 +45,8 @@
 - [🐇 项目背景](#🐇项目背景)
 - [📃 详细文档](#📃详细文档)
 - [⚙️ 环境变量](#⚙️-环境变量)
-- [🐾 交流与支持](#🐾交流与支持)
 - [🤝 贡献指南](#🤝贡献指南)
 - [📜 许可证](#📜许可证)
-- [⭐ Star History](#⭐Star-History)
 
 ## 💡功能特性
 
@@ -71,6 +60,13 @@
 | 百家号 | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | 浏览器自动化 |
 | TikTok | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | 当前示例走 Chrome 版实现 |
 
+**Web Shell 新增能力：**
+
+| 功能 | 说明 | 权限 |
+|---|---|---|
+| 社交登录 | Google / GitHub OAuth 一键登录 | 所有用户 |
+| 管理后台 | 运营数据概览、用户管理、审计日志 | admin 专属 |
+
 ### AI这么强，为什么还需要这个项目
 在你使用AI的能力，browser agent等等，每次都让 agent 重新解析网页、截图理解, 临场判断
 该项目经过大量验证，上传这种 高频，重复，无聊的工作交给脚本和程序去执行
@@ -83,7 +79,7 @@ social-auto-upload/
 ├── uploader/             # 各平台上传器核心逻辑
 ├── skills/               # AI Agent Skill 定义 (OpenClaw / Codex / Claude Code)├── web_runner/           # Flask 后端 (API 路由、数据库、任务调度)
 ├── sau_web/
-│   └── frontend/         # 前端应用 · 官网首页（/） + Web Shell 运营台（/app/*），统一 Vite 产物 (默认 5180)
+│   └── frontend/         # 前端应用 · 官网首页（/） + Web Shell 运营台（/dashboard/*），统一 Vite 产物 (默认 5180)
 ├── run.py                # Web 后端启动入口
 ├── sau_cli.py            # CLI 启动入口
 ├── utils/                # 通用工具函数
@@ -109,7 +105,7 @@ social-auto-upload/
 ### 环境要求
 
 - Python 3.10+
-- Node.js 18+（唯一前端 `sau_web/frontend`，同时承载官网首页 `/` 与 Web Shell 运营台 `/app/*`）
+- Node.js 18+（唯一前端 `sau_web/frontend`，同时承载官网首页 `/` 与 Web Shell 运营台 `/dashboard/*`）
 - PostgreSQL 14+（推荐）或 SQLite（零配置备选）
 - Chrome / Chromium 浏览器（平台登录扫码用）
 
@@ -157,9 +153,9 @@ AI的发展毋庸置疑，希望你遇到这种安装和使用，不要再怯场
 
 `2026.03.24`
 
-最近我的重心一直都在创业上，而且手里还有一些项目没完全跑通，所以这个仓库前面有很长一段时间，我确实没有办法投入特别多精力去持续维护。
+最近我的重心一直都在创业上，而且手里还有一些项目没完全跑通，所以前面有很长一段时间，我确实没有办法投入特别多精力去持续维护。
 
-这个项目不知不觉已经 `9k+ star` 了，社群里也已经有 `2000+` 小伙伴了。看到它真的在持续帮到大家，我心里还是挺开心的，也是真的很感谢大家一直以来的支持、反馈。
+社群里也已经有 `2000+` 小伙伴了。看到它真的在持续帮到大家，我心里还是挺开心的，也是真的很感谢大家一直以来的支持、反馈。
 
 所以我想，决定先停一下，抽一段时间出来，把这个项目好好重构和优化一轮。
 
@@ -191,7 +187,7 @@ AI的发展毋庸置疑，希望你遇到这种安装和使用，不要再怯场
 
 ### 默认入口：合并后的统一前端（官网首页 + Web Shell 运营台）
 
-> **架构说明：** `sau_web/frontend/` 这个唯一的 Vite app 同时承载 **官网营销首页**（`/`）和 **Web Shell 运营台**（`/app/*`）。之前描述的独立 `sau_web/site/` 已合并进同 Vite 产物，无需独立启动。
+> **架构说明：** `sau_web/frontend/` 这个唯一的 Vite app 同时承载 **官网营销首页**（`/`）和 **Web Shell 运营台**（`/dashboard/*`）。之前描述的独立 `sau_web/site/` 已合并进同 Vite 产物，无需独立启动。
 
 **一键启动（推荐）：**
 
@@ -203,17 +199,54 @@ bash sau_web/start.sh
 - 检查并安装前后端依赖
 - 关闭已占用的端口（5180 / 6001）
 - 配置数据库连接（默认 `postgres:///sau`）
-- 同时启动 **唯一前端（`/` 官网首页 + `/app/*` Web Shell 运营台）、Flask 后端** 两个服务
+- 同时启动 **唯一前端（`/` 官网首页 + `/dashboard/*` Web Shell 运营台）、Flask 后端** 两个服务
 
 启动后访问：
 
 | 入口 | URL | 说明 |
 |---|---|---|
-| 官网首页（默认访问） | http://localhost:5180/ | 面向公众的官网，含 Hero / Platforms / Features / CTA 等页面。手机/桌面均适适。公开访问，不需要登录。 |
-| Web Shell 运营台 | http://localhost:5180/app | 账号分组、批量发布、运行日志、AI 配置。需登录。 |
+| 官网首页（默认访问） | http://localhost:5180/ | 面向公众的官网，含 Hero / Platforms / Features / CTA 等页面。手机/桌面均适配。公开访问，不需要登录。 |
+| Web Shell 运营台 | http://localhost:5180/dashboard | 账号分组、批量发布、运行日志、AI 配置。需登录。 |
+| 管理后台 | http://localhost:5180/dashboard/admin | 运营概览、用户列表、审计日志。**admin 角色可见**。 |
 | Flask 后端 API | http://localhost:6001 | `/api/*` REST，供 Web Shell 调用 |
 
 运行日志：`.sau-logs/` （分别有 `frontend.log` · `backend.log`）。
+
+#### 管理后台（Admin Dashboard）
+
+`admin` 角色用户登录后，侧边栏会出现「管理后台」入口，包含三个子页面：
+
+| 页面 | 路由 | 功能 |
+|---|---|---|
+| 运营概览 | `/dashboard/admin` | 关键指标卡片（用户数、任务数、今日发布、系统健康）+ 最近操作记录 |
+| 用户管理 | `/dashboard/admin/users` | 用户表格、角色变更（user / admin）、变更审计 |
+| 审计日志 | `/dashboard/admin/audit` | 管理员操作记录分页查询（角色变更、系统配置修改等） |
+
+> 第一个注册用户自动成为 `admin`。后续用户默认 `user`，可通过「用户管理」页面提升为管理员。
+
+**管理后台截图：**
+
+> 截图文件可放入 `media/admin/` 目录并在下方引用。当前为功能描述占位，欢迎社区贡献实际截图 PR。
+
+- **运营概览** — 顶部 4 张统计卡片（总用户数、今日任务、今日发布、系统健康度），下方展示最近 5 条管理员操作记录，支持一键跳转到对应详情页。
+- **用户管理** — 表格展示所有注册用户（邮箱、角色、套餐、最近登录），每行末尾「变更角色」下拉可切换 user / admin，变更前需二次确认。
+- **审计日志** — 按时间倒序分页展示管理员操作，含操作人、动作类型、目标对象、时间戳，支持按页码跳转。
+
+#### 社交登录配置（可选）
+
+登录页支持 **Google** 与 **GitHub** OAuth 一键登录。配置步骤：
+
+1. 在 `.env` 中填入对应平台的 `CLIENT_ID` 与 `CLIENT_SECRET`：
+   ```bash
+   GOOGLE_CLIENT_ID=xxx
+   GOOGLE_CLIENT_SECRET=xxx
+   GITHUB_CLIENT_ID=xxx
+   GITHUB_CLIENT_SECRET=xxx
+   ```
+2. 重启后端使环境变量生效
+3. 登录页会自动显示社交登录按钮
+
+详细图文教程、重定向 URI 配置、常见错误排查见 [`docs/oauth-setup.md`](docs/oauth-setup.md)。
 
 **手动启动（开发调试用）：**
 
@@ -278,7 +311,7 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 - 一个 `account_name` 对应一个账号 Cookie 文件，可准备多个账号，也可按账号名并发执行任务
 - 视频统一使用 `title + desc + tags`，图文统一使用 `title + note + tags`
 - Bilibili CLI 无需手动安装 `biliup`，首次运行时自动下载，后续自动检查更新
-- Bilibili 登录建议在本地真实终端执行；二维码显示不完整时，可直接打开 `qrcode.png` 扫码
+- Bilibili 登录建议在本地真实终端执行（**不要带 `--headless`**）；如果二维码显示不完整，**不要**打开 `qrcode.png`（该文件已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`）
 
 
 
@@ -298,14 +331,14 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 | 更新说明 | [`docs/update.md`](docs/update.md) | `git pull` 后重新同步依赖与浏览器驱动 |
 | CLI 命令速查 | [`docs/CLI.md`](docs/CLI.md) | `sau <platform> <action>` 子命令、参数、示例 |
 | Web Shell | [`docs/web-shell.md`](docs/web-shell.md) | 可选 React + Flask 可视化界面、CORS、页面与路由 |
+| OAuth 社交登录配置 | [`docs/oauth-setup.md`](docs/oauth-setup.md) | Google / GitHub OAuth 申请、重定向 URI、排错指南 |
 | 运营 Cron Runbook | [`docs/dev/monitor-cdp-throttling-cron-ops.md`](docs/dev/monitor-cdp-throttling-cron-ops.md) | TBF-018 on-call cron 部署 / 验证 / idempotent 重跑 / 回滚 / 阈值调整 |
 | 开发文档枢纽 | [`docs/dev/INDEX.md`](docs/dev/INDEX.md) | `docs/dev/` 全部 runbook 索引（按 Operators / Contributors / Onboarding 分组） |
 | Agent Bootstrap | [`docs/agent-bootstrap.md`](docs/agent-bootstrap.md) | OpenClaw / Codex / Claude Code 启动提示词 |
 | 历史 Web 说明 | [`docs/legacy-web.md`](docs/legacy-web.md) | `sau_backend.py` + Vue 旧 Web 迁移说明 |
+| **文档总索引** | [`docs/INDEX.md`](docs/INDEX.md) | 全项目文档导航（按 用户 / 平台 / 设计 / 运营 / 开发 分区） |
 
 > 早期策略/重构/价值评估文档（`skill-distribution.md`、`FRONTEND-UI-UPGRADE.md`、`VALUE-UPGRADE.md`）已归档到 [`docs/dev/`](docs/dev/) 下，供后续重构查阅。
-
-更详细的文档和说明，请查看：[social-auto-upload 官方文档](https://sap-doc.nasdaddy.com/)
 
 ## 🔧 运营 Operations / on-call
 
@@ -326,7 +359,7 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
-| `SAU_DB_DIALECT` | 数据库方言，`postgres` 或 `sqlite` | `postgres` |
+| `DATABASE_URL` | PostgreSQL 连接串（必填） | `postgres:///sau` |
 | `DATABASE_URL` | PostgreSQL 连接串 | `postgres:///sau` |
 | `SAU_DB_POOL_MIN` | 连接池最小连接数 | `2` |
 | `SAU_DB_POOL_MAX` | 连接池最大连接数 | `15` |
@@ -335,7 +368,7 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 Web Shell 一键启动时，`sau_web/start.sh` 会自动设置以上数据库变量。手动启动需自行配置：
 
 ```bash
-export SAU_DB_DIALECT=postgres
+export DATABASE_URL=postgres://sau:***@localhost:5432/sau
 export DATABASE_URL="postgres:///sau"
 python run.py
 ```
@@ -343,7 +376,7 @@ python run.py
 如需使用 SQLite（无需安装 PostgreSQL）：
 
 ```bash
-export SAU_DB_DIALECT=sqlite
+
 python run.py
 ```
 
@@ -362,40 +395,16 @@ export SAU_CORS_ALLOWED_ORIGINS="http://localhost:5180"
 python run.py
 ```
 
-## 🐾交流与支持
+### OAuth 社交登录（可选）
 
-[☕ Donate as u like](https://www.buymeacoffee.com/hysn2001m) - 如果您觉得这个项目对您有帮助，可以考虑赞助。
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 客户端 ID | 空 |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 客户端密钥 | 空 |
+| `GITHUB_CLIENT_ID` | GitHub OAuth App 客户端 ID | 空 |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth App 客户端密钥 | 空 |
 
-如果您也是独立开发者、技术爱好者，对 #技术变现 #AI创业 #跨境电商 #自动化工具 #视频创作 等话题感兴趣，欢迎加入社群交流。
-
-### Creator
-
-<table>
-    <td align="center">
-        <a href="https://sap-doc.nasdaddy.com/">
-            <img src="media/mp.jpg" width="200px" alt="NasDaddy公众号"/>
-            <br />
-            <sub><b>微信公众号</b></sub>
-        </a>
-        <br />
-        <a href="https://github.com/dreammis/social-auto-upload/commits?author=dreammis" title="Code">💻</a>
-        <br />
-        关注公众号，后台回复 `上传` 获取加群方式
-    </td>
-    <td align="center">
-        <a href="https://sap-doc.nasdaddy.com/">
-            <img src="media/QR.png" width="200px" alt="赞赏码/入群引导"/>
-            <br />
-            <sub><b>交流群 (通过公众号获取)</b></sub>
-        </a>
-        <br />
-        <a href="https://sap-doc.nasdaddy.com/" title="Documentation">📖</a>
-        <br />
-        如果您觉得项目有用，可以考虑打赏支持一下
-    </td>
-</table>
-
-
+四者均留空时，登录页隐藏社交登录按钮，不影响邮箱验证码登录。配置教程见 [`docs/oauth-setup.md`](docs/oauth-setup.md)。
 
 
 ## 🤝贡献指南
@@ -406,37 +415,6 @@ python run.py
 -   改进代码、文档。
 -   分享使用经验和教程。
 
-如果您希望贡献代码，请遵循以下步骤：
-
-1.  Fork 本仓库。
-2.  创建一个新的分支 (`git checkout -b feature/YourFeature` 或 `bugfix/YourBugfix`)。
-3.  提交您的更改 (`git commit -m 'Add some feature'`)。
-4.  Push到您的分支 (`git push origin feature/YourFeature`)。
-5.  创建一个 Pull Request。
-
-## 主要贡献者
-
-<a href="https://github.com/dreammis/social-auto-upload/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=dreammis/social-auto-upload" />
-</a>
-
-
-## 🙏致谢
-
-本项目的 Bilibili 上传能力基于开源项目 `biliup` 的能力进行接入与封装。
-感谢 `biliup` 项目及其贡献者提供的基础能力：
-
-- https://github.com/biliup/biliup
-
 ## 📜许可证
 
-本项目暂时采用 [MIT License](LICENSE) 开源许可证。
-
-## ⭐Star-History
-
-> 如果这个项目对您有帮助，请给一个 ⭐ Star 以表示支持！
-
-
-
-
-[![Star History Chart](https://api.star-history.com/svg?repos=dreammis/social-auto-upload&type=Date)](https://star-history.com/#dreammis/social-auto-upload&Date)
+本项目保留所有权利。未经授权不得复制、修改或分发。

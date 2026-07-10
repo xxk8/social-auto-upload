@@ -20,12 +20,14 @@ import {
   EyeOff,
   Key,
   Loader2,
+  Lock,
   Plus,
   Settings as SettingsIcon,
   Trash2,
   Upload,
   X,
 } from 'lucide-react'
+import { Type, ImageIcon, Video, Mic, FileText } from 'lucide-react'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
 import { Textarea } from '@/Components/ui/textarea'
@@ -49,6 +51,7 @@ import { api } from '@/api/client'
 import { useAiConfig, useAiKeys, useSetAiConfig, useDeleteAiConfig } from '@/hooks/useAiConfig'
 import { useAiModels } from '@/hooks/useAiGeneration'
 import { useAiStore } from '@/stores/useAiStore'
+import { useAuth } from '@/features/auth/useAuth'
 
 // ── AiKey shape (the backend returns this; we keep the local copy
 //    here so we don't have to add an explicit export to `@/api/ai` —
@@ -63,22 +66,13 @@ export interface AiKey {
 /* ── Header ─────────────────────────────────────────────────────────── */
 
 interface AiSettingsHeaderProps {
-  /** The currently selected model id (used for the model chip). */
-  selectedModel: string
   /** "Is the AI service configured?" — rendered as a status dot. */
   configured: boolean
   /** "Initial fetch still in flight?" — shows shimmer gate. */
   loading: boolean
 }
 
-export function AiSettingsHeader({ selectedModel, configured, loading }: AiSettingsHeaderProps) {
-  // Belt-and-suspenders (reviewer ⚠️C-round-2): the prop-name fix
-  // on AiAssistantPanel resolves the original symptom, but make
-  // this component survive a future regression where the prop
-  // drops to undefined — normalize before splitting.
-  const safeModel = selectedModel ?? ''
-  const tail = safeModel.split('/').pop() || safeModel
-  const displayTail = tail.length > 26 ? `${tail.slice(0, 24)}…` : tail
+export function AiSettingsHeader({ configured, loading }: AiSettingsHeaderProps) {
   return (
     <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
       {loading ? (
@@ -87,19 +81,16 @@ export function AiSettingsHeader({ selectedModel, configured, loading }: AiSetti
           <span>加载中</span>
         </>
       ) : (
-        <span className="truncate max-w-[120px]" title={selectedModel}>
-          {displayTail || '未选择模型'}
-        </span>
+        <Badge
+          variant="outline"
+          className={cn(
+            'h-4 shrink-0 px-1 text-[9px] tabular-nums',
+            configured ? 'border-green-200 text-green-700 dark:border-green-800 dark:text-green-400' : 'border-amber-200 text-amber-700 dark:border-amber-800 dark:text-amber-400',
+          )}
+        >
+          {configured ? '已配置' : '未配置'}
+        </Badge>
       )}
-      <Badge
-        variant="outline"
-        className={cn(
-          'h-4 shrink-0 px-1 text-[9px] tabular-nums',
-          configured ? 'border-green-200 text-green-700 dark:border-green-800 dark:text-green-400' : 'border-amber-200 text-amber-700 dark:border-amber-800 dark:text-amber-400',
-        )}
-      >
-        {configured ? '已配置' : '未配置'}
-      </Badge>
     </div>
   )
 }
@@ -119,8 +110,17 @@ export function AiSettingsPopover() {
   /** When non-null, the popover is in "delete confirmation" mode. */
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'all' } | { type: 'single'; id: number; masked: string } | null>(null)
 
+  // Founder gate (ai-api-keys-founder feature): mirrors the
+  // backend `founder_required` decorator on `/api/ai/config`,
+  // `/api/ai/keys`, `/api/ai/keys/batch`. Non-founders see a
+  // read-only notice instead of add/batch/list/delete controls.
+  const { user } = useAuth()
+  const isFounder = Boolean(user?.is_founder)
+
   const { data: aiConfig, isLoading: configLoading } = useAiConfig()
-  const { data: aiKeys, isLoading: keysLoading, refetch: refetchKeys } = useAiKeys()
+  // `useAiKeys(enabled)` short-circuits the network round-trip
+  // for non-founders so we don't log noise 403 retry cycles.
+  const { data: aiKeys, isLoading: keysLoading, refetch: refetchKeys } = useAiKeys(isFounder)
   const setKeyMutation = useSetAiConfig()
   const deleteKeyMutation = useDeleteAiConfig()
   const { addToast } = useToast()
@@ -224,8 +224,22 @@ export function AiSettingsPopover() {
               )}
             </div>
 
-            {/* ── Menu entries — mutually exclusive modes ── */}
-            {!showInput && !showBatch && !showList && !deleteTarget && (
+            {/* Founder-gated read-only banner: non-founders see this
+                instead of the add/batch/list/delete menu. */}
+            {!isFounder && (
+              <div
+                className="flex items-start gap-2 px-2 py-2 rounded bg-muted/40 text-[11px] leading-snug"
+                data-testid="ai-settings-not-founder"
+              >
+                <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  AI API Key 由项目创始人管理。如需添加或更换 Key，请联系创始人。
+                </span>
+              </div>
+            )}
+
+            {/* ── Menu entries — mutually exclusive modes, founder-only ── */}
+            {!showInput && !showBatch && !showList && !deleteTarget && isFounder && (
               <>
                 <button
                   type="button"
@@ -332,7 +346,7 @@ export function AiSettingsPopover() {
               </div>
             )}
 
-            {showList && configured && safeKeys.length > 0 && (
+            {isFounder && showList && configured && safeKeys.length > 0 && (
               <div className="space-y-1 max-h-44 overflow-y-auto" data-testid="ai-settings-key-list">
                 {safeKeys.map((k, idx) => (
                   <div key={k.id} className="group/keyrow flex items-center justify-between rounded bg-background/80 px-2 py-1.5 hover:bg-background">
@@ -429,8 +443,12 @@ export function AiSettingsPopover() {
  * operator sees model + configured status at a glance.
  */
 export function AiStatusPill() {
+  // Founder-gated: `useAiKeys` short-circuits for non-founders so
+  // the status pill still renders without burning retries on 403.
+  const { user } = useAuth()
+  const isFounder = Boolean(user?.is_founder)
   const { data: aiConfig, isLoading: loading } = useAiConfig()
-  const { data: aiKeys } = useAiKeys()
+  const { data: aiKeys } = useAiKeys(isFounder)
   const configured = aiConfig?.configured ?? false
   const keys: AiKey[] = Array.isArray(aiKeys) ? aiKeys : []
   const rateLimitedCount = keys.filter((k) => k.rate_limited).length
@@ -465,6 +483,15 @@ export function AiStatusPill() {
 interface ModelItem {
   id: string
   name?: string
+  tags?: string[]
+}
+
+const TAG_ICONS: Record<string, { icon: typeof Type; label: string; color: string }> = {
+  text: { icon: Type, label: '文字', color: 'text-blue-500' },
+  image: { icon: ImageIcon, label: '图片', color: 'text-green-500' },
+  video: { icon: Video, label: '视频', color: 'text-purple-500' },
+  audio: { icon: Mic, label: '音频', color: 'text-orange-500' },
+  file: { icon: FileText, label: '文件', color: 'text-gray-500' },
 }
 
 /**
@@ -532,7 +559,7 @@ export function ModelInlinePicker() {
   // — the same shape the user just hit on `AiSettingsHeader`
   // before the prop-name fix landed. Reviewed by reviewer-minimax.
   const safeModel = selectedModel ?? ''
-  const tail = safeModel.split('/').pop() || safeModel
+  const tail = (safeModel.split('/').pop() || safeModel).replace(/:free$/i, '')
   const displayTail = tail
     ? tail.length > 18
       ? `${tail.slice(0, 16)}…`
@@ -554,10 +581,26 @@ export function ModelInlinePicker() {
       </SelectTrigger>
       <SelectContent className="max-h-72">
         {models.map((m) => {
-          const mTail = m.id?.split('/').pop() || m.id || ''
+          const mTail = (m.id?.split('/').pop() || m.id || '').replace(/:free$/i, '')
           return (
             <SelectItem key={m.id} value={m.id} className="text-[11px]">
-              <span className="truncate font-mono">{mTail}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="truncate font-mono">{mTail}</span>
+                {m.tags && m.tags.length > 0 && (
+                  <span className="flex items-center gap-0.5 shrink-0">
+                    {m.tags.map((tag) => {
+                      const cfg = TAG_ICONS[tag]
+                      if (!cfg) return null
+                      const Icon = cfg.icon
+                      return (
+                        <span key={tag} className={`${cfg.color}`} title={cfg.label}>
+                          <Icon className="h-2.5 w-2.5" />
+                        </span>
+                      )
+                    })}
+                  </span>
+                )}
+              </div>
             </SelectItem>
           )
         })}

@@ -8,7 +8,7 @@ import { User } from 'lucide-react'
 
 // ── Round-OPT-prefs-dialog-v4 (slice extraction):
 //    ProfilePage is a thin wrapper that re-renders PreferencesDialog's
-//    <AccountTab /> under the /app/account route's PageHeader. The
+//    <AccountTab /> under the /dashboard/account route's PageHeader. The
 //    slice migrated from `Components/PreferencesContent.tsx` to
 //    `features/preferences/` so:
 //      • The dialog tabs are now owned by a single slice that ANY shell

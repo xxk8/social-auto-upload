@@ -20,6 +20,7 @@ import { VolumeTrendChart } from '@/features/analytics/VolumeTrendChart'
 import { PlatformPieChart } from '@/features/analytics/PlatformPieChart'
 import { FailureReasonChart } from '@/features/analytics/FailureReasonChart'
 import { AccountActivityTable } from '@/features/analytics/AccountActivityTable'
+import { SuccessRateTrendChart } from '@/features/analytics/SuccessRateTrendChart'
 import { api } from '@/api/client'
 
 /**
@@ -204,6 +205,11 @@ export default function AnalyticsPage() {
           value={summary?.today ?? '—'}
           icon={BarChart3}
         />
+      </div>
+
+      {/* ── Success rate trend (full-width) ─────────────── */}
+      <div className="mt-6">
+        <SuccessRateTrendChart data={summary?.by_day ?? []} loading={summaryLoading} />
       </div>
 
       {/* ── Charts row: Volume trend + Platform pie ─────── */}

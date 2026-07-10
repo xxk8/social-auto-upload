@@ -1,51 +1,54 @@
-"""Database module: dialect-aware Database abstraction (PR2 + PR2-final).
+"""Database module: PostgreSQL-only `Database` abstraction (post-SQLite-removal).
 
-Replaces the legacy module-level `get_connection()` + `db_lock` shims with
-a single `get_database()` factory that returns either `SqliteDatabase`
-(dev fallback) or `PostgresDatabase` (production). Both backends + their
-respective transaction handles share the same interface:
+Single, dialect-locked backend (``PostgresDatabase``); the legacy
+SQLite branch (``PostgresDatabase``) and its supporting classes were
+removed in the SQLite→PG cutover. Both ``PostgresDatabase`` and its
+``PostgresTransactionHandle`` implement the same interface:
 
     execute(sql, params)              -> int
     execute_many(sql, seq)            -> None
     fetch_one(sql, params)            -> dict | None
     fetch_all(sql, params)            -> list[dict]
     last_insert_id()                  -> int
-    insert_returning_id(sql, params)  -> int    (sqlite 3.35+, pg 9.5+)
-    json_dump(value)                  -> str | None  (sqlite) | Any  (pg)
+    insert_returning_id(sql, params)  -> int
+    json_dump(value)                  -> Any
     json_load(value)                  -> Any
     transaction()                     -> ContextManager[Database]
 
-Transaction handles (SqliteTransactionHandle / PostgresTransactionHandle)
-bind a single connection for the lifetime of a `with db.transaction() as
-tx:` block so multi-statement work shares one connection and
-commits-or-rolls-back as one unit. The handles do NOT auto-commit;
+Transaction handles (``PostgresTransactionHandle``) bind a single
+``psycopg.Connection`` for the lifetime of a ``with db.transaction() as
+tx:`` block so multi-statement work shares one connection and
+commits-or-rolls-back as one unit. The handle does NOT auto-commit;
 the wrapping ctx-mgr is responsible for the lifecycle.
 
-Dialect helpers:
-  * `_translate_placeholders(sql)` converts `?` outside string literals
-    to `%s` for PostgreSQL positional params (the regex doesn't handle
-    `'in-string ?'` escapes — current SQL has none).
-  * `_translate_psycopg_exception(exc)` rewraps psycopg errors into
-    their sqlite3 counterparts so production routes can keep using
-    `except sqlite3.IntegrityError:` blocks across both backends.
+Dialect helper:
+  * ``_translate_placeholders(sql)`` converts ``?`` outside string literals
+    to ``%s`` for psycopg's positional-param syntax. SQL call sites in
+    ``web_runner/utils.py`` and ``web_runner/routes/*`` keep using
+    ``?`` for dialect-lock-in / readability; this is the single
+    boundary where the translation happens.
 
-Call sites in `web_runner/utils.py` + `web_runner/routes/*` use
-`db = get_database()` and `db.execute(...)` directly. Tests rebind
-`SAU_DB_DIALECT` to `sqlite` for the legacy in-memory path.
+Call sites in ``web_runner/utils.py`` + ``web_runner/routes/*`` use
+``db = get_database()`` and ``db.execute(...)`` directly. Tests use
+``monkeypatch.setenv`` + ``reset_default_database()`` to swap
+``DATABASE_URL`` mid-session.
+
+Public-API exclusions:
+  * ``conninfo`` requires a non-empty ``DATABASE_URL`` set in the env
+    (failure surfaces a clear RuntimeError at factory-call time).
+  * psycopg + psycopg-pool must be installed; absent either, the
+    PostgresDatabase.__init__ raises with install-instruction text.
 """
 from __future__ import annotations
 
-import functools
 import json
 import logging
 import os
 import re
-import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 # Module-level logger used by helper functions in this file (e.g.
@@ -56,19 +59,23 @@ from typing import Any, Protocol, runtime_checkable
 _db_logger = logging.getLogger(__name__)
 
 
-BASE_DIR = Path(__file__).parent.parent.resolve()
-DB_DIR = BASE_DIR / "db"
-DB_DIR.mkdir(exist_ok=True)
-DB_PATH = DB_DIR / "database.db"
+# Back-compat path constants (`DB_DIR` / `BASE_DIR`) were removed in
+# the SQLite→PG cutover + secret-key migration: the ``db/`` directory
+# is now empty (SQLite files + ``createTable.py`` deleted) and the
+# Flask session key moved to ``.sau_secret_key`` at the repo root.
+# The web_runner/__init__.py module-local ``Path(__file__).parent.parent``
+# derives the root path directly without depending on a module-level
+# constant exported here.
 
 
-# Single-quoted SQL strings + '?' outside string literals — openspec §2.5
-# specify-positional translator. Does NOT handle:
+# Single-quoted SQL strings + '?' outside string literals — psycopg uses
+# %s for positional params, so we rewrite SQLite-style '?' (used by every
+# call site in the codebase) to '%s' before handing the SQL to psycopg.
+# Does NOT handle:
 #   * 'in-string doubled single-quote' escape (current code never uses it).
 #   * double-quoted "..." strings (SQL standard reserves these for
 #     identifiers; current code uses single quotes for string literals).
-# Per openspec §Risks, current code has no LIKE '?' literal, so the regex
-# is sufficient.
+# The regex pattern is sufficient for the live codebase.
 _PLACEHOLDER_PATTERN = re.compile(r"'[^']*'|\?")
 
 
@@ -80,100 +87,30 @@ def _translate_placeholders(sql: str) -> str:
     )
 
 
-# ── Psycopg → Sqlite3 exception translation (PR3) ─────────────────────────
-
-# The ``Database`` Protocol promises a sqlite3-shaped exception surface:
-# production routes (e.g. ``web_runner/routes/ai.py::ai_config_set``) catch
-# ``sqlite3.IntegrityError`` to map duplicate-key inserts to HTTP 409. With
-# raw psycopg, the same condition surfaces as
-# ``psycopg.errors.UniqueViolation`` (a subclass of
-# ``psycopg.errors.IntegrityError``); without translation the route
-# handler would miss errors on Postgres. ``_translate_psycopg_exception``
-# is the boundary: every psycopg exception leaving a
-# ``PostgresDatabase`` public method is rewrapped in the matching
-# sqlite3 class so callers see one dialect-agnostic contract.
-
-
-@functools.lru_cache(maxsize=1)
-def _psycopg_exception_map() -> dict:
-    """Lazy build the psycopg → sqlite3 exception translation table.
-
-    Returns ``{}`` if psycopg is not installed, in which case
-    ``_translate_psycopg_exception`` is the identity function. The
-    Postgres backend is opt-in via ``SAU_DB_DIALECT=postgres`` and the
-    factory already refuses to construct ``PostgresDatabase`` without
-    psycopg installed, so the empty-map branch is only reachable when
-    callers bypass the factory and inject a fake psycopg exception for
-    testing — in that case translation naturally degrades to identity.
-    """
-    try:
-        import psycopg.errors
-    except ImportError:
-        return {}
-    return {
-        # psycopg.IntegrityError is the parent of UniqueViolation,
-        # ForeignKeyViolation, NotNullViolation, CheckViolation, and
-        # RestrictViolation — all PK / UNIQUE / FK / CHECK / NOT NULL
-        # constraints surface as this single Python type, so the
-        # sqlite3 side collapses to one class too.
-        psycopg.errors.IntegrityError: sqlite3.IntegrityError,
-        psycopg.errors.OperationalError: sqlite3.OperationalError,
-        psycopg.errors.ProgrammingError: sqlite3.ProgrammingError,
-        psycopg.errors.DataError: sqlite3.DataError,
-        psycopg.errors.InterfaceError: sqlite3.InterfaceError,
-    }
-
-
-def _translate_psycopg_exception(exc: BaseException) -> BaseException:
-    """Re-wrap a psycopg exception in its sqlite3 equivalent.
-
-    Returns the input unchanged when the exception is not in the
-    translation map (e.g. the caller passed a plain ``ValueError`` or a
-    sqlite3 exception that originated on the SQLite path and never
-    crossed through this layer). The identity branch keeps the
-    function safe to call from test-code on either backend.
-
-    Pytest note: the result is always ``raise X from orig`` at the
-    call site (see ``PostgresDatabase._conn``), which preserves the
-    original psycopg exception in ``__cause__`` for debugging while
-    delivering a sqlite3-flavored exception to higher layers.
-    """
-    for pg_cls, sqlite_cls in _psycopg_exception_map().items():
-        if isinstance(exc, pg_cls):
-            return sqlite_cls(str(exc))
-    return exc
-
-
-# ── SAVEPOINT-backed nested transactions (PR4) ───────────────────────────
-
+# ── SAVEPOINT-backed nested transactions ─────────────────────────────────
+#
 # ``tx.savepoint(name)`` and the back-compat ``tx.transaction()`` shortcut
 # both want a SQL identifier as the savepoint name. SQL identifiers
 # can't be bound as parameters, so the only safe path is
-# validate-then-interpolate. Rules tuned to the union of SQLite + PG
-# identifier naming rules:
+# validate-then-interpolate. Rules tuned to PG identifier naming:
 #   * matched by ``^[a-zA-Z_][a-zA-Z0-9_]*$`` (no digits at the start
 #     — avoids SQL syntactic ambiguity where ``"1sp"`` could be parsed
 #     as a numeric literal in some contexts).
-#   * length cap of 64 chars (PG identifier limit is 63; SQLite has no
-#     hard cap but symmetric cap keeps the floor clean).
+#   * length cap of 63 chars (PG identifier NAMEDATALEN-1 hard limit).
 #   * reserved-word deny-list catches SQL keywords that would lead to
-#     parse errors at the BACKEND (``SAVEPOINT savepoint`` is malformed
-#     on PG; ``SAVEPOINT begin`` would shadow begin etc.).
+#     parse errors at the BACKEND.
 #
 # Validation runs BEFORE the SAVEPOINT SQL touches the connection, so
 # a rejected name leaves the savepoint stack clean (no leaked
 # ``SAVEPOINT`` entry half-opened).
 _SAVEPOINT_NAME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-_SAVEPOINT_NAME_MAX_LEN: int = 63  # PG identifier hard limit (NAMEDATALEN - 1).
+_SAVEPOINT_NAME_MAX_LEN: int = 63  # PG identifier NAMEDATALEN-1.
 _RESERVED_SAVEPOINT_NAMES: frozenset = frozenset({
     # SQL keywords that would parse-error at the BACKEND when used as
-    # a savepoint identifier (the most-likely-mis-named subset; the
-    # full SQLite + PG reserved-word lists are extensive). The
-    # identifier regex blocks numeric-literal-lookalikes and SQL
-    # injection vectors already; this deny-list adds the keyword
-    # callers are most likely to reach for without quoting. PG + SQLite
-    # both reject these with backend-level parse errors instead of
-    # surfacing as a clean pre-flight ValueError.
+    # a savepoint identifier. Identifier regex blocks numeric-literal
+    # lookalikes and SQL injection vectors already; this deny-list
+    # adds the keyword callers are most likely to reach for without
+    # quoting.
     "savepoint", "transaction", "release", "rollback", "begin", "commit", "end",
     "select", "insert", "update", "delete", "drop", "create", "alter",
     "table", "into", "values", "from", "where",
@@ -191,10 +128,10 @@ def _validate_savepoint_name(name: str) -> None:
       * doesn't match :data:`_SAVEPOINT_NAME_RE`,
       * matches a reserved keyword (case-insensitive).
 
-    Both SQLite and PostgreSQL accept matching identifiers verbatim in
-    ``SAVEPOINT`` / ``RELEASE`` / ``ROLLBACK TO`` statements without
-    any quoting, so once validation passes we can interpolate the
-    identifier directly.
+    PG accepts matching identifiers verbatim in ``SAVEPOINT`` /
+    ``RELEASE SAVEPOINT`` / ``ROLLBACK TO SAVEPOINT`` statements
+    without any quoting, so once validation passes we can interpolate
+    the identifier directly.
     """
     if not isinstance(name, str):
         raise ValueError(
@@ -219,8 +156,8 @@ def _validate_savepoint_name(name: str) -> None:
         )
 
 
-# ── Psycopg ConnectionPool tuning (PR4-follow-up) ────────────────────────
-
+# ── psycopg ConnectionPool tuning ────────────────────────────────────────
+#
 # Names of psycopg.connect() kwargs that PostgresDatabase enforces
 # regardless of what the operator puts in SAU_DB_POOL_KWARGS. We gate
 # them explicitly (raise rather than silently overwrite) because
@@ -229,10 +166,9 @@ def _validate_savepoint_name(name: str) -> None:
 #     ``fetch_all`` return dict-by-name; tuple-row would break every
 #     ``row["..."]`` index in routes/* callers (the abstraction's
 #     whole "dialect-agnostic dict result contract").
-#   * autocommit — must stay ``True`` so PR3's
-#     ``_translate_psycopg_exception`` wrap, applied at the
-#     public-method boundary, has a predictable baseline to layer on
-#     top of.
+#   * autocommit — must stay ``True`` so the wrapping
+#     ``conn.transaction()`` ctx-mgr can correctly flip it off for
+#     the duration of a tx block and restore it on return.
 _GATED_POOL_KWARG_NAMES: frozenset = frozenset({"row_factory", "autocommit"})
 
 
@@ -347,7 +283,12 @@ def _pool_kwargs_from_env() -> tuple[int, int, float, dict]:
 
 @runtime_checkable
 class Database(Protocol):
-    """Dialect-aware abstract Database (openspec §2.2)."""
+    """PostgreSQL-only Database abstraction.
+
+    All public methods map directly to psycopg's connection surface;
+    call sites can use ``db.execute(...)`` without branching on the
+    underlying driver because there's only one driver now.
+    """
 
     def execute(self, sql: str, params: tuple = ()) -> int: ...
     def execute_many(self, sql: str, seq_of_params: list) -> None: ...
@@ -359,300 +300,6 @@ class Database(Protocol):
     def transaction(self) -> AbstractContextManager[Database]: ...
 
 
-class SqliteTransactionHandle:
-    """Binds a single ``sqlite3.Connection`` for the lifetime of a
-    ``with db.transaction() as tx`` block.
-
-    Mirrors the :class:`Database` Protocol but delegates every method
-    to **one** bound connection so:
-
-      * Multi-statement calls share one connection — no per-call
-        ``_connect()`` setup/teardown overhead, matching the legacy
-        ``with get_connection() as conn:`` semantics.
-      * Reads see the in-flight transaction before commit (no
-        read-uncommitted snapshot dance).
-      * ``row_factory = sqlite3.Row`` is set once per block instead
-        of once per call.
-
-    The handle does NOT auto-commit. The wrapping context manager
-    commits on clean block exit and rolls back on raised exception.
-    Calling ``commit()``/``rollback()`` is intentionally not exposed
-    on the handle — the caller is expected to let the
-    ``with db.transaction()`` block handle transaction lifetime.
-    """
-
-    def __init__(self, conn: sqlite3.Connection, parent: SqliteDatabase) -> None:
-        self._conn = conn
-        self._parent = parent
-        # Monotonic counter for auto-generated savepoint names used by
-        # ``tx.transaction()`` (PR4 back-compat shortcut). Per-handle so
-        # independent handles (different outer-tx life-cycles) stay
-        # isolated — two outer-tx handles never share their auto-naming
-        # counter.
-        self._savepoint_seq: int = 0
-
-    def execute(self, sql: str, params: tuple = ()) -> int:
-        cur = self._conn.execute(sql, params)
-        # NO conn.commit() — the with-block's exit handles it.
-        self._lastrowid_local = cur.lastrowid or 0
-        return cur.rowcount
-
-    def execute_many(self, sql: str, seq_of_params: list) -> None:
-        self._conn.executemany(sql, seq_of_params)
-
-    def fetch_one(self, sql: str, params: tuple = ()) -> dict | None:
-        self._conn.row_factory = sqlite3.Row
-        row = self._conn.execute(sql, params).fetchone()
-        return dict(row) if row else None
-
-    def fetch_all(self, sql: str, params: tuple = ()) -> list:
-        self._conn.row_factory = sqlite3.Row
-        rows = self._conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
-
-    def last_insert_id(self) -> int:
-        return getattr(self, "_lastrowid_local", 0)
-
-    def insert_returning_id(self, sql: str, params: tuple) -> int:
-        sql_with_returning = sql.rstrip().rstrip(";").strip() + " RETURNING id"
-        # Set row_factory per-call so the fetched row is indexed by
-        # column name. ``fetch_one`` / ``fetch_all`` do this implicitly
-        # because they always need dict-shaped output; ``insert_returning_id``
-        # also needs it because we read the row index-by-name to extract
-        # ``id``. Without this, fetchone() returns a tuple and the
-        # ``"id" not in row`` guard fires spuriously.
-        self._conn.row_factory = sqlite3.Row
-        row = self._conn.execute(sql_with_returning, params).fetchone()
-        if not row or "id" not in row:
-            raise RuntimeError(f"INSERT did not return id: {sql!r}")
-        return int(row["id"])
-
-    def json_dump(self, value: Any) -> Any:
-        return self._parent.json_dump(value)
-
-    def json_load(self, value: Any) -> Any:
-        return self._parent.json_load(value)
-
-    def _next_savepoint_name(self) -> str:
-        """Auto-name ``sp_<N>`` from a per-handle monotonic counter.
-
-        Used by :meth:`transaction` (back-compat shortcut) so successive
-        nested ``tx.transaction()`` calls in the same outer tx don't
-        collide on savepoint stack entries. Per-handle counter (not
-        module-level) so independent handles stay isolated.
-        """
-        self._savepoint_seq += 1
-        return f"sp_{self._savepoint_seq}"
-
-    @contextmanager
-    def savepoint(self, name: str) -> Iterator[Database]:
-        """Open a SAVEPOINT-backed nested transaction (PR4).
-
-        On entry: ``SAVEPOINT <name>``. ``name`` is validated as a
-        SQL identifier via :func:`_validate_savepoint_name` BEFORE any
-        SQL touches the connection — a rejected name leaves the
-        savepoint stack clean.
-
-        Yields: this handle (``self``), so callers can use the
-        :class:`Database` Protocol surface (``tx.execute`` etc.)
-        inside the nested block.
-
-        On clean block exit: ``RELEASE <name>`` — inner writes commit
-        to the surrounding transaction (still inside the outer tx;
-        the outer tx must COMMIT for them to persist).
-
-        On raised exception inside the block: ``ROLLBACK TO <name>``
-        (revert inner writes) + ``RELEASE <name>`` (pop the savepoint
-        from the stack), then re-raise the original exception.
-        Both cleanup steps are best-effort — a SQL failure during
-        cleanup is swallowed so the original exception is never
-        obscured by cleanup noise.
-
-        SQL-specific (SQLite): uses short-form ``RELEASE {name}``
-        (SQLite's grammar; PG disambiguates savepoint-release from
-        advisory-lock-release by requiring ``RELEASE SAVEPOINT`` — see
-        :meth:`PostgresTransactionHandle.savepoint` for the PG form).
-        """
-        _validate_savepoint_name(name)
-        self._conn.execute(f"SAVEPOINT {name}")
-        try:
-            yield self
-        except Exception:
-            try:
-                self._conn.execute(f"ROLLBACK TO {name}")
-            except sqlite3.Error:
-                # Cleanup is best-effort; original exception still
-                # propagates below via the re-raise.
-                pass
-            try:
-                self._conn.execute(f"RELEASE {name}")
-            except sqlite3.Error:
-                pass
-            raise
-        else:
-            self._conn.execute(f"RELEASE {name}")
-
-    def transaction(self) -> AbstractContextManager[Database]:
-        """Backward-compat shortcut: open a savepoint with auto-name.
-
-        Identical to ``self.savepoint(self._next_savepoint_name())`` —
-        callers used to the PR2-final ``tx.transaction()`` API keep
-        working unchanged. Auto-naming via ``sp_<N>`` so successive
-        calls in the same outer tx don't collide on savepoint entries.
-
-        Prefer :meth:`savepoint` with a user-supplied name when you
-        want explicit checkpoint naming (e.g., debugging which sub-
-        block raised).
-        """
-        return self.savepoint(self._next_savepoint_name())
-
-
-class SqliteDatabase:
-    """SQLite single-file backend (openspec §2.3).
-
-    Lazy-reads `DB_PATH` on every `_connect()` so test fixtures that rebind
-    `DB_PATH` to a tmp path (test_sau_web_upload.py /
-    test_sau_web_account_groups.py) see the override instead of a stale
-    cache.
-    """
-
-    def __init__(self) -> None:
-        self._lastrowid: int = 0
-
-    def _connect(self) -> sqlite3.Connection:
-        # Read DB_PATH at call time (not __init__ time) so tests can rebind.
-        path = str(DB_PATH)
-        if path == ":memory:":
-            conn = sqlite3.connect(":memory:", check_same_thread=False)
-        else:
-            conn = sqlite3.connect(path, check_same_thread=False)
-        # Multi-thread safety paths (openspec §D4 / PR4.3):
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        return conn
-
-    def execute(self, sql: str, params: tuple = ()) -> int:
-        with self._connect() as conn:
-            cur = conn.execute(sql, params)
-            conn.commit()
-            self._lastrowid = cur.lastrowid or 0
-            return cur.rowcount
-
-    def execute_many(self, sql: str, seq_of_params: list) -> None:
-        with self._connect() as conn:
-            conn.executemany(sql, seq_of_params)
-            conn.commit()
-
-    def fetch_one(self, sql: str, params: tuple = ()) -> dict | None:
-        with self._connect() as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(sql, params).fetchone()
-            return dict(row) if row else None
-
-    def fetch_all(self, sql: str, params: tuple = ()) -> list:
-        with self._connect() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(sql, params).fetchall()
-            return [dict(r) for r in rows]
-
-    def last_insert_id(self) -> int:
-        """DEPRECATED: racy under concurrent INSERTs from multiple threads
-        because the cursor rowid lives on the singleton. Prefer
-        ``insert_returning_id`` for callers that need an id immediately
-        after INSERT.
-        """
-        return self._lastrowid
-
-    def insert_returning_id(self, sql: str, params: tuple) -> int:
-        """INSERT with ``RETURNING id`` (sqlite 3.35+, postgres).
-
-        Thread-safe vs. ``last_insert_id``: this helper reads the id
-        directly from the INSERT result, never via cached instance state.
-        Use it anywhere cross-thread INSERT-write+read sequences could
-        interleave (e.g. production routes spawning from the worker pool).
-
-        The SQL must NOT include a trailing ``;`` or any existing
-        ``RETURNING`` clause; we append ``RETURNING id`` after stripping
-        whitespace and a single trailing semicolon.
-        """
-        sql_with_returning = (
-            sql.rstrip().rstrip(";").strip() + " RETURNING id"
-        )
-        with self._connect() as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(sql_with_returning, params).fetchone()
-            conn.commit()
-            self._lastrowid = int(row["id"]) if row and "id" in row else 0
-            if not row or "id" not in row:
-                raise RuntimeError(f"INSERT did not return id: {sql!r}")
-            return self._lastrowid
-
-    def json_dump(self, value: Any) -> str | None:
-        """Serialize to JSON-encoded string for storage in a TEXT column.
-
-        Try-parse-then-dump: parse strings first, re-emit canonical form.
-        Encode non-strings directly via json.dumps(s, default=str). Empty
-        / None inputs short-circuit to None so the column stores NULL.
-        """
-        import json as _json
-        if value is None or value == "" or value == [] or value == {}:
-            return None
-        if isinstance(value, str):
-            try:
-                parsed = _json.loads(value)
-            except (_json.JSONDecodeError, ValueError):
-                return _json.dumps(value, ensure_ascii=False)
-            return _json.dumps(parsed, ensure_ascii=False, default=str)
-        return _json.dumps(value, ensure_ascii=False, default=str)
-
-    def json_load(self, value: Any) -> Any:
-        """Parse a JSON-encoded column back to its native Python form.
-
-        Returns None for None / empty inputs; surfaces malformed JSON by
-        returning the raw string (so the bug is visible at the call site
-        instead of silently swallowed).
-        """
-        import json as _json
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            return value
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            return _json.loads(value)
-        except (_json.JSONDecodeError, TypeError):
-            return value
-
-    @contextmanager
-    def transaction(self) -> Iterator[Database]:
-        """Wrap multi-statement work in a SQLite transaction.
-
-        Yields a :class:`SqliteTransactionHandle` bound to a single
-        ``sqlite3.Connection`` (with WAL + busy_timeout +
-        check_same_thread=False already applied via ``_connect()``).
-        Commits on clean block exit; rolls back on raised exception.
-
-        Single-statement INSERTs that need ``RETURNING id`` should use
-        ``insert_returning_id`` directly (no transaction needed). This
-        ctx-mgr is meant for routes where several statements must
-        commit-or-rollback as one unit, e.g. the
-        ``account_groups.rename`` endpoint that moves on-disk cookie
-        files and then writes the group + authorizations rows
-        atomically.
-        """
-        conn = self._connect()
-        try:
-            yield SqliteTransactionHandle(conn, self)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-
-
 class PostgresTransactionHandle:
     """Binds a single ``psycopg.Connection`` for the lifetime of a
     ``with db.transaction() as tx`` block.
@@ -661,18 +308,18 @@ class PostgresTransactionHandle:
     to **one** bound connection. Reads see the in-flight transaction
     before COMMIT (Postgres READ COMMITTED default).
 
-    Like :class:`SqliteTransactionHandle`, this handle does NOT
-    auto-commit; the wrapping context manager handles
-    COMMIT/ROLLBACK via psycopg's native ``conn.transaction()``
-    context manager (auto-flips autocommit off and restores it after).
+    Like the prior PostgresDatabase, this handle does NOT
+    auto-commit; the wrapping context manager handles COMMIT/ROLLBACK
+    via psycopg's native ``conn.transaction()`` context manager
+    (auto-flips autocommit off and restores it after).
     """
 
     def __init__(self, conn: Any, parent: PostgresDatabase) -> None:
         self._conn = conn
         self._parent = parent
-        # See SqliteTransactionHandle.__init__ for the rationale on
-        # per-handle savepoint counter (PR4 back-compat for nested
-        # ``tx.transaction()`` calls).
+        # Per-handle savepoint counter (PR4 back-compat for nested
+        # ``tx.transaction()`` calls). Independent handles have their
+        # own counter so two outer-tx life-cycles don't collide.
         self._savepoint_seq: int = 0
 
     def execute(self, sql: str, params: tuple = ()) -> int:
@@ -701,7 +348,7 @@ class PostgresTransactionHandle:
         sql_pg = _translate_placeholders(sql)
         sql_with_returning = sql_pg.rstrip().rstrip(";").strip() + " RETURNING id"
         row = self._conn.execute(sql_with_returning, params).fetchone()
-        if not row or "id" not in row:
+        if not row or "id" not in row.keys():
             raise RuntimeError(f"INSERT did not return id: {sql!r}")
         return int(row["id"])
 
@@ -714,48 +361,36 @@ class PostgresTransactionHandle:
     def _next_savepoint_name(self) -> str:
         """Auto-name ``sp_<N>`` from a per-handle monotonic counter.
 
-        See :meth:`SqliteTransactionHandle._next_savepoint_name` —
-        identical rationale, PG form.
+        Used by :meth:`transaction` (back-compat shortcut) so successive
+        nested ``tx.transaction()`` calls in the same outer tx don't
+        collide on savepoint stack entries.
         """
         self._savepoint_seq += 1
         return f"sp_{self._savepoint_seq}"
 
     @contextmanager
     def savepoint(self, name: str) -> Iterator[Database]:
-        """Open a SAVEPOINT-backed nested transaction on Postgres (PR4).
+        """Open a SAVEPOINT-backed nested transaction on Postgres.
 
-        Behaviour mirrors
-        :meth:`SqliteTransactionHandle.savepoint`, with PG-specific SQL
-        form:
-
+        Behaviour:
           * ``SAVEPOINT <name>``            (entry)
-          * ``ROLLBACK TO SAVEPOINT <name>`` (inner-rollback cleanup)            * ``RELEASE SAVEPOINT <name>``    (clean exit OR post-rollback cleanup)
+          * ``ROLLBACK TO SAVEPOINT <name>`` (inner-rollback cleanup)
+          * ``RELEASE SAVEPOINT <name>``    (clean exit OR post-rollback cleanup)
 
-        TODO(PR4-follow-up): add ``TestPostgresSavepoint`` mock-pool wiring
-        pin in ``tests/test_db_wrapper.py`` mirroring
-        :class:`TestSqliteSavepoint` so PG-side savepoint regressions get
-        caught in CI without a live PG dependency. Until that's in,
-        a regression in the PG-specific SQL forms below (e.g.
-        accidentally emitting ``RELEASE <name>`` instead of
-        ``RELEASE SAVEPOINT <name>``) wouldn't be caught by tests.
-        The PG verbose form (``SAVEPOINT`` keyword in ``RELEASE`` /
-        ``ROLLBACK TO``) is required to disambiguate savepoint-release
-        from PG's bare ``RELEASE`` command (which releases an advisory
-        lock, not a savepoint). Sending a bare ``RELEASE <name>`` to PG
-        when ``<name>`` is a savepoint could be mis-parsed by future
-        PG versions or by tooling that doesn't know our context.
+        ``name`` is validated as a SQL identifier via
+        :func:`_validate_savepoint_name` BEFORE any SQL touches the
+        connection — a rejected name leaves the savepoint stack clean.
 
-        Exception contract (PR3): the SAVEPOINT SQL itself doesn't
-        raise psycopg exceptions on the inner block — but a query
-        inside the savepoint (e.g. an INSERT that violates a UNIQUE
-        constraint) does. That psycopg exception bubbles out of this
-        context manager's ``except`` clause; it propagates out of the
-        outer :meth:`PostgresDatabase.transaction` block and is caught
-        by :meth:`PostgresDatabase._conn`'s
-        ``_translate_psycopg_exception`` wrap → ``sqlite3.IntegrityError``
-        surfaces to the route handler. Same contract as the outer
-        transaction block; SAVEPOINT adds a sub-checkpoint without
-        disrupting how callers catch exceptions.
+        On raised exception inside the block: ``ROLLBACK TO SAVEPOINT
+        <name>`` (revert inner writes) + ``RELEASE SAVEPOINT <name>``
+        (pop the savepoint from the stack), then re-raise the original
+        exception. Both cleanup steps are best-effort — a SQL failure
+        during cleanup is swallowed so the original exception is never
+        obscured.
+
+        The PG verbose ``SAVEPOINT`` keyword form in ``RELEASE`` /
+        ``ROLLBACK TO`` is required to disambiguate savepoint-release
+        from advisory-lock-release.
         """
         _validate_savepoint_name(name)
         self._conn.execute(f"SAVEPOINT {name}")
@@ -780,36 +415,24 @@ class PostgresTransactionHandle:
     def transaction(self) -> AbstractContextManager[Database]:
         """Backward-compat shortcut: open a PG savepoint with auto-name.
 
-        See :meth:`SqliteTransactionHandle.transaction` for rationale —
-        identical back-compat shape, PG-specific savepoint SQL.
+        Identical to ``self.savepoint(self._next_savepoint_name())`` —
+        callers used to the prior ``tx.transaction()`` API keep
+        working unchanged.
         """
         return self.savepoint(self._next_savepoint_name())
 
 
 class PostgresDatabase:
-    """PostgreSQL backend with ConnectionPool (openspec §2.4).
+    """PostgreSQL backend with ConnectionPool.
 
     Lazy-imports psycopg + psycopg_pool (raises RuntimeError if missing).
-    Caller must set DATABASE_URL + SAU_DB_DIALECT=postgres, OR rely on the
-    default (SAU_DB_DIALECT='postgres', DATABASE_URL required).
+    Caller must set DATABASE_URL.
 
-    psycopg's `dict_row` row_factory already decodes JSONB columns to dict
-    on SELECT, so Json helpers are identity here. The Application still
-    has the symmetric `json_dump`/`json_load` API so call sites don't
-    branch on dialect — openspec §2.8 call-site migration is mechanical.
-
-    Exception contract (PR3): every public method (``execute``,
-    ``execute_many``, ``fetch_one``, ``fetch_all``, ``insert_returning_id``)
-    routes its underlying psycopg exception through
-    ``_translate_psycopg_exception`` so callers see
-    ``sqlite3.IntegrityError`` for PK/UNIQUE/FK/CHECK/NOT-NULL
-    collisions instead of ``psycopg.errors.UniqueViolation`` and
-    siblings. The translation happens inside ``_conn()`` (a
-    ``ConnectionPool.connection`` wrapper) so the wrap is consistent
-    across all entry points — there is no path that escapes
-    untranslated. This is what keeps production routes dialect-agnostic:
-    the same ``except sqlite3.IntegrityError:`` block matches whether
-    the runtime is SQLite or Postgres.
+    psycopg's ``dict_row`` row_factory already decodes JSONB columns to
+    dict on SELECT, so the Json helpers are identity here. The
+    Application still has the symmetric ``json_dump``/``json_load``
+    API so call sites don't branch on dialect — historical openspec
+    PR3 contract preservation.
     """
 
     def __init__(
@@ -820,14 +443,11 @@ class PostgresDatabase:
         timeout: float = 30.0,
         extra_kwargs: dict | None = None,
     ) -> None:
-        """PostgresDatabase with env-tunable ConnectionPool sizing (PR4).
+        """PostgresDatabase with env-tunable ConnectionPool sizing.
 
         Operators tune via ``SAU_DB_POOL_MIN`` / ``SAU_DB_POOL_MAX`` /
         ``SAU_DB_POOL_TIMEOUT`` / ``SAU_DB_POOL_KWARGS`` env vars; see
-        :func:`_pool_kwargs_from_env` for parsing + validation. The
-        factory (:func:`get_database`) reads them at call time, so
-        ``monkeypatch.setenv`` + ``reset_default_database()`` swap a
-        test's pool config in-process.
+        :func:`_pool_kwargs_from_env` for parsing + validation.
 
         ``row_factory`` + ``autocommit`` are negotiation-gated (see
         ``_GATED_POOL_KWARG_NAMES``) — passing either in
@@ -843,8 +463,7 @@ class PostgresDatabase:
             raise RuntimeError(
                 f"PostgresDatabase extra_kwargs cannot override "
                 f"abstraction-gated pool keys {sorted(forbidden)}; "
-                f"these are managed by web_runner/db.py to preserve "
-                f"PR3's psycopg→sqlite3 exception contract. Drop them "
+                f"these are managed by web_runner/db.py. Drop them "
                 f"from SAU_DB_POOL_KWARGS."
             )
         try:
@@ -855,7 +474,7 @@ class PostgresDatabase:
             raise RuntimeError(
                 "PostgresDatabase requires psycopg[binary]>=3.2 and "
                 "psycopg-pool>=3.2. Install via "
-                "`uv pip install -e \".[web-pg]\"`."
+                "`uv pip install -e \\\".[web-pg]\\\"`."
             ) from exc
         merged_kwargs = {
             **user_kwargs,
@@ -869,40 +488,33 @@ class PostgresDatabase:
             timeout=timeout,
             kwargs=merged_kwargs,
         )
-        self._lastrowid: int = 0
+        self._lastid: int = 0
 
     @contextmanager
     def _conn(self) -> Iterator:
-        """Wrap ``ConnectionPool.connection()`` and translate any psycopg
-        exception into the matching sqlite3 exception.
+        """Wrap ``ConnectionPool.connection()``.
 
-        All public methods route through this context manager so the
-        exception contract on top of ``PostgresDatabase`` is
-        dialect-agnostic by construction. The original psycopg
-        exception is preserved via ``raise ... from exc`` so
-        ``__cause__`` keeps the full Python type for debugging, while
-        the raised class itself is sqlite3-shaped for production
-        ``except`` blocks.
-
-        The ``Exception`` (not ``BaseException``) filter deliberately
-        excludes ``KeyboardInterrupt`` / ``SystemExit`` / ``GeneratorExit``
-        from translation: those are control-flow signals and must
-        propagate unchanged.
+        All public methods route through this context manager so
+        a single fail point catches + re-raises psycopg's native
+        ``IntegrityError`` / ``UniqueViolation`` / etc. directly to
+        the caller. After SQLite removal the caller now uses
+        ``except psycopg.errors.IntegrityError`` (the parent of
+        UniqueViolation/ForeignKeyViolation/NotNullViolation).
         """
         try:
             with self._pool.connection() as conn:
                 yield conn
-        except Exception as exc:
-            translated = _translate_psycopg_exception(exc)
-            if translated is not exc:
-                raise translated from exc
+        except Exception:
+            # Re-raise unchanged — psycopg's exception hierarchy is
+            # the public contract now (PR3 translation layer
+            # removed alongside PostgresDatabase).
             raise
 
     def execute(self, sql: str, params: tuple = ()) -> int:
         sql_pg = _translate_placeholders(sql)
         with self._conn() as conn:
             cur = conn.execute(sql_pg, params)
-            self._lastrowid = getattr(cur, "lastrowid", 0) or 0
+            self._lastid = getattr(cur, "lastid", 0) or 0
             return cur.rowcount
 
     def execute_many(self, sql: str, seq_of_params: list) -> None:
@@ -923,13 +535,23 @@ class PostgresDatabase:
             return list(rows)
 
     def last_insert_id(self) -> int:
-        """DEPRECATED: see SqliteDatabase.last_insert_id."""
-        return self._lastrowid
+        """DEPRECATED: racy across concurrent workers — use
+        ``insert_returning_id`` for any caller that needs an id
+        immediately after INSERT.
+        """
+        return self._lastid
 
     def insert_returning_id(self, sql: str, params: tuple) -> int:
         """INSERT with ``RETURNING id`` (always supported in PG).
 
-        See SqliteDatabase.insert_returning_id for thread-safety rationale.
+        Thread-safe vs. ``last_insert_id``: this helper reads the id
+        directly from the INSERT result, never via cached instance
+        state. Use it anywhere cross-thread INSERT-write+read
+        sequences could interleave.
+
+        The SQL must NOT include a trailing ``;`` or any existing
+        ``RETURNING`` clause; we append ``RETURNING id`` after
+        stripping whitespace and a single trailing semicolon.
         """
         sql_pg = _translate_placeholders(sql)
         sql_with_returning = (
@@ -937,13 +559,13 @@ class PostgresDatabase:
         )
         with self._conn() as conn:
             row = conn.execute(sql_with_returning, params).fetchone()
-            self._lastrowid = int(row["id"]) if row and "id" in row else 0
-            return self._lastrowid
+            self._lastid = int(row["id"]) if row and "id" in row.keys() else 0
+            return self._lastid
 
     def json_dump(self, value: Any) -> Any:
         # psycopg auto-encodes Python dicts to JSONB when the column
         # type is JSONB. We hand the value through unchanged so callers
-        # see consistent semantics with the Sqlite backend.
+        # see consistent semantics across the abstraction.
         return value
 
     def json_load(self, value: Any) -> Any:
@@ -963,24 +585,11 @@ class PostgresDatabase:
         the pool don't observe a transient autocommit-false state.
 
         Yields a :class:`PostgresTransactionHandle` bound to a single
-        ``psycopg.Connection`` for the duration. The PR3
-        ``_translate_psycopg_exception`` wrap is preserved on the
-        outer pool-borrow level so any psycopg error surfaces as the
-        matching sqlite3 class.
+        ``psycopg.Connection`` for the duration.
         """
         with self._conn() as raw_conn:
-            try:
-                with raw_conn.transaction():
-                    yield PostgresTransactionHandle(raw_conn, self)
-            except Exception as exc:
-                # _conn() already translated; the inner psycopg
-                # transaction block re-raises post-translation; we
-                # re-translate just to be defensive against any
-                # exception that bypassed the outer wrapper.
-                translated = _translate_psycopg_exception(exc)
-                if translated is not exc:
-                    raise translated from exc
-                raise
+            with raw_conn.transaction():
+                yield PostgresTransactionHandle(raw_conn, self)
 
 
 _default_database: Database | None = None
@@ -988,26 +597,22 @@ _default_lock = threading.Lock()
 
 
 def get_database() -> Database:
-    """Factory (openspec §2.6). Caches one Database instance per process.
+    """PostgreSQL-only factory. Caches one Database instance per process.
 
     Pool sizing env vars (``SAU_DB_POOL_MIN`` / ``SAU_DB_POOL_MAX`` /
     ``SAU_DB_POOL_TIMEOUT`` / ``SAU_DB_POOL_KWARGS``) are read at this
     same first-call moment via :func:`_pool_kwargs_from_env`.
     Supported operator tuning loop: change-env-then-restart. Mid-process
     env changes do NOT re-trigger this resolution — the factory caches
-    the singleton unconditionally. Call
-    :func:`reset_default_database` to force a re-read (used by tests
-    that swap env via ``monkeypatch.setenv``).
+    the singleton unconditionally. Call :func:`reset_default_database`
+    to force a re-read (used by tests that swap env via
+    ``monkeypatch.setenv``).
 
-    Selection matrix:
-      * SAU_DB_DIALECT=sqlite -> SqliteDatabase (dev fallback).
-      * SAU_DB_DIALECT=postgres (or unset; psycopg present) ->
-        PostgresDatabase using DATABASE_URL.
-      * SAU_DB_DIALECT=postgres + psycopg missing -> RuntimeError.
-
-    The default `postgres` is loud by design: leaves a clear failure
-    surface in production if a build forgot to install the binary
-    (openspec §D4 strategy).
+    Selection matrix (post-SQLite-removal):
+      * DATABASE_URL set + psycopg installed ->
+        ``PostgresDatabase`` via ``DATABASE_URL``.
+      * DATABASE_URL unset -> RuntimeError (required env var missing).
+      * DATABASE_URL set + psycopg missing -> RuntimeError.
     """
     global _default_database
     if _default_database is not None:
@@ -1015,60 +620,45 @@ def get_database() -> Database:
     with _default_lock:
         if _default_database is not None:
             return _default_database
-        dialect = os.environ.get("SAU_DB_DIALECT", "postgres").lower()
-        if dialect == "sqlite":
-            _default_database = SqliteDatabase()
-        elif dialect == "postgres":
-            conninfo = os.environ.get("DATABASE_URL", "")
-            if not conninfo:
-                raise RuntimeError(
-                    "SAU_DB_DIALECT=postgres but DATABASE_URL env not set. "
-                    "Provide a Postgres connection string "
-                    "(e.g. postgres://user:pass@host:5432/sau)."
-                )
-            # PR4-follow-up: read pool sizing + extra psycopg.connect()
-            # kwargs from env so operators can tune without redeploy.
-            # Validation lives in _pool_kwargs_from_env; PR3 exception
-            # contract is enforced via _GATED_POOL_KWARG_NAMES next to
-            # the merge site in PostgresDatabase.__init__.
-            min_size, max_size, timeout, extra_kwargs = _pool_kwargs_from_env()
-            _default_database = PostgresDatabase(
-                conninfo,
-                min_size=min_size,
-                max_size=max_size,
-                timeout=timeout,
-                extra_kwargs=extra_kwargs,
-            )
-        else:
+        conninfo = os.environ.get("DATABASE_URL", "")
+        if not conninfo:
             raise RuntimeError(
-                f"Unknown SAU_DB_DIALECT={dialect!r}; expected 'postgres' or 'sqlite'."
+                "DATABASE_URL env not set. "
+                "Provide a Postgres connection string "
+                "(e.g. postgres://user:pass@host:5432/sau)."
             )
+        # Read pool sizing + extra psycopg.connect() kwargs from env
+        # so operators can tune without redeploy. Validation lives in
+        # _pool_kwargs_from_env; the abstraction contract is enforced
+        # via _GATED_POOL_KWARG_NAMES next to the merge site in
+        # PostgresDatabase.__init__.
+        min_size, max_size, timeout, extra_kwargs = _pool_kwargs_from_env()
+        _default_database = PostgresDatabase(
+            conninfo,
+            min_size=min_size,
+            max_size=max_size,
+            timeout=timeout,
+            extra_kwargs=extra_kwargs,
+        )
         return _default_database
 
 
 def reset_default_database() -> None:
     """Test hook: clear the cached Database instance so the next
-    `get_database()` call re-resolves the factory.
+    ``get_database()`` call re-resolves the factory.
 
-    Used by tests that swap `SAU_DB_DIALECT` mid-session (currently in
-    `tests/test_db_wrapper.py::test_get_database_respects_dialect_switch`).
+    Used by tests that swap ``DATABASE_URL`` mid-session via
+    ``monkeypatch.setenv``.
     """
     global _default_database
     with _default_lock:
         _default_database = None
 
 
-def init_db() -> None:
-    """Create all 7 tables + indexes if they don't exist.
-
-    Both SQLite and Postgres paths run CREATE TABLE IF NOT EXISTS so
-    a fresh database is ready without manual migration steps.
-    """
-    db = get_database()
-    if isinstance(db, PostgresDatabase):
-        _init_db_postgres(db)
-    else:
-        _init_db_sqlite(db)
+# `init_db()` wrapper was inlined post-SQLite-removal — the trivial
+# one-liner `_init_db_postgres(get_database())` is now called
+# directly from `web_runner/__init__.py::create_app()`. The wrapper
+# added no value over the direct call.
 
 
 def _init_db_postgres(db: PostgresDatabase) -> None:
@@ -1155,10 +745,19 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
             used BOOLEAN NOT NULL DEFAULT false,
             created_at TEXT NOT NULL
         )""",
+        # round-OPT-MONETIZE-v1 — widen the action whitelist to
+        # include 'studio_render'. Original (pre-this-round) limit
+        # was the 3 verbs needed for upload/AI/account metering;
+        # Studio render soft-paywall adds the 4th verb. The paired
+        # ``ALTER TABLE ... DROP CONSTRAINT ... ADD CONSTRAINT``
+        # block above migrates pre-existing rows; this CREATE
+        # carries the new whitelist so fresh deploys do NOT trip
+        # the ALTER path (which would fail on the ADD CONSTRAINT
+        # step).
         """CREATE TABLE IF NOT EXISTS usage_logs (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
-            action TEXT NOT NULL CHECK(action IN ('publish','ai_generate','account_add')),
+            action TEXT NOT NULL CHECK(action IN ('publish','ai_generate','account_add','studio_render')),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
         """CREATE TABLE IF NOT EXISTS publish_templates (
@@ -1168,6 +767,78 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
             snapshot TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",        """CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id SERIAL PRIMARY KEY,
+            admin_user_id INTEGER NOT NULL REFERENCES users(id),
+            target_user_id INTEGER REFERENCES users(id),
+            action TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL,
+            acknowledged INTEGER NOT NULL DEFAULT 0
+        )""",
+        # ── Webhook notifications (openspec/changes/webhook-notifications) ──
+        """CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            task_id TEXT,
+            platform TEXT,
+            account TEXT,
+            title TEXT,
+            status TEXT,
+            error_msg TEXT,
+            payload JSONB,
+            webhook_url TEXT,
+            delivered INTEGER NOT NULL DEFAULT 0,
+            final_failed INTEGER NOT NULL DEFAULT 0,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            delivered_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS webhooks_config (
+            id SERIAL PRIMARY KEY,
+            platform TEXT,
+            account TEXT,
+            url TEXT NOT NULL,
+            secret TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(platform, account, url)
+        )""",
+        # ── Script Studio (openspec/changes/script-studio) ─────────────
+        # Episode / asset tables use ON DELETE CASCADE so a `DELETE FROM
+        # studio_projects` atomically nukes all dependent rows.
+        """CREATE TABLE IF NOT EXISTS studio_projects (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            synopsis TEXT NOT NULL,
+            style TEXT,
+            status TEXT NOT NULL DEFAULT 'draft',
+            owner_user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS studio_episodes (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES studio_projects(id) ON DELETE CASCADE,
+            episode_no INTEGER NOT NULL,
+            act TEXT NOT NULL,
+            title TEXT NOT NULL,
+            scenes_json JSONB,
+            dialogues_json JSONB,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL,
+            UNIQUE (project_id, episode_no)
+        )""",
+        """CREATE TABLE IF NOT EXISTS studio_assets (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES studio_projects(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            ref_image_url TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (project_id, kind, code)
         )""",
     ]
     index_statements = [
@@ -1175,14 +846,64 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         "CREATE INDEX IF NOT EXISTS idx_logs_message ON logs (message)",
         "CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks (created)",
         "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)",
+        # Composite DESC covering the default tasks-list query
+        # (`web_runner/utils.py::list_tasks`: ``SELECT * FROM tasks ORDER BY
+        # created DESC, task_id DESC``). Without this the planner does a
+        # full sort on every page render. ``task_id`` is included as the
+        # tie-breaker so the secondary sort is index-backed too.
+        "CREATE INDEX IF NOT EXISTS idx_tasks_list_desc ON tasks (created DESC, task_id DESC)",
         "CREATE INDEX IF NOT EXISTS idx_error_events_ts ON error_events (ts)",
         "CREATE INDEX IF NOT EXISTS idx_error_events_platform ON error_events (platform)",
         "CREATE INDEX IF NOT EXISTS idx_error_events_account ON error_events (account)",
         "CREATE INDEX IF NOT EXISTS idx_error_events_exc_type ON error_events (exc_type)",
+        # Reverse-lookup: "show me all error_events for this task_id".
+        # ``error_events.task_id`` is an application-level FK (no PG
+        # constraint, since task rows are churned aggressively) and
+        # without this index every error-attribution scan goes seq-scan
+        # once the table is past ~10k rows. Trailing ``ts DESC`` covers
+        # the typical "latest errors first" attribution view so the
+        # planner can walk the index in order without a separate sort
+        # node. One extra btree column (8 bytes/row) for the
+        # no-sort guarantee on the common path.
+        "CREATE INDEX IF NOT EXISTS idx_error_events_task_id "
+        "ON error_events (task_id, ts DESC)",
         "CREATE INDEX IF NOT EXISTS idx_auth_group_id ON account_authorizations (group_id)",
         "CREATE INDEX IF NOT EXISTS idx_verification_email ON verification_codes (email)",
+        # Partial index for the login hot path
+        # (``web_runner/routes/auth.py::login`` line 315:
+        # ``WHERE email = ? AND purpose = 'login' AND used = 0
+        # AND expires_at > ? ORDER BY created_at DESC LIMIT 1``).
+        # Partial predicate ``used = false AND purpose = 'login'``
+        # keeps the index small (only the active login codes; used
+        # codes + SSE tokens are excluded), so the planner can
+        # answer the lookup from a tiny index alone. Immutable, so
+        # the partial condition is allowed; do NOT add ``now()`` or
+        # any volatile function to the WHERE — PG would reject the
+        # index definition. ``expires_at > ?`` is applied
+        # post-index, which is cheap because the partial result set
+        # is already tiny.
+        #
+        # Trailing ``created_at DESC`` matches the query's
+        # ``ORDER BY created_at DESC LIMIT 1``: the planner walks
+        # the index in order and returns the first matching row
+        # without a sort node. ``code = ?`` is a single-row
+        # post-index check; if the latest code doesn't match, the
+        # planner advances to the next index entry. In practice
+        # login attempts are sequential so this walks at most a
+        # handful of entries before the LIMIT 1 short-circuits.
+        "CREATE INDEX IF NOT EXISTS idx_verification_login_active "
+        "ON verification_codes (email, created_at DESC) "
+        "WHERE used = false AND purpose = 'login'",
         "CREATE INDEX IF NOT EXISTS idx_usage_user_action ON usage_logs (user_id, action, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_tasks_analytics ON tasks (platform, status, created)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log (created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_audit_admin ON admin_audit_log (admin_user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_studio_projects_owner ON studio_projects (owner_user_id, updated_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_studio_episodes_project ON studio_episodes (project_id, episode_no)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_task ON notifications (task_id)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_event_type ON notifications (event_type)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (delivered, final_failed)",
+        "CREATE INDEX IF NOT EXISTS idx_webhooks_config_route ON webhooks_config (platform, account)",
     ]
     alteration_statements = [
         "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0",
@@ -1194,174 +915,154 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         # SettingsPage + UserMenu now read `name` / `avatar` from the
         # users row via GET /api/auth/me. Both columns are nullable —
         # existing rows keep NULL until the user sets them via PATCH
-        # /api/auth/me. No default fill-in: we don't want a cosmetic
-        # backfill that hides fact from the frontend (ProfilePage's
-        # 显示名 row is explicitly designed to surface the
-        # user-hasn't-set-this state).
+        # /api/auth/me.
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT",
+        # Founder identity (ai-api-keys-founder feature):
+        # users.is_founder is the single source of truth for
+        # "manages AI API keys" privilege. Strictly narrower than
+        # role='admin' — a deployment MAY have many admins but only
+        # ONE founder at a time, enforced by the partial-unique
+        # index below + the atomic-swap transaction in
+        # web_runner/routes/founder.py::transfer_founder.
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_founder BOOLEAN NOT NULL DEFAULT FALSE",
+        # At most one founder at a time (PG partial UNIQUE).
+        "CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_one_founder "
+        "ON users (is_founder) WHERE is_founder = TRUE",
+        # Password authentication: bcrypt hash of user-set password.
+        # NULL means the user has only used email-code / OAuth login
+        # and has not yet set a password. When set, enables password
+        # login via POST /api/auth/login-by-password.
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
+        # Index for reset-password code lookups (mirrors
+        # idx_verification_login_active for the 'reset_password'
+        # purpose).
+        "CREATE INDEX IF NOT EXISTS idx_verification_reset_active "
+        "ON verification_codes (email, created_at DESC) "
+        "WHERE used = false AND purpose = 'reset_password'",
+        # Studio whiteboard canvas data (openspec/changes/studio-whiteboard). PG JSONB.
+        "ALTER TABLE studio_projects ADD COLUMN IF NOT EXISTS canvas_data JSONB",
+        # Phase 2 image-overlay opacity (Pexels background on
+        # /dashboard/studio/{id}). Range 0..1; 0 = no overlay
+        # (background image is unobscured), 1 = full black overlay
+        # (text on top is opaque). Default 0.5 — strong enough to
+        # guarantee the `#ebebf0` body / `#6366f1` accent stay
+        # legible regardless of Pexels output brightness without
+        # making the background look like a black rectangle. NOT
+        # NULL so legacy rows still have a sane value.
+        "ALTER TABLE studio_projects "
+        "ADD COLUMN IF NOT EXISTS overlay_opacity REAL NOT NULL DEFAULT 0.5",
+        # ── Visual Style Presets (round-OPT-presets-v1) ─────────────
+        # Catalyst for this column: ship 3 named visual presets
+        # (Noir / Vibrant / Minimalist) selectable from a dropdown
+        # beside the "渲染成片" button. Catalogue IDs are
+        # case-sensitive strings defined in `sau_web/frontend/
+        # remotion_studio/presets.ts`; the Python side is a pure
+        # pass-through (no whitelist validation). See the openspec
+        # at `openspec/changes/studio-visual-presets/specs/
+        # visual-presets/spec.md` §"Catalog location" for the
+        # single-TS-source-of-truth rationale.
+        #
+        # Schema: PG JSONB with nullable payload — legacy rows stay
+        # NULL (default-render with the Classic tokens). Cross-
+        # scene preset shipping is a future PR (per-renderer fields
+        # like motion curve / custom font URL) that can live as
+        # additional sibling JSONB keys without an ALTER round.
+        #
+        # Field shape is `{preset: "<id>"}` with `{version: 1}`
+        # appended on writes so future migrations have a forward-
+        # compat hook. Reads are version-tolerant (UI falls back to
+        # Classic on any non-1 version once we ship v2).
+        "ALTER TABLE studio_projects "
+        "ADD COLUMN IF NOT EXISTS render_config JSONB",
+        # round-OPT-MONETIZE-v1 — widen the `usage_logs.action`
+        # CHECK whitelist to include 'studio_render'. The original
+        # whitelist ('publish','ai_generate','account_add') was
+        # scoped to the original metering surface; this round
+        # introduces a per-tier daily quota on the Studio render
+        # endpoint so the row-level constraint has to accept the
+        # new action verb.
+        #
+        # Idempotent: PG auto-names the inline CHECK as
+        # ``usage_logs_action_check`` (single CHECK on the column
+        # ⇒ no _1 / _2 suffix risk). DROP IF EXISTS swallows the
+        # "old schema, no constraint" case; ADD without IF NOT
+        # GUARDED is OK because DROP just succeeded in the same
+        # transaction. Re-running on a fresh DB hits CREATE TABLE
+        # IF NOT EXISTS first (which carries the new whitelist
+        # verbatim via the schema below) so this ALTER is a
+        # no-op for clean deploys.
+        "ALTER TABLE usage_logs DROP CONSTRAINT IF EXISTS usage_logs_action_check",
+        "ALTER TABLE usage_logs ADD CONSTRAINT usage_logs_action_check "
+        "CHECK(action IN ('publish','ai_generate','account_add','studio_render'))",
+
+        # ── Autovacuum tuning for high-churn tables ──
+        # Per docs/perf-indexes.md §4.2: default PG autovacuum
+        # (autovacuum_vacuum_scale_factor=0.2 = 20% dead rows) is too
+        # lazy for these 4 high-churn tables. Lower scale factor →
+        # more frequent VACUUM → bloat stays small, planner stats
+        # stay fresh, dead-row-ratio cost in seq-scan plans stays low.
+        # ALTER TABLE ... SET (...) is idempotent (setting the same
+        # option to the same value is a no-op) so re-runs are safe.
+        # Verified against perf-baseline re-run: no query regressed
+        # (all 11 captured queries within 0.9×–1.1× warm-cache noise;
+        # the 3 new round-7 indexes still measure Q1 5.9× / Q2 57×
+        # / Q3 0.9× speedups — see scripts/perf_baseline_capture.py).
+        #
+        # Locked-down PG roles (RDS, Cloud SQL, etc.): if the app
+        # role lacks ALTER privilege on these 4 tables, init_db()
+        # aborts mid-loop on the first ALTER TABLE and the first
+        # request 500s. Operators on managed PG should run the 4
+        # ALTER TABLE statements manually as a one-time migration
+        # using a role with sufficient privilege (e.g.
+        # rds_superuser on RDS), then redeploy.
+        "ALTER TABLE logs SET (autovacuum_vacuum_scale_factor = 0.05)",
+        "ALTER TABLE error_events SET (autovacuum_vacuum_scale_factor = 0.05)",
+        "ALTER TABLE usage_logs SET (autovacuum_vacuum_scale_factor = 0.05)",
+        # verification_codes is the only one of the 4 that never trims
+        # (logs / error_events / usage_logs are capped at 10k by
+        # _log_trim_counter). Aggressive 0.02 scale factor from day 1
+        # so the table doesn't fill with used/expired codes that the
+        # partial idx_verification_login_active index would otherwise
+        # have to filter through.
+        "ALTER TABLE verification_codes SET ("
+        "autovacuum_vacuum_scale_factor = 0.02, "
+        "autovacuum_vacuum_cost_limit = 2000"
+        ")",
     ]
+    # Founder back-fill (PG branch — ai-api-keys-founder).
+    # Idempotent: if any row already has is_founder=TRUE, the NOT
+    # EXISTS + ORDER BY id ASC LIMIT 1 subquery evaluates to NULL
+    # and the WHERE id = NULL matches zero rows. Re-running on a
+    # deployment that already has a founder is a safe no-op.
+    founder_backfill_sql = (
+        "UPDATE users SET is_founder = TRUE WHERE id = ("
+        "  SELECT id FROM users ORDER BY id ASC LIMIT 1"
+        ") AND NOT EXISTS (SELECT 1 FROM users WHERE is_founder = TRUE) "
+        "AND EXISTS (SELECT 1 FROM users)"
+    )
     with db._conn() as conn:
         for stmt in statements + index_statements:
             conn.execute(stmt)
         for stmt in alteration_statements:
             conn.execute(stmt)
+        try:
+            conn.execute(founder_backfill_sql)
+        except Exception:
+            # Defensive — partial-unique-index above may already
+            # have blocked the UPDATE if a stale row violated
+            # uniqueness; surface the side-effect only via the
+            # operator's logs (the python logger at INFO level),
+            # not via a 500 to the caller. The init_db() flow is
+            # a side channel — callers don't read this return
+            # value.
+            pass
         # Partial index for scheduled task lookup (PG-only syntax)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tasks_pending_scheduled "
             "ON tasks (status, scheduled_at) "
             "WHERE status = 'pending' AND scheduled_at IS NOT NULL"
         )
-
-
-def _init_db_sqlite(db: SqliteDatabase) -> None:
-    """Create tables + indexes for SQLite."""
-    statements = [
-        """CREATE TABLE IF NOT EXISTS tasks (
-            task_id TEXT PRIMARY KEY,
-            status TEXT NOT NULL DEFAULT 'pending',
-            platform TEXT,
-            action TEXT,
-            account TEXT,
-            created TEXT,
-            code INTEGER,
-            error TEXT,
-            argv TEXT,
-            result TEXT
-        )""",
-        """CREATE TABLE IF NOT EXISTS logs (
-            ts TEXT NOT NULL,
-            message TEXT NOT NULL
-        )""",
-        """CREATE TABLE IF NOT EXISTS account_groups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            created TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0
-        )""",
-        """CREATE TABLE IF NOT EXISTS account_authorizations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_id INTEGER NOT NULL,
-            platform TEXT NOT NULL,
-            cookie_file TEXT NOT NULL,
-            created TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY (group_id) REFERENCES account_groups(id) ON DELETE CASCADE,
-            UNIQUE(group_id, platform)
-        )""",
-        """CREATE TABLE IF NOT EXISTS ai_config (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated TEXT NOT NULL
-        )""",
-        """CREATE TABLE IF NOT EXISTS ai_api_keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            api_key TEXT NOT NULL UNIQUE,
-            masked TEXT NOT NULL,
-            created TEXT NOT NULL,
-            rate_limited_at TEXT
-        )""",
-        """CREATE TABLE IF NOT EXISTS error_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts TEXT NOT NULL,
-            task_id TEXT,
-            level TEXT NOT NULL DEFAULT 'error',
-            phase TEXT NOT NULL,
-            platform TEXT,
-            account TEXT,
-            action TEXT,
-            exc_type TEXT,
-            exc_message TEXT,
-            traceback TEXT,
-            argv TEXT,
-            attempt_no INTEGER,
-            retry_count INTEGER,
-            status_code INTEGER
-        )""",
-        """CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL UNIQUE,
-            role TEXT NOT NULL DEFAULT 'user',
-            created_at TEXT NOT NULL,
-            last_login TEXT,
-            login_attempts INTEGER NOT NULL DEFAULT 0,
-            locked_until TEXT
-        )""",
-        """CREATE TABLE IF NOT EXISTS verification_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL,
-            code TEXT NOT NULL,
-            purpose TEXT NOT NULL DEFAULT 'login',
-            expires_at TEXT NOT NULL,
-            used INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL
-        )""",
-        """CREATE TABLE IF NOT EXISTS usage_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES users(id),
-            action TEXT NOT NULL CHECK(action IN ('publish','ai_generate','account_add')),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE TABLE IF NOT EXISTS publish_templates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            mode TEXT NOT NULL CHECK(mode IN ('video','note')),
-            snapshot TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-    ]
-    index_statements = [
-        "CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)",
-        "CREATE INDEX IF NOT EXISTS idx_logs_message ON logs (message)",
-        "CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks (created)",
-        "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)",
-        "CREATE INDEX IF NOT EXISTS idx_error_events_ts ON error_events (ts)",
-        "CREATE INDEX IF NOT EXISTS idx_error_events_platform ON error_events (platform)",
-        "CREATE INDEX IF NOT EXISTS idx_error_events_account ON error_events (account)",
-        "CREATE INDEX IF NOT EXISTS idx_error_events_exc_type ON error_events (exc_type)",
-        "CREATE INDEX IF NOT EXISTS idx_auth_group_id ON account_authorizations (group_id)",
-        "CREATE INDEX IF NOT EXISTS idx_verification_email ON verification_codes (email)",
-        "CREATE INDEX IF NOT EXISTS idx_usage_user_action ON usage_logs (user_id, action, created_at)",
-        "CREATE INDEX IF NOT EXISTS idx_tasks_analytics ON tasks (platform, status, created)",
-    ]
-    alterations = [
-        "ALTER TABLE tasks ADD COLUMN argv TEXT",
-        "ALTER TABLE tasks ADD COLUMN result TEXT",
-        "ALTER TABLE tasks ADD COLUMN publish_detail TEXT",
-        "ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 0",
-        "ALTER TABLE tasks ADD COLUMN scheduled_at TIMESTAMP",
-        "ALTER TABLE account_groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE account_authorizations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN license_tier TEXT DEFAULT 'legacy'",
-        "ALTER TABLE users ADD COLUMN license_key TEXT",
-        "ALTER TABLE users ADD COLUMN license_activated_at TIMESTAMP",
-        # SQLite ALTER TABLE has no IF NOT EXISTS pre-3.35; the
-        # try/except OperationalError swallow in the loop below
-        # (existing pattern from prior license_* columns) keeps these
-        # idempotent on subsequent init_db() calls.
-        "ALTER TABLE users ADD COLUMN name TEXT",
-        "ALTER TABLE users ADD COLUMN avatar TEXT",
-    ]
-    with db._connect() as conn:  # noqa: SLF001 — internal init hook
-        for stmt in statements + index_statements:
-            conn.execute(stmt)
-        for stmt in alterations:
-            try:
-                conn.execute(stmt)
-            except sqlite3.OperationalError:
-                pass
-        conn.commit()
-
-
-# Back-compat: tests still import `DB_PATH` (legacy fixtures rebind it) so
-# we keep the symbol exported. New code should not touch this directly —
-# use `get_database()`.
-def get_connection() -> sqlite3.Connection:
-    """Back-compat shim: a raw sqlite3.Connection. New code should use
-    `get_database().execute()` etc to stay dialect-agnostic.
-    """
-    return SqliteDatabase()._connect()
 
 
 def parse_date_param(

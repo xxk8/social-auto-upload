@@ -26,7 +26,8 @@ You're on call. The backend is misbehaving, the cron didn't fire, the DB cluster
 |---|---|
 | [monitor-cdp-throttling-cron-ops](monitor-cdp-throttling-cron-ops.md) | TBF-018 cron deploy / verify / idempotent re-run / rollback / threshold-tune; paste-evidence discipline |
 | [public-inbox-ops](public-inbox-ops.md) | public-inbox-monetization daily kill-criteria cron deploy / verify / 30-day trigger confirmation / threshold-tune / webhook delivery; next-business-day SLA |
-| [ai-material-search](ai-material-search.md) | Pexels + Pixabay free-tier key onboarding for AI sidebar image search (`/app/publish` 「图片素材」Disclosure); signup URLs, `.env` PEXELS_API_KEY / PIXABAY_API_KEY, rate-limit warnings (Pexels 200/h + 20K/mo, Pixabay 100/60s), curl verify, T&C compliance (attribution + 不复制主体 + 不 hotlink) |
+| [studio-renderer-ops](studio-renderer-ops.md) | Round-Video-Backgrounds-v1 Remotion (the only renderer — moviepy + hyperframes + `SAU_STUDIO_RENDERER` env switch all deleted) per-request render runbook for `/dashboard/studio`: Dockerfile patch (CJK fonts + Node ≥20 + `patchright install chromium`); verify (`curl /render` + `ffprobe` MP4 must show Video + Audio streams); resume path = per-scene silent-degrade already in code (Pexels 429 → image fallback, edge-tts 503 → silent audio, no env flip); re-tune `SAU_STUDIO_RENDER_TIMEOUT` / `SAU_STUDIO_NODE_PATH` / `SAU_STUDIO_TTS_VOICE`; 12-row troubleshooting; **per-request SLA** (vs hourly TBF-018 / next-business-day public-inbox) |
+| [ai-material-search](ai-material-search.md) | Pexels + Pixabay free-tier key onboarding for AI sidebar image search (`/dashboard/publish` 「图片素材」Disclosure); signup URLs, `.env` PEXELS_API_KEY / PIXABAY_API_KEY, rate-limit warnings (Pexels 200/h + 20K/mo, Pixabay 100/60s), curl verify, T&C compliance (attribution + 不复制主体 + 不 hotlink) |
 | [postgres-getting-started](postgres-getting-started.md) | First-time PostgreSQL cluster setup, cluster start/stop, smoke test, troubleshooting |
 
 When in doubt, both files have a **Troubleshooting** table at the bottom — read that first.
@@ -77,6 +78,8 @@ If you already know the document name and just want to know who reads it:
 |---|---|---|---|
 | `monitor-cdp-throttling-cron-ops.md` | ✅ | — | — |
 | `public-inbox-ops.md` | ✅ | — | — |
+| `studio-renderer-ops.md` | ✅ | — | — |
+| `cache-staleness-demo.md` | ✅ | — | — |
 | `ai-material-search.md` | ✅ | — | — |
 | `postgres-getting-started.md` | ✅ | — | ✅ |
 | `hot-reload-philosophy.md` | — | ✅ | ✅ |

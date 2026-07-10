@@ -8,17 +8,39 @@ from unittest.mock import patch
 
 import pytest
 
+import web_runner.db as wr_db
+import web_runner.utils as wr_utils
 from web_runner import create_app
+
+
+@pytest.fixture(autouse=True)
+def _clean_tasks():
+    """Wipe the tasks table before AND after each test for isolation.
+
+    Autouse so every test starts (and ends) with a clean state. Matches
+    the test_studio.py::``_clean_tables`` pattern post-SQLite-removal.
+    """
+    try:
+        wr_db.get_database().execute("DELETE FROM tasks")
+    except Exception:
+        # Schema not bootstrapped yet; the conftest's _init_pg_schema
+        # session fixture runs first, but guard against the race.
+        pass
+    yield
+    try:
+        wr_db.get_database().execute("DELETE FROM tasks")
+    except Exception:
+        pass
 
 
 @pytest.fixture
 def app():
-    """Flask test client with isolated cookies/uploads dirs."""
+    """Flask test client with isolated cookies/uploads dirs.
 
-    import web_runner.db as wr_db
-    import web_runner.utils as wr_utils
-    from web_runner.db import DB_PATH as ORIG_DB_PATH
-
+    Post-SQLite-removal: no per-test temp DB. Uses the production
+    ``get_database()`` against the test PG (``$DATABASE_URL``) and
+    relies on the autouse ``_clean_tasks`` fixture for isolation.
+    """
     application = create_app()
     application.config["TESTING"] = True
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -30,16 +52,12 @@ def app():
         wr_utils.UPLOADS_DIR = tmp / "uploads"
         wr_utils.UPLOADS_DIR.mkdir(exist_ok=True)
 
-        # Use a temp DB to avoid polluting the real one.
-        wr_db.DB_PATH = tmp / "test.db"
-
         try:
             with application.test_client() as client:
                 yield client
         finally:
             wr_utils.COOKIES_DIR = orig_cookies_dir
             wr_utils.UPLOADS_DIR = orig_uploads_dir
-            wr_db.DB_PATH = ORIG_DB_PATH
 
 
 def _data_uri_png() -> str:
@@ -55,29 +73,24 @@ def _data_uri_png() -> str:
 
 
 def _read_task_argv(task_id: str) -> list[str]:
-    """Read the stored argv for a task from the temp DB."""
+    """Read the stored argv for a task from the production PG.
 
-    import sqlite3
-
-    import web_runner.db as wr_db
-
-    with sqlite3.connect(wr_db.DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT argv FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    Uses ``get_database()`` (PG-only) with ``?`` placeholders — the
+    production ``fetch_one`` internally translates them to ``%s``
+    for psycopg via ``_translate_placeholders``.
+    """
+    row = wr_db.get_database().fetch_one(
+        "SELECT argv FROM tasks WHERE task_id = ?", (task_id,)
+    )
     assert row is not None, f"task not found: {task_id}"
     return json.loads(row["argv"])
 
 
 def _read_task_status(task_id: str) -> str:
-    """Read the stored status for a task from the temp DB."""
-
-    import sqlite3
-
-    import web_runner.db as wr_db
-
-    with sqlite3.connect(wr_db.DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT status FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+    """Read the stored status for a task from the production PG."""
+    row = wr_db.get_database().fetch_one(
+        "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
+    )
     assert row is not None, f"task not found: {task_id}"
     return row["status"]
 

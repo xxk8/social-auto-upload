@@ -77,11 +77,11 @@ WATCH_PATHS: tuple[Path, ...] = (
     PROJECT_ROOT / "run.py",
 )
 
-# Env vars forwarded to the backend child.  Mirrors the launch line we
+# Env vars forwarded to the backend child. Mirrors the launch line we
 # used in earlier restart steps so dev and prod stay in sync on
-# CORS + DB dialect.
+# CORS + DB connection. ``SAU_DB_DIALECT`` was removed in the
+# SQLite→PostgreSQL cutover (PG is the sole backend now).
 BAKED_ENV: dict[str, str] = {
-    "SAU_DB_DIALECT": "postgres",
     "DATABASE_URL": "postgres:///sau",
     "SAU_CORS_ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5180",
 }

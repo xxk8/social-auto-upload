@@ -35,6 +35,7 @@ export function ThemeToggle({ size = 'default' }: ThemeToggleProps = {}) {
           variant="ghost"
           size="icon"
           onClick={toggle}
+          data-testid="theme-toggle"
           aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
           className={cn('btn-elegant', isCompact ? 'h-7 w-7' : 'h-8 w-8')}
         >

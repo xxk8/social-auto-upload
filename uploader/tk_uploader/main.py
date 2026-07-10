@@ -16,7 +16,6 @@ from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.files_times import get_absolute_path
 from utils.log import tiktok_logger
-from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
 
 TIKTOK_LOGIN_QRCODE_URL = 'https://www.tiktok.com/login/qrcode'
 
@@ -55,20 +54,26 @@ async def _extract_tiktok_qrcode_src(page: Page) -> str:
         raise RuntimeError('未获取到TikTok登录二维码地址')
     return src
 
-async def _save_tiktok_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None=None, qrcode_callback=None) -> dict:
-    qrcode_src = await _extract_tiktok_qrcode_src(page)
-    qrcode_path: Path | None = None
-    if qrcode_callback is None:
-        # CLI direct-path: write PNG so the user can scan via file viewer.
-        qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
-        tiktok_logger.info(_msg('🖼️', f'QR code saved to: {qrcode_path}'))
-        tiktok_logger.info(_msg('📲', f'Please scan with TikTok APP or open: file://{qrcode_path}'))
-    if previous_qrcode_path and previous_qrcode_path != qrcode_path:
-        if remove_qrcode_file(previous_qrcode_path):
-            tiktok_logger.info(_msg('🧹', f'Temporary QR file cleaned: {previous_qrcode_path}'))
-    qrcode_info = {'image_path': str(qrcode_path) if qrcode_path else '', 'image_data_url': qrcode_src}
+async def _save_tiktok_qrcode(page: Page, qrcode_callback=None) -> dict:
+    """Extract QR via DOM <img> src. No local PNG file is written.
+
+    Per round-OPT-acct-qr cleanup (2026-07-10), the TikTok login flow
+    is data-URL only — the platform's own QR <img> ``src`` is forwarded
+    to the Web Shell via the SSE ``image_data_url`` field. CLI
+    direct-path users (no callback) get a friendly warning instead of
+    a local file; the web shell is the canonical QR scanning surface.
+    """
+    try:
+        qrcode_src = await _extract_tiktok_qrcode_src(page)
+    except Exception as exc:
+        tiktok_logger.warning(_msg('😵', f'没定位到TikTok登录二维码元素（{str(exc)[:50]}）——请直接在弹出的浏览器里扫码，小人继续等登录跳转'))
+        qrcode_src = ''
+    if not qrcode_src:
+        tiktok_logger.warning(_msg('😵', '没拿到TikTok登录二维码——请直接在弹出的浏览器里扫码，小人继续等登录跳转'))
+    qrcode_info: dict = {'image_path': '', 'image_data_url': qrcode_src}
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
     return qrcode_info
+
 
 async def _is_tiktok_login_completed(page: Page) -> bool:
     current_url = page.url
@@ -109,15 +114,13 @@ async def get_tiktok_cookie(account_file, qrcode_callback=None, headless: bool=L
         browser = await playwright.firefox.launch(headless=headless, args=['--lang en-GB'])
         context = await browser.new_context()
         context = await set_init_script(context)
-        qrcode_path = None
         result = _build_login_result(False, 'failed', 'TikTok登录失败', account_file)
         try:
             page = await context.new_page()
             await page.goto(TIKTOK_LOGIN_QRCODE_URL)
             await page.wait_for_load_state('domcontentloaded')
             await asyncio.sleep(2)
-            qrcode_info = await _save_tiktok_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None  # noqa: F841  # used in finally block below
+            qrcode_info = await _save_tiktok_qrcode(page, qrcode_callback=qrcode_callback)
             tiktok_logger.info(_msg('🧍', '请扫码，正在等待TikTok登录完成'))
             result = await _wait_for_tiktok_login(page, account_file, qrcode_info, qrcode_callback=qrcode_callback, poll_interval=poll_interval, max_checks=max_checks)
             if result['success']:
@@ -128,8 +131,6 @@ async def get_tiktok_cookie(account_file, qrcode_callback=None, headless: bool=L
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             result = _build_login_result(False, 'failed', str(exc), account_file, current_url=page.url if 'page' in locals() else '')
         finally:
-            if remove_qrcode_file(qrcode_path):
-                tiktok_logger.info(_msg('🧹', f'临时二维码文件已清理: {qrcode_path}'))
             if not result['success']:
                 tiktok_logger.error(_msg('😢', f"登录失败: {result['message']}"))
             await context.close()
@@ -186,21 +187,21 @@ class TiktokVideo(BaseVideoUploader):
         self.publish_date = self.validate_publish_date(self.publish_date)
 
     async def set_schedule_time(self, page, publish_date):
-        schedule_input_element = self.locator_base.get_by_label('Schedule')
+        schedule_input_element = self.locator_base.get_by_label(Tk_Locator.SCHEDULE_LABEL)
         await schedule_input_element.wait_for(state='visible')
         await schedule_input_element.click()
-        scheduled_picker = self.locator_base.locator('div.scheduled-picker')
-        await scheduled_picker.locator('div.TUXInputBox').nth(1).click()
-        calendar_month = await self.locator_base.locator('div.calendar-wrapper span.month-title').inner_text()
+        scheduled_picker = self.locator_base.locator(Tk_Locator.SCHEDULE_PICKER)
+        await scheduled_picker.locator(Tk_Locator.SCHEDULE_INPUT_BOX).nth(1).click()
+        calendar_month = await self.locator_base.locator(Tk_Locator.CALENDAR_MONTH_TITLE).inner_text()
         n_calendar_month = datetime.strptime(calendar_month, '%B').month
         schedule_month = publish_date.month
         if n_calendar_month != schedule_month:
             if n_calendar_month < schedule_month:
-                arrow = self.locator_base.locator('div.calendar-wrapper span.arrow').nth(-1)
+                arrow = self.locator_base.locator(Tk_Locator.CALENDAR_ARROW).nth(-1)
             else:
-                arrow = self.locator_base.locator('div.calendar-wrapper span.arrow').nth(0)
+                arrow = self.locator_base.locator(Tk_Locator.CALENDAR_ARROW).nth(0)
             await arrow.click()
-        valid_days_locator = self.locator_base.locator('div.calendar-wrapper span.day.valid')
+        valid_days_locator = self.locator_base.locator(Tk_Locator.CALENDAR_DAY_VALID)
         valid_days = await valid_days_locator.count()
         for i in range(valid_days):
             day_element = valid_days_locator.nth(i)
@@ -212,17 +213,17 @@ class TiktokVideo(BaseVideoUploader):
         hour_str = publish_date.strftime('%H')
         correct_minute = int(publish_date.minute / 5)
         minute_str = f'{correct_minute:02d}'
-        hour_selector = f"span.tiktok-timepicker-left:has-text('{hour_str}')"
-        minute_selector = f"span.tiktok-timepicker-right:has-text('{minute_str}')"
+        hour_selector = Tk_Locator.HOUR_PICKER_LEFT.format(hour=hour_str)
+        minute_selector = Tk_Locator.MINUTE_PICKER_RIGHT.format(minute=minute_str)
         await self.locator_base.locator(hour_selector).click()
         await page.wait_for_timeout(1000)
         await scheduled_picker.locator('div.TUXInputBox').nth(0).click()
         await self.locator_base.locator(minute_selector).click()
-        await self.locator_base.locator("h1:has-text('Upload video')").click()
+        await self.locator_base.locator(Tk_Locator.BACK_TO_UPLOAD_HEADING).click()
 
     async def handle_upload_error(self, page):
         tiktok_logger.info('video upload error retrying.')
-        select_file_button = self.locator_base.locator('button[aria-label="Select file"]')
+        select_file_button = self.locator_base.locator(Tk_Locator.FILE_SELECT_BUTTON)
         async with page.expect_file_chooser() as fc_info:
             await select_file_button.click()
         file_chooser = await fc_info.value
@@ -238,12 +239,12 @@ class TiktokVideo(BaseVideoUploader):
         tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
         await page.wait_for_url('https://www.tiktok.com/tiktokstudio/upload', timeout=10000)
         try:
-            await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
+            await page.wait_for_selector(Tk_Locator.UPLOAD_CONTAINER_WAIT, timeout=10000)
             tiktok_logger.info('Either iframe or div appeared.')
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             tiktok_logger.error('Neither iframe nor div appeared within the timeout.')
         await self.choose_base_locator(page)
-        upload_button = self.locator_base.locator('button:has-text("Select video"):visible')
+        upload_button = self.locator_base.locator(Tk_Locator.UPLOAD_BUTTON)
         await upload_button.wait_for(state='visible')
         async with page.expect_file_chooser() as fc_info:
             await upload_button.click()
@@ -261,7 +262,7 @@ class TiktokVideo(BaseVideoUploader):
         await browser.close()
 
     async def add_title_tags(self, page):
-        editor_locator = self.locator_base.locator('div.public-DraftEditor-content')
+        editor_locator = self.locator_base.locator(Tk_Locator.EDITOR)
         await editor_locator.click()
         await page.keyboard.press('End')
         await page.keyboard.press('Control+A')
@@ -287,15 +288,15 @@ class TiktokVideo(BaseVideoUploader):
         retries = 0
         while retries < max_retries:
             try:
-                publish_button = self.locator_base.locator('div.btn-post')
+                publish_button = self.locator_base.locator(Tk_Locator.PUBLISH_BUTTON)
                 if await publish_button.count():
                     await publish_button.click()
-                success_indicator = self.locator_base.locator('div.btn-post:has-text("View"), div.btn-post:has-text("查看"), div:has-text("Your video has been uploaded"), div:has-text("视频已上传")').first
+                success_indicator = self.locator_base.locator(Tk_Locator.SUCCESS_INDICATOR).first
                 await success_indicator.wait_for(state='visible', timeout=3000)
                 tiktok_logger.success('  [-] video published success')
                 return
             except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
-                success_indicator = self.locator_base.locator('div.btn-post:has-text("View"), div.btn-post:has-text("查看"), div:has-text("Your video has been uploaded"), div:has-text("视频已上传")').first
+                success_indicator = self.locator_base.locator(Tk_Locator.SUCCESS_INDICATOR).first
                 if await success_indicator.count():
                     tiktok_logger.success('  [-]video published success')
                     return
@@ -312,13 +313,13 @@ class TiktokVideo(BaseVideoUploader):
         retries = 0
         while retries < max_retries:
             try:
-                if await self.locator_base.locator('div.btn-post > button').get_attribute('disabled') is None:
+                if await self.locator_base.locator(Tk_Locator.PUBLISH_BUTTON_INNER).get_attribute('disabled') is None:
                     tiktok_logger.info('  [-]video uploaded.')
                     return
                 else:
                     tiktok_logger.info('  [-] video uploading...')
                     await asyncio.sleep(2)
-                    if await self.locator_base.locator('button[aria-label="Select file"]').count():
+                    if await self.locator_base.locator(Tk_Locator.FILE_SELECT_BUTTON).count():
                         tiktok_logger.info('  [-] found some error while uploading now retry...')
                         await self.handle_upload_error(page)
                     retries += 1
@@ -330,7 +331,7 @@ class TiktokVideo(BaseVideoUploader):
         raise TimeoutError('detect_upload_status timed out waiting for upload to complete')
 
     async def choose_base_locator(self, page):
-        if await page.locator('iframe[data-tt="Upload_index_iframe"]').count():
+        if await page.locator(f'iframe{Tk_Locator.tk_iframe}').count():
             self.locator_base = page.frame_locator(Tk_Locator.tk_iframe)
         else:
             self.locator_base = page.locator(Tk_Locator.default)

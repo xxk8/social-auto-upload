@@ -33,8 +33,8 @@ URL → 组件映射，`AuthGuard` 包裹下的 redirect 行为。
 
 | File | Tests | Pass | Fail | 覆盖 |
 |---|---:|---:|---:|---|
-| `src/App.test.tsx` | 17 | 17 | 0 | `MemoryRouter` 镜像 `App.tsx` 全 Routes 表（marketing 5 + login 1 + legacy-shim 6 + direct /app/* 5 + 404 2，详见文件 docblock） |
-| `src/features/auth/LoginPage.test.tsx` | 5 | 5 | 0 | LoginPage 的"已登录 → `/app/publish`"与"匿名 → 表单"两条分支，借助 `redirect-spy.tsx` + `mockUseAuth` 驱动 |
+| `src/App.test.tsx` | 17 | 17 | 0 | `MemoryRouter` 镜像 `App.tsx` 全 Routes 表（marketing 5 + login 1 + legacy-shim 6 + direct /dashboard/* 5 + 404 2，详见文件 docblock） |
+| `src/features/auth/LoginPage.test.tsx` | 5 | 5 | 0 | LoginPage 的"已登录 → `/dashboard/publish`"与"匿名 → 表单"两条分支，借助 `redirect-spy.tsx` + `mockUseAuth` 驱动 |
 
 ### 2.2 Tier-2 · Component（10 files）
 
@@ -52,7 +52,7 @@ URL → 组件映射，`AuthGuard` 包裹下的 redirect 行为。
 | `src/features/publish/VideoForm.test.tsx` | 9 | 9 | 0 | imperative handle (applyAiResult) + React.memo 稳定性 — 之前 8 失败由 `AlertDialog` mock gap 引起，prior round 已修复（mock factory 加 `AlertDialog: ({ children }) => <>{children}</>`）;现状 9/9 pass |
 | `src/features/tasks/TaskDrawer.test.tsx` | 10 | 8 | **2** | drawer prop surface + React.memo + 运行日志 accordion — 2 失败：memo HIT 计数跳变（React 19 strict-mode 双 render）+ accordion 触发器查询 |
 | `src/features/tasks/TaskTableRow.test.tsx` | 12 | 11 | **1** | 行渲染 + 回调稳定性 + memo HIT — 1 失败：同 memo HIT 计数跳变 |
-| `src/Pages/InboxPage.test.tsx` | 59 | 59 | 0 | `/app/inbox` 路由表 + AuthGuard + PageHeader chrome + Concurrent-downloads chip contract（4 条 lock test — 详见 §4.5） |
+| `src/Pages/InboxPage.test.tsx` | 59 | 59 | 0 | `/dashboard/inbox` 路由表 + AuthGuard + PageHeader chrome + Concurrent-downloads chip contract（4 条 lock test — 详见 §4.5） |
 
 ### 2.3 Tier-2 (lib, stores) · Pure logic（5 files）
 
@@ -72,14 +72,14 @@ URL → 组件映射，`AuthGuard` 包裹下的 redirect 行为。
 
 | File | Tests | Pass | 备注 |
 |---|---:|---:|---|
-| `tests/e2e/marketing-routing-split.spec.ts` | 2 | 2 | 1️⃣ `/` 渲染 MarketingLandingPage（CTA + 锚链接 + footer，chromium 才能验证） · 2️⃣ `/login` 全流程登录后跳 `/app/publish` |
+| `tests/e2e/marketing-routing-split.spec.ts` | 2 | 2 | 1️⃣ `/` 渲染 MarketingLandingPage（CTA + 锚链接 + footer，chromium 才能验证） · 2️⃣ `/login` 全流程登录后跳 `/dashboard/publish` |
 
 历史 test 3（`legacy /publish → /login when anonymous`）已**删除**——这条不变式在 `App.test.tsx` 已由 3 条 legacy-shim anonymous-bounce 测试覆盖：
-- `/publish (anonymous) → /app/publish → AuthGuard → /login`（App.test.tsx line 222）
-- `/tasks (anonymous) → /app/publish → AuthGuard → /login`（line 228）
-- `/logs (anonymous) → /app/publish → AuthGuard → /login`（line 234）
+- `/publish (anonymous) → /dashboard/publish → AuthGuard → /login`（App.test.tsx line 222）
+- `/tasks (anonymous) → /dashboard/tasks → AuthGuard → /login`（line 228）
+- `/logs (anonymous) → /dashboard/logs → AuthGuard → /login`（line 234）
 
-外加 1 条 direct-path test 锁 `AuthGuard` 本身（`/app/publish (anonymous, no shim) → AuthGuard → /login` line 265）。Dropped 处留 7 行注释解释 WHY。详见 §4.4。
+外加 1 条 direct-path test 锁 `AuthGuard` 本身（`/dashboard/publish (anonymous) → AuthGuard → /login` line 265）。Dropped 处留 7 行注释解释 WHY。详见 §4.4。
 
 ---
 
@@ -143,7 +143,7 @@ within(screen.getByTestId('mobile-ai-drawer'))
 | e2e 测试 | vitest 接管 |
 |---|---|
 | `tests/e2e/marketing-routing-split.spec.ts` test 1 (`/` MarketingLandingPage) | 保留 e2e（chromium-only anchor + footer render） |
-| `tests/e2e/marketing-routing-split.spec.ts` test 2 (`/login` 全流程 → `/app/publish`) | 保留 e2e（mock 完整 `/api/auth/*` 链路才能跑全流程） |
+| `tests/e2e/marketing-routing-split.spec.ts` test 2 (`/login` 全流程 → `/dashboard/publish`) | 保留 e2e（mock 完整 `/api/auth/*` 链路才能跑全流程） |
 | 旧 test 3 (legacy `/publish` → `/login` 匿名 bounce) | `App.test.tsx` 中 6 条 anonymous-bounce 测试覆盖 ✅ |
 
 ### 4.2 待修复的 pre-existing 失败（未在本轮 work 内）
@@ -174,9 +174,9 @@ within(screen.getByTestId('mobile-ai-drawer'))
 
 不要凭印象写"节省 X 秒"——chromium 启动 + Vite warm-up + `/api` mock 配置主导，per-test 边际时间极不稳定。
 
-### 4.5 `/app/inbox` concurrent-download chip contract（OPT-3F+）
+### 4.5 `/dashboard/inbox` concurrent-download chip contract（OPT-3F+）
 
-[`/app/inbox`](src/Pages/InboxPage.tsx) 用 `inflightEntryIds: Set<string>` + `batchBusy: boolean` 替换原全局 `busy: boolean`（旧实现下任何一格 download in-flight 都会锁死整个 URL input / paste / download 按钮，正是 user 报告的 bug）。本轮在 `src/Pages/InboxPage.test.tsx` 加 4 条 lock test，均落在 "Concurrent-downloads contract" 或 "cleanup paths" `describe` 块末尾，collective 锁住 chip invariant + 5 条 mutation path（`handleDownload` / `handleRetry` / `handleBatchRetry` / `handleRemove` / `handleBatchRemove` / `handleClearAll`）：
+[`/dashboard/inbox`](src/Pages/InboxPage.tsx) 用 `inflightEntryIds: Set<string>` + `batchBusy: boolean` 替换原全局 `busy: boolean`（旧实现下任何一格 download in-flight 都会锁死整个 URL input / paste / download 按钮，正是 user 报告的 bug）。本轮在 `src/Pages/InboxPage.test.tsx` 加 4 条 lock test，均落在 "Concurrent-downloads contract" 或 "cleanup paths" `describe` 块末尾，collective 锁住 chip invariant + 5 条 mutation path（`handleDownload` / `handleRetry` / `handleBatchRetry` / `handleRemove` / `handleBatchRemove` / `handleClearAll`）：
 
 | # | Test (it) | 锁住的 invariant | 回归后果 |
 |---|---|---|---|
@@ -219,7 +219,7 @@ cd sau_web/frontend && pnpm exec playwright test --config ../../tests/playwright
 新增 `frontend-vitest` job（与 `frontend-build` 并发跑）：
 
 - **作用**：锁定 post-merge 三类不变式——routing table、auth-router redirect、PageHeader + action-data-testid substrate
-- **选 spec 范围**：只用 **5 个 core spec**（`App.test.tsx` + `LoginPage.test.tsx` + `AccountsPage.test.tsx` + `PublishPage.test.tsx` + `InboxPage.test.tsx`）。后者覆盖 `/app/inbox` 的 concurrent-download chip contract（详见 §4.5）。完整套件另 **12 个文件**含 26 个 pre-existing failure（未在本轮 work 内），需分批修才能引入完整 gate。详见 §4.2 。
+- **选 spec 范围**：只用 **5 个 core spec**（`App.test.tsx` + `LoginPage.test.tsx` + `AccountsPage.test.tsx` + `PublishPage.test.tsx` + `InboxPage.test.tsx`）。后者覆盖 `/dashboard/inbox` 的 concurrent-download chip contract（详见 §4.5）。完整套件另 **12 个文件**含 26 个 pre-existing failure（未在本轮 work 内），需分批修才能引入完整 gate。详见 §4.2 。
 - **运行时间**：本地 ~5.5 s · **92/99 PASS**（17 routing + 5 LoginPage + **1** AccountsPage + 10 PublishPage + 59 InboxPage = 92）。AccountsPage 7 fail 来自 AccountsProvider context wrap 回归 — 不在本 PR 的 diff 内，详见 §4.2 清单。本 gate 7 fail 不属于本轮 InboxPage 4-lock-test 优化，且 InboxPage.test.tsx 59/59 pass 单独 clean。runtime 远低于 `frontend-build` 的 npx tsc + vite build;runtime 上升主要来自 InboxPage.test.tsx 单文件（59 test);4-spec 时代的 ~1 s 基线已经扩容.如果 InboxPage 继续加 spec，runtime 会进一步上升，建议 future work 把 InboxPage 拆为多个 narrow spec 以稳定 CI 时间预算。
 - **依赖**：仅 `setup-node@v4` + `npm ci`（用 package-lock.json 作 cache dependency path），**不需** Postgres 服务、chromium、live backend
 - **触发条件**：push 到 main + pull_request 到 main，与 `frontend-build` 同 trigger；互相不依赖，可并发跑。

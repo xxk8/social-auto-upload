@@ -1,6 +1,5 @@
 import { type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { toneFillBgClass, toneStyleClasses } from '@/lib/tone'
 
 interface PageHeaderProps {
   title: string
@@ -23,25 +22,10 @@ export function PageHeader({
         {icon && (
           <div
             className={cn(
-              // Token wiring: read from `@/lib/tone`'s static style map so
-              // the literal `bg-[var(--status-info-bg)]` class only appears
-              // in `@/lib/tone` (Tailwind v4's auto-scanner picks it up
-              // there). The accent stripe composes `--status-info-fg` at
-              // 60% alpha — Tailwind v4 supports arbitrary-value + alpha
-              // modifier so `…]/60` resolves at runtime.
               'relative flex h-10 w-10 items-center justify-center rounded-xl flex-shrink-0 mt-0.5',
-              toneStyleClasses.info.bg,
+              'bg-muted/50 text-muted-foreground',
             )}
           >
-            {/* Single chromatic accent — a 2px amber edge ties the chip to
-                the brand without a heavy fill. (Sourced from the same
-                --status-info-fg token consumed by `lib/tone::info`.) */}
-            <span
-              className={cn(
-                'absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-r-full',
-                `${toneFillBgClass('info')}/60`,
-              )}
-            />
             {icon}
           </div>
         )}

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 
 import pytest
 
-from web_runner.db import DB_PATH
+from web_runner.db import get_database
 from web_runner.utils import (
     _db_get_error_events,
     _log_error_event,
@@ -44,9 +43,14 @@ def client():
 
 
 def _purge_error_events() -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM error_events")
-        conn.commit()
+    """Truncate the error_events table via the production ``get_database()``
+    abstraction (post-SQLite-removal: the test no longer reaches for
+    ``sqlite3.connect(DB_PATH)``).
+
+    Tests must provide a working ``DATABASE_URL`` (via host env or
+    ``monkeypatch.setenv``) so this call resolves to a real PG backend.
+    """
+    get_database().execute("DELETE FROM error_events")
 
 
 class TestLogErrorEventHelper:
@@ -251,7 +255,7 @@ class TestLogErrorEventHelper:
 # `cookies/` directory during fixture setup. 2 of the 4 tests
 # (`test_get_endpoint_returns_rows`, `test_get_endpoint_filters_by_account_and_exc_type`)
 # ERRORed with `RuntimeError("INSERT did not return id: ...")` raised by
-# `web_runner/db.py::SqliteDatabase.insert_returning_id`.
+# `web_runner/db.py::PostgresDatabase.insert_returning_id`.
 #
 # Root cause (verified in the follow-up audit): the actual mechanism is
 # a TOCTOU race on `account_groups(name)` from CONCURRENT
@@ -450,18 +454,14 @@ class TestErrorEventsApiRoute:
 class TestLogs:
     """Regression tests for the P0 SQLite fixes in web_runner/utils.py:
     (1) `_db_get_logs` LIKE prefix `[<task_id>]%` instead of substring `%X%`.
-    (2) `_db_insert_log` trim uses rowid cutoff instead of `ts NOT IN`.
+    (2) `_db_insert_log` trim uses id cutoff instead of `ts NOT IN`.
     """
 
     def setup_method(self) -> None:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("DELETE FROM logs")
-            conn.commit()
+        get_database().execute("DELETE FROM logs")
 
     def teardown_method(self) -> None:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("DELETE FROM logs")
-            conn.commit()
+        get_database().execute("DELETE FROM logs")
 
     def test_get_logs_prefix_query_isolates_task(self) -> None:
         """LIKE '[task_id]%' returns ONLY that task's logs, refusing substring
@@ -481,12 +481,12 @@ class TestLogs:
             "[run-1] starting",
         ], f"prefix LIKE should isolate run-1's logs only; got {messages}"
 
-    def test_insert_log_trim_uses_rowid_cutoff(self, monkeypatch) -> None:
-        """Verify the trim DELETE keeps rowids in the deterministic geometric
-        shape prescribed by openspec §4.2: `WHERE rowid < (SELECT rowid FROM
-        logs ORDER BY rowid DESC LIMIT 1 OFFSET ?)` with `? = LOG_MAX_ROWS`
+    def test_insert_log_trim_uses_id_cutoff(self, monkeypatch) -> None:
+        """Verify the trim DELETE keeps ids in the deterministic geometric
+        shape prescribed by openspec §4.2: `WHERE id < (SELECT id FROM
+        logs ORDER BY id DESC LIMIT 1 OFFSET ?)` with `? = LOG_MAX_ROWS`
         yields **N + 1** rows when total > N (the `<` boundary excludes the
-        boundary rowid, so M - (N - 1) = M - N + 1 = N + 1 rows survive when
+        boundary id, so M - (N - 1) = M - N + 1 = N + 1 rows survive when
         M = N + 1). This is the openspec's explicit `<` form; the previous
         `ts NOT IN` form failed when many rows shared the same `ts` ISO string
         (it kept every row whose ts appeared in the inner LIMIT-N even when
@@ -501,23 +501,22 @@ class TestLogs:
 
         # The auto-trim is gated at 200 inserts and won't fire here.
         # Exercise the production DEL directly to verify the cutoff SQL is
-        # deterministic under same-ts load.
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute(
-                "DELETE FROM logs WHERE rowid < (" "SELECT rowid FROM logs ORDER BY rowid DESC LIMIT 1 OFFSET ?)",
-                (utils.LOG_MAX_ROWS,),
-            )
-            conn.commit()
+        # deterministic under same-ts load. Post-SQLite-removal the cutoff
+        # uses SERIAL `id` instead of `id`.
+        get_database().execute(
+            "DELETE FROM logs WHERE id < ("
+            "SELECT id FROM logs ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            (utils.LOG_MAX_ROWS,),
+        )
 
-        with sqlite3.connect(DB_PATH) as conn:
-            (n,) = conn.execute("SELECT count(*) FROM logs").fetchone()
-            kept = conn.execute("SELECT message FROM logs ORDER BY rowid DESC").fetchall()
+        n = get_database().fetch_one("SELECT count(*) AS c FROM logs")["c"]
+        kept = get_database().fetch_all("SELECT message FROM logs ORDER BY id DESC")
         # openspec §4.2 chose `<` form, so cap geometry is N + 1 when total > N.
         assert n == utils.LOG_MAX_ROWS + 1, (
-            f"rowid cutoff (N={utils.LOG_MAX_ROWS}, M=6) should leave "
+            f"id cutoff (N={utils.LOG_MAX_ROWS}, M=6) should leave "
             f"N+1={utils.LOG_MAX_ROWS + 1} rows per openspec < form; got {n}"
         )
-        # Inserted msg-0..msg-5; rowid DESC sorts newest first. Trim deletes
-        # rows with rowid < (4th-newest) = rowid < 3, keeping rowids 3..6,
-        # i.e. messages msg-3..msg-5 + msg-2 (boundary rowid 3 maps to msg-2).
-        assert [r[0] for r in kept] == ["msg-5", "msg-4", "msg-3", "msg-2"]
+        # Inserted msg-0..msg-5; id DESC sorts newest first. Trim deletes
+        # rows with id < (4th-newest) = id < 3, keeping ids 3..6,
+        # i.e. messages msg-3..msg-5 + msg-2 (boundary id 3 maps to msg-2).
+        assert [r["message"] for r in kept] == ["msg-5", "msg-4", "msg-3", "msg-2"]

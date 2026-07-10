@@ -1,33 +1,74 @@
-import { Suspense, lazy } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Suspense, lazy, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { ROUTES, LEGACY_SHIM_REDIRECTS, type LegacyRoute } from '@/routes'
+import { registerNavigate } from '@/lib/navigation'
+
+// Derived: hoist the `as LegacyRoute` cast out of the map callback
+// so `LEGACY_SHIM_REDIRECTS[legacyPath]` is fully type-safe.
+const LEGACY_PATHS = Object.keys(LEGACY_SHIM_REDIRECTS) as LegacyRoute[]
 import { TooltipProvider } from '@/Components/ui/tooltip'
 import { AccountsProvider } from '@/features/accounts/AccountsProvider'
 import { ThemeProvider } from './Components/ThemeProvider'
 import { ToastProvider } from '@/Components/ui/toast'
 import { ErrorBoundary } from './Components/ErrorBoundary'
 import { NotFound } from './Components/NotFound'
+import { AuthLoadingSkeleton } from './features/auth/AuthLoadingSkeleton'
 import AppShellWithPrefs from './AppShell'
 
 const LoginPage = lazy(() => import('./Pages/LoginPage'))
 const LoginAuthPage = lazy(() => import('./Pages/LoginAuthPage'))
+const ForgotPasswordPage = lazy(() => import('./Pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('./Pages/ResetPasswordPage'))
 const LandingPage = lazy(() => import('./Pages/LandingPage'))
 const CatalogPage = lazy(() => import('./Pages/CatalogPage'))
 const PricingPage = lazy(() => import('./Pages/PricingPage'))
 const AboutPage = lazy(() => import('./Pages/AboutPage'))
+const HotListPage = lazy(() => import('./Pages/HotListPage'))
 
 const LazyOnboardingTour = lazy(() =>
   import('./Components/OnboardingTour').then((m) => ({ default: m.OnboardingTour }))
 )
 
-function PageLoader() {
+// LegacyAppRedirect — Round-OPT-route-rename: catches any URL
+// that still uses the pre-rename `/app/*` prefix and forwards it
+// to the new `/dashboard/*` form, preserving the descending splat
+// (e.g. `/dashboard/studio/abc` → `/dashboard/studio/abc`),
+// the query string, and the hash fragment. `replace` keeps the
+// history stack clean so Back doesn't yank the visitor to a URL
+// that just bounces again. Without this shim, anyone holding
+// bookmarks, team-shared links, or stale OAuth confirmation
+// emails would 404 on the old prefix.
+function LegacyAppRedirect() {
+  const { pathname, search, hash } = useLocation()
   return (
-    <div className="flex items-center justify-center h-64">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
-        <span className="text-sm text-muted-foreground">加载中...</span>
-      </div>
-    </div>
+    <Navigate
+      to={pathname.replace(/^\/app/, '/dashboard') + search + hash}
+      replace
+    />
   )
+}
+
+/**
+ * Round-OPT-3G followup: register the imperative `navigateInApp()`
+ * once at the top of the <BrowserRouter> tree so axios-level
+ * response interceptors can navigate without a hard reload.
+ *
+ * Lives as a SIBLING of <Routes> (NOT a child) so it never gets
+ * unmounted by an error boundary or by a route change. Uses
+ * useEffect (NOT useMemo) — registration is a side-effect and
+ * MUST run after first commit; useMemo would register
+ * synchronously on first render which is technically safe but
+ * not idiomatic for hooks that capture React Router context.
+ *
+ * The `<></>` rendering is intentional — Null-rendering keeps
+ * React's reconciliation pass without adding a wrapper DOM
+ * node. Without this, an empty `<></>` block would still be a
+ * fragment in the tree.
+ */
+function RegisterNavigate() {
+  const navigate = useNavigate()
+  useEffect(() => registerNavigate(navigate), [navigate])
+  return null
 }
 
 function App() {
@@ -45,18 +86,26 @@ function App() {
    * — producing a white page with no error UI. The hoisted boundary
    * turns the rejection into ErrorBoundary's inline "页面出错了" card.
    *
-   * Suspense fallback is <PageLoader /> instead of null so a slow
-   * OnboardingTour chunk shows a visible centered spinner instead of a
-   * momentary blank canvas. <PageLoader /> is reused for the inner
-   * <Suspense> wrappers around LoginPage + CatalogPage. */
+   * Round-OPT-3J follow-up: Suspense fallbacks now render the shared
+   * `AuthLoadingSkeleton` (see features/auth/AuthLoadingSkeleton.tsx)
+   * instead of the React-default `null`. Same chrome + sketched
+   * content-area contract as the AuthGuard auth window, so a slow
+   * lazy chunk paints identically to a slow /api/auth/me — no
+   * visible "加载中…" overlay, no layout jank. The error path
+   * (rejected chunk / runtime throw) still surfaces via the hoisted
+   * ErrorBoundary card. */
   return (
     <BrowserRouter>
+      {/* Imperative-navigate registry — first child of
+          BrowserRouter so registration happens before any
+          route child can fire an axios 401-driven redirect. */}
+      <RegisterNavigate />
       <ThemeProvider defaultTheme="system" storageKey="sau-ui-theme">
         <TooltipProvider>
           <ToastProvider>
             <AccountsProvider>
               <ErrorBoundary>
-                <Suspense fallback={<PageLoader />}>
+                <Suspense fallback={<AuthLoadingSkeleton />}>
                   <LazyOnboardingTour>
                     {/* Login route renders standalone — no sidebar, header, or floating logs */}
                     <Routes>
@@ -69,17 +118,17 @@ function App() {
                      *  AuthGuard → /login (anonymous) or the
                      *  dashboard (authenticated). */}
                     <Route
-                      path="/"
+                      path={ROUTES.public.landing}
                       element={
-                        <Suspense fallback={<PageLoader />}>
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
                           <LandingPage />
                         </Suspense>
                       }
                     />
                     <Route
-                      path="/login"
+                      path={ROUTES.public.login}
                       element={
-                        <Suspense fallback={<PageLoader />}>
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
                           <LoginPage />
                         </Suspense>
                       }
@@ -91,9 +140,9 @@ function App() {
                      *  is also public (no AuthGuard). See DESIGN.md round 4
                      *  for the visitor-surface composition rule. */}
                     <Route
-                      path="/pricing"
+                      path={ROUTES.public.pricing}
                       element={
-                        <Suspense fallback={<PageLoader />}>
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
                           <PricingPage />
                         </Suspense>
                       }
@@ -105,10 +154,21 @@ function App() {
                      *  alternatives. Parallel to `/` and `/pricing`
                      *  (no AuthGuard). */}
                     <Route
-                      path="/about"
+                      path={ROUTES.public.about}
                       element={
-                        <Suspense fallback={<PageLoader />}>
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
                           <AboutPage />
+                        </Suspense>
+                      }
+                    />
+                    {/* Public hot list page — aggregates trending data from
+                     *  12+ Chinese social platforms via DailyHotApi.
+                     *  No AuthGuard — intentionally open for visitors. */}
+                    <Route
+                      path={ROUTES.public.hotlist}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <HotListPage />
                         </Suspense>
                       }
                     />
@@ -118,37 +178,71 @@ function App() {
                      *  visitors go straight to the form with their
                      *  `?plan=<tier>` / `?intent=contact` preserved. */}
                     <Route
-                      path="/login/auth"
+                      path={ROUTES.public.loginAuth}
                       element={
-                        <Suspense fallback={<PageLoader />}>
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
                           <LoginAuthPage />
                         </Suspense>
                       }
                     />
+                    <Route
+                      path={ROUTES.public.forgotPassword}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <ForgotPasswordPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path={ROUTES.public.resetPassword}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <ResetPasswordPage />
+                        </Suspense>
+                      }
+                    />
                     {/* Legacy URL shims — catches the in-app `navigate()`
-                     *  call sites that still target the old `/publish`,
-                     *  `/tasks`, `/logs` paths. Each replaces the URL with
-                     *  the new `/app/*` form so React Router resolves the
-                     *  path on the next pass. Without these shims, hitting
-                     *  those old paths would 404 (the inner Routes will
-                     *  only resolve relative to /app/* once we get there). */}
-                    <Route path="/publish" element={<Navigate to="/app/publish" replace />} />
-                    <Route path="/tasks" element={<Navigate to="/app/tasks" replace />} />
-                    <Route path="/logs" element={<Navigate to="/app/logs" replace />} />
-                    <Route path="/analytics" element={<Navigate to="/app/analytics" replace />} />
+                     *  call sites that still target the pre-rename
+                     *  `/publish`, `/tasks`, `/logs`, `/analytics` paths.
+                     *  Each replaces the URL with the new `/dashboard/*`
+                     *  form so React Router resolves the path on the next
+                     *  pass. The `/app/*` LegacyAppRedirect catches
+                     *  bookmarks + shared links that still use the old
+                     *  prefix. */}
+                    {LEGACY_PATHS.map((legacyPath) => (
+                      <Route
+                        key={legacyPath}
+                        path={legacyPath}
+                        element={
+                          <Navigate
+                            to={LEGACY_SHIM_REDIRECTS[legacyPath]}
+                            replace
+                          />
+                        }
+                      />
+                    ))}
+                    {/* Round-OPT-route-rename — bare `/app` shim. React
+                     *  Router v6's `<Route path="/app/*">` requires at
+                     *  least one character after the slash, so a
+                     *  bookmark to `…/app` (no trailing path) would
+                     *  fall through to the 404 handler. This sibling
+                     *  Route covers the bare-prefix case and forwards
+                     *  to `/dashboard` (with no trailing slash so the
+                     *  sidebar's active-state exact match still works). */}
+                    <Route path={ROUTES.legacy.appWildcard} element={<LegacyAppRedirect />} />
                     {/* Dashboard (auth-protected via the AuthGuard inside
-                     *  AppShell's child routes) — nested under `/app` so
-                     *  the public `/` marketing route can share the same
-                     *  SPA without AuthGuard interception. */}
-                    <Route path="/app/*" element={<AppShellWithPrefs />} />
+                     * AppShell's child routes) — nested under `/dashboard`
+                     *  so the public `/` marketing route can share the
+                     *  same SPA without AuthGuard interception. */}
+                    <Route path={`${ROUTES.dashboard.root}/*`} element={<AppShellWithPrefs />} />
                     {/* Live component catalog (`pnpm dev` → /catalog). No
                      *  sidebar / header chrome — a standalone surface so
                      *  you can visually inspect the 9 components without
                      *  an authed context. */}
                     <Route
-                      path="/catalog"
+                      path={ROUTES.public.catalog}
                       element={
-                        <Suspense fallback={<PageLoader />}>
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
                           <CatalogPage />
                         </Suspense>
                       }

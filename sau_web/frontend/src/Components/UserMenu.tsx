@@ -1,3 +1,5 @@
+import { useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -6,8 +8,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/Components/ui/dropdown-menu'
+import { LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/features/auth/useAuth'
+import { ROUTES } from '@/routes'
 // Round-OPT-prefs-dialog v5 (barrel migration): collapsed the
 // sub-path import into a single barrel import from
 // `@/features/preferences`. The barrel re-exports
@@ -64,17 +68,16 @@ interface UserMenuProps {
   mode?: 'expanded' | 'collapsed' | 'mobile'
 }
 
-// User-menu avatar initial — sourced from the authed user's email
-// local-part's first character. Auth user shape is `{id, email,
-// role}` (no `name` field), so the avatar falls back to `S` when
-// `email` is null. Mirrors the rendering previously inlined in
-// AppShell's expanded-mode footer.
-function emailInitial(email: string | null | undefined): string {
-  return email?.[0]?.toUpperCase() ?? 'S'
+// User-menu avatar initial — sourced from the authed user's name
+// (preferred) or email local-part's first character. Falls back to
+// `S` when both are null.
+function userInitial(user: { name?: string | null; email?: string | null } | null | undefined): string {
+  const source = user?.name || user?.email
+  return source?.[0]?.toUpperCase() ?? 'S'
 }
 
 // Round-OPT-prefs-dialog: the 4 nav items historically used
-// `<Link to="/app/...">` to navigate to full route-mounted pages.
+// `<Link to="/dashboard/...">` to navigate to full route-mounted pages.
 // The round-OPT-footer v3 user-menu follow-up comment in App.tsx
 // chose routes over dialog "so deep-link sharing / back-button /
 // browser-history all behave normally". Round-OPT-prefs-dialog
@@ -94,8 +97,19 @@ const PREFERENCE_ITEMS: ReadonlyArray<{ id: PreferencesTab; label: string }> = [
 ]
 
 export function UserMenu({ mode = 'expanded' }: UserMenuProps) {
-  const { user: authUser } = useAuth()
+  const { user: authUser, logout } = useAuth()
   const { openPreferences } = usePreferencesDialog()
+  const navigate = useNavigate()
+  // Logout clears the authed session and bounces the visitor back to the
+  // public landing page. Same shape as the now-removed standalone
+  // `handleLogout` in AppShell.tsx (the AppShell sidebar footer's
+  // standalone button used to call the same pair). Radix DropdownMenu
+  // auto-closes on item click via internal focus management, so we don't
+  // need to call `setOpen(false)` explicitly.
+  const handleLogout = useCallback(async () => {
+    await logout()
+    navigate(ROUTES.public.landing, { replace: true })
+  }, [logout, navigate])
   const isCollapsed = mode === 'collapsed'
   const isMobile = mode === 'mobile'
   // Trigger envelope is shared between `collapsed` and `mobile` (both
@@ -145,7 +159,7 @@ export function UserMenu({ mode = 'expanded' }: UserMenuProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label={authUser?.email ? `用户菜单 · ${authUser.email}` : '用户菜单'}
+          aria-label={authUser?.name ? `用户菜单 · ${authUser.name}` : authUser?.email ? `用户菜单 · ${authUser.email}` : '用户菜单'}
           title="用户菜单"
           data-testid={triggerTestId}
           className={triggerClassName}
@@ -170,7 +184,7 @@ export function UserMenu({ mode = 'expanded' }: UserMenuProps) {
             />
           ) : (
             <span className={glyphClassName} data-testid="user-menu-avatar-glyph">
-              {emailInitial(authUser?.email)}
+              {userInitial(authUser)}
             </span>
           )}
         </button>
@@ -209,7 +223,7 @@ export function UserMenu({ mode = 'expanded' }: UserMenuProps) {
             已登录为
           </span>
           <span className="block text-sm text-foreground truncate mt-0.5">
-            {authUser?.email ?? '管理员'}
+            {authUser?.name || authUser?.email || '管理员'}
           </span>
           <span className="block text-[11px] text-muted-foreground/70 mt-0.5">
             {authUser?.role === 'admin' ? '管理员' : '用户'}
@@ -230,6 +244,15 @@ export function UserMenu({ mode = 'expanded' }: UserMenuProps) {
             {label}
           </DropdownMenuItem>
         ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={handleLogout}
+          data-testid="user-menu-logout"
+          className="cursor-pointer text-muted-foreground hover:text-destructive focus:text-destructive"
+        >
+          <LogOut className="mr-2 h-3.5 w-3.5" aria-hidden />
+          登出
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

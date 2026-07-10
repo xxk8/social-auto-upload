@@ -122,4 +122,4 @@ sau bilibili check --account test
 - Web 相关内容属于历史路径，见 `docs/legacy-web.md`
 - 如果更新后的登录流程输出了本地二维码图片，agent 应直接把图片展示/发送给用户扫码，不要只回传图片路径
 - Bilibili 命令运行时会自动检查并更新 `biliup`
-- Bilibili 登录当前仍建议让用户自己在本地真实终端里执行；如果二维码显示不完整，可让用户直接打开 `qrcode.png` 扫码
+- Bilibili 登录当前仍建议让用户自己在本地真实终端里执行；如果二维码显示不完整，**不要**让用户打开 `qrcode.png`（该文件已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`），或在本地终端去掉 `--headless` 让浏览器里直接展示平台自己的二维码

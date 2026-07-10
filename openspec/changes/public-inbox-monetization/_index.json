@@ -66,5 +66,14 @@
     "registrationConversionThreshold": 0.02,
     "platformFailureRateThreshold": 0.2,
     "monthlyUvThreshold": 5000
-  }
+  },
+  "specs": [
+    "specs/public-inbox-page/spec.md",
+    "specs/public-inbox-api/spec.md",
+    "specs/guest-usage-tracking/spec.md",
+    "specs/public-inbox-quota/spec.md",
+    "specs/affiliate-rail/spec.md",
+    "specs/ethical-ads-sponsor-slot/spec.md",
+    "specs/public-inbox-ops-runbook/spec.md"
+  ]
 }

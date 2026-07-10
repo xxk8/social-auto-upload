@@ -6,18 +6,21 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+import patchright
 from patchright.async_api import Page, Playwright, async_playwright
 
 from conf import BASE_DIR, DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
+from uploader.common import MAX_PUBLISH_POLL, MAX_UPLOAD_POLL
+from uploader.tencent_uploader.locators import TencentLocators as L
 from utils.anti_detect import obfuscate_image, obfuscate_video
 from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.log import tencent_logger
 
-TENCENT_LOGIN_URL = "https://channels.weixin.qq.com"
-TENCENT_UPLOAD_URL = "https://channels.weixin.qq.com/platform/post/create"
-TENCENT_MANAGE_URL = "https://channels.weixin.qq.com/platform/post/list"
+TENCENT_LOGIN_URL = L.LOGIN_URL
+TENCENT_UPLOAD_URL = L.UPLOAD_URL
+TENCENT_MANAGE_URL = L.MANAGE_URL
 TENCENT_PUBLISH_STRATEGY_IMMEDIATE = "immediate"
 TENCENT_PUBLISH_STRATEGY_SCHEDULED = "scheduled"
 
@@ -73,25 +76,6 @@ def _build_launch_kwargs(headless: bool) -> dict:
     return launch_kwargs
 
 
-def _get_qrcode_utils():
-    """Lazy helper dict for tencent's QR utilities.
-
-    Trims the original lazydict to only the helpers still consumed by
-    the tencent login flow after the SSE/CDP swap. ``decode_qrcode_from_path``
-    + ``print_terminal_qrcode`` are intentionally dropped here — the
-    migration sidesteps zxing-decode → terminal-ASCII entirely (see
-    ``uploader/douyin_uploader/main.py`` for the canonical rationale,
-    which is uniform across all 5 non-Douyin uploaders).
-    """
-    from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
-
-    return {
-        "build_login_qrcode_path": build_login_qrcode_path,
-        "remove_qrcode_file": remove_qrcode_file,
-        "save_data_url_image": save_data_url_image,
-    }
-
-
 def format_str_for_short_title(origin_title: str) -> str:
     allowed_special_chars = "《》“”:+?%°"
     filtered_chars = [char if char.isalnum() or char in allowed_special_chars else " " if char == "," else "" for char in origin_title]
@@ -117,9 +101,9 @@ async def cookie_auth(account_file):
             await page.wait_for_url(TENCENT_UPLOAD_URL, timeout=5000)
 
             login_markers = [
-                page.get_by_text("扫码登录", exact=True).first,
-                page.get_by_text("发表视频", exact=True).first,
-                page.get_by_role("button", name="发表").first,
+                page.get_by_text(L.LOGIN_MARKER_SCAN_TEXT, exact=True).first,
+                page.get_by_text(L.LOGIN_MARKER_PUBLISH_TEXT, exact=True).first,
+                page.get_by_role("button", name=L.LOGIN_MARKER_PUBLISH_ROLE).first,
             ]
 
             if await login_markers[0].count():
@@ -138,8 +122,8 @@ async def cookie_auth(account_file):
 async def _extract_tencent_qrcode_src(page: Page) -> str:
     if hasattr(page, "frame_locator"):
         try:
-            iframe_locator = page.frame_locator('[src*="login-for-iframe"]')
-            qr_code_img = iframe_locator.locator('div#app img.qrcode').first
+            iframe_locator = page.frame_locator(L.LOGIN_QR_IFRAME)
+            qr_code_img = iframe_locator.locator(L.LOGIN_QR_IFRAME_IMG).first
             await qr_code_img.wait_for(state="visible", timeout=30000)
             src = await qr_code_img.get_attribute("src")
             if src and src.startswith("data:image/"):
@@ -148,10 +132,10 @@ async def _extract_tencent_qrcode_src(page: Page) -> str:
             pass
 
     selector_candidates = [
-        "div.login-qrcode-wrap img.qrcode",
-        "div.qrcode-wrap img.qrcode",
-        "img.qrcode",
-        'img[src^="data:image/"]',
+        L.LOGIN_QR_WRAP,
+        L.LOGIN_QR_WRAP_NO_IMG,
+        L.LOGIN_QR_IMG_BARE,
+        L.LOGIN_QR_DATA_IMG,
     ]
     for selector in selector_candidates:
         qr_code_img = page.locator(selector).first
@@ -167,37 +151,37 @@ async def _extract_tencent_qrcode_src(page: Page) -> str:
     raise RuntimeError("未获取到视频号登录二维码地址")
 
 
-async def _save_tencent_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None = None, qrcode_callback=None) -> dict:
-    qrcode_utils = _get_qrcode_utils()
-    qrcode_src = await _extract_tencent_qrcode_src(page)
-    qrcode_path: Path | None = None
+async def _save_tencent_qrcode(page: Page, qrcode_callback=None) -> dict:
+    """Extract QR via DOM <img> src. No local PNG file is written.
 
-    if qrcode_callback is None:
-        # CLI direct-path: write PNG so the user can scan via file viewer.
-        qrcode_path = qrcode_utils["save_data_url_image"](
-            qrcode_src,
-            qrcode_utils["build_login_qrcode_path"](account_file, suffix="tencent_login_qrcode"),
-        )
-        tencent_logger.info(_msg("🖼️", f"二维码已经准备好啦，已保存到: {qrcode_path}"))
-        tencent_logger.info(_msg("📲", f"请用微信扫码，或打开：file://{qrcode_path}"))
+    Per round-OPT-acct-qr cleanup (2026-07-10), the Tencent login flow
+    is data-URL only — the platform's own QR <img> ``src`` is forwarded
+    to the Web Shell via the SSE ``image_data_url`` field. The prior
+    ``_get_qrcode_utils()`` lazy dict (build_login_qrcode_path /
+    remove_qrcode_file / save_data_url_image) is GONE — all three
+    functions were removed from ``utils.login_qrcode`` per the user's
+    "no image capture" directive.
 
-    if previous_qrcode_path and previous_qrcode_path != qrcode_path:
-        if qrcode_utils["remove_qrcode_file"](previous_qrcode_path):
-            tencent_logger.info(_msg("🧹", f"临时二维码文件已清理: {previous_qrcode_path}"))
-
-    qrcode_info = {
-        "image_path": str(qrcode_path) if qrcode_path else "",
-        "image_data_url": qrcode_src,
-    }
+    CLI direct-path users (no callback) get a friendly warning instead
+    of a local file; the web shell is the canonical QR scanning surface.
+    """
+    try:
+        qrcode_src = await _extract_tencent_qrcode_src(page)
+    except Exception as exc:
+        tencent_logger.warning(_msg("😵", f"没定位到视频号登录二维码元素（{str(exc)[:50]}）——请直接在弹出的浏览器里扫码，小人继续等登录跳转"))
+        qrcode_src = ""
+    if not qrcode_src:
+        tencent_logger.warning(_msg("😵", "没拿到视频号登录二维码——请直接在弹出的浏览器里扫码，小人继续等登录跳转"))
+    qrcode_info: dict = {"image_path": "", "image_data_url": qrcode_src}
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
     return qrcode_info
 
 
 async def _is_tencent_login_completed(page: Page) -> bool:
     publish_markers = [
-        page.locator('div:has-text("发表视频")').first,
-        page.locator('button:has-text("发表")').first,
-        page.locator('button:has-text("保存草稿")').first,
+        page.locator(L.PUBLISH_VIDEO_DIV).first,
+        page.locator(L.PUBLISH_BUTTON_GENERIC).first,
+        page.locator(L.DRAFT_BUTTON_GENERIC).first,
     ]
     for marker in publish_markers:
         try:
@@ -210,10 +194,10 @@ async def _is_tencent_login_completed(page: Page) -> bool:
         return False
 
     login_markers = [
-        page.locator("div.login-qrcode-wrap").first,
-        page.locator("div.qrcode-wrap").first,
-        page.locator("img.qrcode").first,
-        page.locator('span:has-text("微信扫码登录 视频号助手")').first,
+        page.locator(L.LOGIN_BOX_WRAP).first,
+        page.locator(L.LOGIN_QR_WRAP_ALT).first,
+        page.locator(L.LOGIN_QR_IMG_BARE).first,
+        page.locator(f'span:has-text("{L.LOGIN_TITLE_TEXT}")').first,
     ]
     for marker in login_markers:
         try:
@@ -226,13 +210,7 @@ async def _is_tencent_login_completed(page: Page) -> bool:
 
 
 async def _is_tencent_qrcode_expired(page: Page) -> bool:
-    tip_selectors = [
-        'div.mask.show p.refresh-tip:has-text("二维码已过期，点击刷新")',
-        'div.mask.show p.refresh-tip:has-text("网络不可用，点击刷新")',
-        'p.refresh-tip:has-text("二维码已过期，点击刷新")',
-        'p.refresh-tip:has-text("网络不可用，点击刷新")',
-    ]
-    for selector in tip_selectors:
+    for selector in L.QR_EXPIRED_TIP_SELECTORS:
         tip = page.locator(selector).first
         try:
             if await tip.count() and await tip.is_visible():
@@ -243,11 +221,7 @@ async def _is_tencent_qrcode_expired(page: Page) -> bool:
 
 
 async def _is_tencent_qrcode_scanned(page: Page) -> bool:
-    scanned_tips = [
-        'div.qr-tip div:has-text("已扫码")',
-        'div.qr-tip div:has-text("需在手机上进行确认")',
-    ]
-    for selector in scanned_tips:
+    for selector in L.QR_SCANNED_TIP_SELECTORS:
         tip = page.locator(selector).first
         try:
             if await tip.count() and await tip.is_visible():
@@ -258,11 +232,7 @@ async def _is_tencent_qrcode_scanned(page: Page) -> bool:
 
 
 async def _refresh_tencent_qrcode(page: Page) -> None:
-    visible_refresh_selectors = [
-        "div.login-qrcode-wrap div.mask.show div.refresh-wrap",
-        "div.login-qrcode-wrap div.mask.show .refresh-wrap",
-    ]
-    for selector in visible_refresh_selectors:
+    for selector in L.QR_REFRESH_WRAP_SELECTORS:
         refresh_wrap = page.locator(selector).first
         try:
             if not await refresh_wrap.count() or not await refresh_wrap.is_visible():
@@ -272,13 +242,7 @@ async def _refresh_tencent_qrcode(page: Page) -> None:
         except Exception:
             continue
 
-    tip_selectors = [
-        'div.mask.show p.refresh-tip:has-text("二维码已过期，点击刷新")',
-        'div.mask.show p.refresh-tip:has-text("网络不可用，点击刷新")',
-        'p.refresh-tip:has-text("二维码已过期，点击刷新")',
-        'p.refresh-tip:has-text("网络不可用，点击刷新")',
-    ]
-    for selector in tip_selectors:
+    for selector in L.QR_EXPIRED_TIP_SELECTORS:
         tip = page.locator(selector).first
         try:
             if not await tip.count() or not await tip.is_visible():
@@ -292,7 +256,7 @@ async def _refresh_tencent_qrcode(page: Page) -> None:
         except Exception:
             continue
 
-    fallback_refresh = page.locator("div.login-qrcode-wrap div.refresh-wrap").first
+    fallback_refresh = page.locator(L.QR_REFRESH_FALLBACK).first
     if await fallback_refresh.count():
         await fallback_refresh.click()
         return
@@ -308,7 +272,6 @@ async def _wait_for_tencent_login(
     poll_interval: int = 3,
     max_checks: int = 100,
 ) -> dict:
-    qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
     scanned_logged = False
     for _ in range(max_checks):
         if await _is_tencent_login_completed(page):
@@ -325,11 +288,8 @@ async def _wait_for_tencent_login(
             await asyncio.sleep(1)
             qrcode_info = await _save_tencent_qrcode(
                 page,
-                account_file,
-                previous_qrcode_path=qrcode_path,
                 qrcode_callback=qrcode_callback,
             )
-            qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
 
         await asyncio.sleep(poll_interval)
 
@@ -349,13 +309,11 @@ async def tencent_cookie_gen(
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(**_build_launch_kwargs(headless=headless))
         context = await browser.new_context()
-        qrcode_path = None
         result = _build_login_result(False, "failed", "视频号登录失败", account_file)
         try:
             page = await context.new_page()
             await page.goto(TENCENT_LOGIN_URL)
-            qrcode_info = await _save_tencent_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info["image_path"]) if qrcode_info.get("image_path") else None
+            qrcode_info = await _save_tencent_qrcode(page, qrcode_callback=qrcode_callback)
             tencent_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
             result = await _wait_for_tencent_login(
                 page,
@@ -388,9 +346,6 @@ async def tencent_cookie_gen(
             )
             return result
         finally:
-            qrcode_utils = _get_qrcode_utils()
-            if qrcode_utils["remove_qrcode_file"](qrcode_path):
-                tencent_logger.info(_msg("🧹", f"临时二维码文件已清理: {qrcode_path}"))
             if not result["success"]:
                 tencent_logger.error(_msg("😢", f"登录失败: {result['message']}"))
             await context.close()
@@ -468,32 +423,32 @@ class TencentBaseUploader(BaseVideoUploader):
         # overwritten to 0" bug).
 
     async def set_schedule_time_tencent(self, page: Page, publish_date: datetime):
-        label_element = page.locator("label").filter(has_text="定时").nth(1)
+        label_element = page.locator(L.SCHEDULE_LABEL).filter(has_text=L.SCHEDULE_LABEL_FILTER_TEXT).nth(1)
         await label_element.click()
-        await page.click('input[placeholder="请选择发表时间"]')
+        await page.click(L.SCHEDULE_TIME_INPUT)
 
         current_month = publish_date.strftime("%m月")
-        page_month = await page.inner_text('span.weui-desktop-picker__panel__label:has-text("月")')
+        page_month = await page.inner_text(L.SCHEDULE_MONTH_PICKER)
         if page_month != current_month:
-            await page.click("button.weui-desktop-btn__icon__right")
+            await page.click(L.SCHEDULE_NEXT_MONTH_BTN)
 
-        elements = await page.query_selector_all("table.weui-desktop-picker__table a")
+        elements = await page.query_selector_all(L.SCHEDULE_DAY_TABLE)
         for element in elements:
-            if "weui-desktop-picker__disabled" in await element.evaluate("el => el.className"):
+            if L.SCHEDULE_DISABLED_CLASS in await element.evaluate("el => el.className"):
                 continue
             text = await element.inner_text()
             if text.strip() == str(publish_date.day):
                 await element.click()
                 break
 
-        await page.click('input[placeholder="请选择时间"]')
+        await page.click(L.SCHEDULE_HOUR_INPUT)
         await page.keyboard.press("Control+KeyA")
         await page.keyboard.type(publish_date.strftime("%H"))
         await page.keyboard.press("Enter")  # 确认小时并关闭时间下拉
         await page.wait_for_timeout(500)
         # 收起时间选择浮层：直接点描述区可能被 weui-desktop-dialog 遮挡，做容错
         try:
-            await page.locator("div.input-editor").click(timeout=5000)
+            await page.locator(L.TITLE_EDITOR).click(timeout=5000)
         except Exception:
             await page.keyboard.press("Escape")
 
@@ -530,16 +485,16 @@ class TencentBaseUploader(BaseVideoUploader):
 
     async def set_short_title(self, page: Page, title: str, short_title: str | None = None) -> None:
         short_title_element = (
-            page.get_by_text("短标题", exact=True)
+            page.get_by_text(L.SHORT_TITLE_LABEL, exact=True)
             .locator("..")
             .locator("xpath=following-sibling::div")
-            .locator('span input[type="text"]')
+            .locator(L.SHORT_TITLE_INPUT)
         )
         if await short_title_element.count():
             await short_title_element.fill(short_title or format_str_for_short_title(title))
 
     async def fill_title_and_tags(self, page: Page) -> None:
-        await page.locator("div.input-editor").click()
+        await page.locator(L.TITLE_EDITOR).click()
         await page.keyboard.type(self.title)
         await page.keyboard.press("Enter")
         for tag in self.tags:
@@ -554,69 +509,62 @@ class TencentBaseUploader(BaseVideoUploader):
 
     async def apply_collection(self, page: Page) -> None:
         collection_elements = (
-            page.get_by_text("添加到合集")
+            page.get_by_text(L.COLLECTION_TEXT)
             .locator("xpath=following-sibling::div")
-            .locator(".option-list-wrap > div")
+            .locator(L.COLLECTION_OPTION_LIST)
         )
         if await collection_elements.count() > 1:
-            await page.get_by_text("添加到合集").locator("xpath=following-sibling::div").click()
+            await page.get_by_text(L.COLLECTION_TEXT).locator("xpath=following-sibling::div").click()
             await collection_elements.first.click()
 
     async def apply_original_statement(self, page: Page) -> None:
         original_set = False
-        if await page.get_by_label("视频为原创").count():
-            await page.get_by_label("视频为原创").check()
+        if await page.get_by_label(L.ORIGINAL_CHECKBOX_LABEL).count():
+            await page.get_by_label(L.ORIGINAL_CHECKBOX_LABEL).check()
             original_set = True
 
         try:
-            label_locator = await page.locator('label:has-text("我已阅读并同意 《视频号原创声明使用条款》")').is_visible()
+            label_locator = await page.locator(f'label:has-text("{L.ORIGINAL_AGREE_LABEL}")').is_visible()
         except Exception:
             label_locator = False
 
         if label_locator:
-            await page.get_by_label("我已阅读并同意 《视频号原创声明使用条款》").check()
-            await page.get_by_role("button", name="声明原创").click()
+            await page.get_by_label(L.ORIGINAL_AGREE_LABEL).check()
+            await page.get_by_role("button", name=L.ORIGINAL_DECLARE_BTN_NAME).click()
             original_set = True
 
-        declaration_entry = page.locator(
-            'div.label span:has-text("声明原创"), '
-            'div:has-text("声明原创"):has(input.ant-checkbox-input), '
-            'div:has-text("原创声明"):has(input.ant-checkbox-input)'
-        ).first
+        declaration_entry = page.locator(L.ORIGINAL_DECLARATION_ENTRY).first
         if await declaration_entry.count():
-            original_checkbox = page.locator("div.declare-original-checkbox input.ant-checkbox-input").first
+            original_checkbox = page.locator(L.ORIGINAL_CHECKBOX).first
             if await original_checkbox.count() and not await original_checkbox.is_disabled():
                 await original_checkbox.click()
                 await page.wait_for_timeout(500)
-                checked_locator = page.locator(
-                    "div.declare-original-dialog "
-                    "label.ant-checkbox-wrapper.ant-checkbox-wrapper-checked:visible"
-                )
+                checked_locator = page.locator(L.ORIGINAL_DIALOG_CHECKED)
                 if not await checked_locator.count():
-                    await page.locator("div.declare-original-dialog input.ant-checkbox-input:visible").first.click()
+                    await page.locator(L.ORIGINAL_DIALOG_INPUT).first.click()
 
-            original_type_form = page.locator('div.original-type-form > div.form-label:has-text("原创类型"):visible')
+            original_type_form = page.locator(L.ORIGINAL_TYPE_FORM)
             if await original_type_form.count():
                 category = getattr(self, "category", None)
-                await page.locator("div.form-content:visible").click()
+                await page.locator(L.ORIGINAL_FORM_CONTENT).click()
                 option = None
                 if category:
                     option = page.locator(
-                        "ul.weui-desktop-dropdown__list "
-                        f'li.weui-desktop-dropdown__list-ele:has-text("{category}")'
+                        f'{L.ORIGINAL_CATEGORY_LIST} '
+                        f'{L.ORIGINAL_CATEGORY_ITEM}:has-text("{category}")'
                     ).first
                     if not await option.count():
                         option = None
                 if option is None:
                     option = page.locator(
-                        "ul.weui-desktop-dropdown__list "
-                        "li.weui-desktop-dropdown__list-ele:visible"
+                        f'{L.ORIGINAL_CATEGORY_LIST} '
+                        f'{L.ORIGINAL_CATEGORY_ITEM}:visible'
                     ).first
                 if await option.count():
                     await option.click()
                 await page.wait_for_timeout(1000)
 
-            declare_button = page.locator('button:has-text("声明原创"):visible')
+            declare_button = page.locator(L.ORIGINAL_DECLARE_BUTTON)
             if await declare_button.count():
                 await declare_button.first.click()
                 original_set = True
@@ -634,7 +582,7 @@ class TencentBaseUploader(BaseVideoUploader):
                 except Exception:
                     continue
 
-        content_declaration = page.locator('text="内容声明"').first
+        content_declaration = page.locator(L.CONTENT_DECLARATION_TEXT).first
         try:
             if await content_declaration.count() and await content_declaration.is_visible():
                 await content_declaration.click()
@@ -662,43 +610,45 @@ class TencentBaseUploader(BaseVideoUploader):
             tencent_logger.warning(_msg("📭", "本视频未声明原创（页面无入口或为可选项），跳过并继续发布"))
 
     async def wait_for_upload_complete(self, page: Page) -> None:
-        while True:
+        for _ in range(MAX_UPLOAD_POLL):
             try:
-                publish_button = page.get_by_role("button", name="发表")
+                publish_button = page.get_by_role("button", name=L.PUBLISH_BUTTON_ROLE_NAME)
                 button_class = await publish_button.get_attribute("class")
-                if button_class and "weui-desktop-btn_disabled" not in button_class:
+                if button_class and L.PUBLISH_DISABLED_CLASS not in button_class:
                     tencent_logger.info(_msg("🥳", "视频上传完毕"))
                     break
 
                 tencent_logger.info(_msg("🏃", "正在上传视频中..."))
                 await asyncio.sleep(2)
 
-                upload_failed = await page.locator("div.status-msg.error").count()
-                delete_button = await page.locator('div.media-status-content div.tag-inner:has-text("删除")').count()
+                upload_failed = await page.locator(L.UPLOAD_STATUS_ERROR).count()
+                delete_button = await page.locator(L.UPLOAD_DELETE_TAG).count()
                 if upload_failed and delete_button:
                     tencent_logger.error(_msg("😵", "发现上传出错了，准备重试"))
                     await self.handle_upload_error(page)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 tencent_logger.info(_msg("🏃", "正在上传视频中..."))
                 await asyncio.sleep(2)
+        else:
+            raise TimeoutError("等待视频号视频上传完成超时")
 
     async def submit_publish(self, page: Page) -> None:
-        while True:
+        for _ in range(MAX_PUBLISH_POLL):
             try:
                 if getattr(self, "is_draft", False):
-                    draft_button = page.locator('div.form-btns button:has-text("保存草稿")')
+                    draft_button = page.locator(L.DRAFT_BUTTON)
                     if await draft_button.count():
                         await draft_button.click()
                     await page.wait_for_url("**/post/list**", timeout=5000)
                     tencent_logger.success(_msg("🥳", "视频草稿保存成功"))
                 else:
-                    publish_button = page.locator('div.form-btns button:has-text("发表")')
+                    publish_button = page.locator(L.PUBLISH_BUTTON)
                     if await publish_button.count():
                         await publish_button.click()
                     await page.wait_for_url(TENCENT_MANAGE_URL, timeout=5000)
                     tencent_logger.success(_msg("🥳", "视频发布成功"))
                 break
-            except Exception as exc:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
                 current_url = page.url
                 if getattr(self, "is_draft", False):
                     if "post/list" in current_url or "draft" in current_url:
@@ -711,6 +661,10 @@ class TencentBaseUploader(BaseVideoUploader):
                 tencent_logger.exception(f"  [-] Exception: {exc}")
                 tencent_logger.info(_msg("🏃", "视频正在发布中..."))
                 await asyncio.sleep(0.5)
+        else:
+            if getattr(self, "is_draft", False):
+                raise TimeoutError("等待视频号草稿保存超时")
+            raise TimeoutError("等待视频号发布超时")
 
 
 class TencentVideo(TencentBaseUploader):
@@ -811,7 +765,7 @@ class TencentVideo(TencentBaseUploader):
 
     async def handle_upload_error(self, page: Page) -> None:
         tencent_logger.info(_msg("😵", "视频出错了，重新上传中"))
-        await page.locator('div.media-status-content div.tag-inner:has-text("删除")').click()
+        await page.locator(L.UPLOAD_DELETE_TAG).click()
         await page.get_by_role("button", name="删除", exact=True).click()
         await self.upload_video_file(page, self.file_path)
 

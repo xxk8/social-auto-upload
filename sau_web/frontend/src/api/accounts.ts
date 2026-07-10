@@ -45,4 +45,9 @@ export const accountsApi = {
   reorderAuthorizations(groupId: number, authIds: number[]) {
     return request.post(`/api/account-groups/${groupId}/reorder-authorizations`, { auth_ids: authIds }).then((res) => res.data)
   },
+  refreshStaleAccounts(): EventSource {
+    const baseUrl = request.defaults.baseURL || ''
+    const url = `${baseUrl}/api/accounts/refresh-stale`
+    return new EventSource(url, { withCredentials: true } as EventSourceInit)
+  },
 }

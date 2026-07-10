@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { TestProviders } from '@/test/render-harness'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 import { usePublishWizardStore } from '@/stores/publishWizardStore'
+import { ROUTES } from '@/routes'
 import { PublishWizard } from './PublishWizard'
 
 // ── framework-level mocks (must precede under-test imports) ─────────────
@@ -50,7 +51,7 @@ function mountPublishWizard() {
   return render(
     <TestProviders
       client={makeQueryClient()}
-      initialEntries={['/app/publish']}
+      initialEntries={[ROUTES.dashboard.publish]}
     >
       <PublishWizard groups={[]} onSubmit={vi.fn()} />
     </TestProviders>,
@@ -187,7 +188,7 @@ describe('PublishWizard · structural render contract', () => {
   it('renders without error when onSubmit prop is provided', () => {
     const onSubmit = vi.fn()
     render(
-      <TestProviders client={makeQueryClient()} initialEntries={['/app/publish']}>
+      <TestProviders client={makeQueryClient()} initialEntries={[ROUTES.dashboard.publish]}>
         <PublishWizard groups={[]} onSubmit={onSubmit} />
       </TestProviders>,
     )

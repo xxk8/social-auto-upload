@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Card, CardContent } from '@/Components/ui/card'
 import { cn } from '@/lib/utils'
 import { toneFillBgClass } from '@/lib/tone'
@@ -52,10 +53,26 @@ export const TaskProgressBar = memo(function TaskProgressBar({
   total,
   counts,
 }: TaskProgressBarProps) {
-  const segs = segments(total, counts)
+  const { t } = useTranslation()
+  // Resolve the 3 segment labels at render time — segment construction
+  // lives in `segments()` which is intentionally a pure function of
+  // (total, counts) with no React coupling. We translate the static
+  // labels here in the component body, so the segments() helper stays
+  // usable from other call sites if needed.
+  const segLabels: Record<string, string> = {
+    done: t('tasks.progress.done', '成功'),
+    active: t('tasks.progress.active', '进行中'),
+    failed: t('tasks.progress.failed_combined', '失败/异常'),
+    empty: t('tasks.progress.empty', '暂无任务'),
+  }
+  const totalLabel = t('tasks.progress.total', '总计')
+  const segs = segments(total, counts).map((s) => ({
+    ...s,
+    label: segLabels[s.key] ?? s.label,
+  }))
 
   return (
-    <Card className="border-border/40 shadow-none">
+    <Card className="border card-outline shadow-none">
       <CardContent className="flex items-center gap-4 p-4">
         {/* Bar */}
         <div className="flex flex-1 h-2.5 rounded-full overflow-hidden bg-muted">
@@ -78,7 +95,7 @@ export const TaskProgressBar = memo(function TaskProgressBar({
             </div>
           ))}
           <div className="flex items-center gap-1.5 border-l border-border pl-4">
-            <span>总计</span>
+            <span>{totalLabel}</span>
             <span className="font-medium tabular-nums">{total}</span>
           </div>
         </div>

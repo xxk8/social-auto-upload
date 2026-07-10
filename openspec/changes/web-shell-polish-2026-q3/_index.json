@@ -244,5 +244,10 @@
   "applyReady": false,
   "dependsOn": [
     "docs/dev/optimization-checklist.md"
+  ],
+  "specs": [
+    "specs/design-token-discipline/spec.md",
+    "specs/mobile-tap-target/spec.md",
+    "specs/form-draft-safety/spec.md"
   ]
 }

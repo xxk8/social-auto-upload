@@ -23,7 +23,6 @@ each test runs against a temp SQLite file + temp logs dir with no pollution
 of the real ``db/database.db`` or ``.sau-logs/``.
 """
 import os
-import sqlite3
 import subprocess
 from pathlib import Path
 

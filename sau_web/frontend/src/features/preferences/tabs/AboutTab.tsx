@@ -5,7 +5,7 @@
 // 'about' tab body for the PreferencesDialog. Compact modal-only
 // version of the /about route (which has 4 sections × visitor chrome
 // + GSAP scroll-triggered choreography — those can't fit in any
-// modal). Shows app metadata + version + GitHub link only, sized
+// modal). Shows app metadata + version + publish history, sized
 // for one-screen-in-the-modal reading at v2's wider ~1024-px
 // canvas.
 //
@@ -40,62 +40,45 @@
 // visitor surface. The '了解更多 →' button below is the legitimate
 // hand-off from operator→visitor (Link to /about, not a slice
 // import).
+//
+// ── Publish history: replaced MOCK_PUBLISH_HISTORY (round-OPT-3G) ───────
+// Previously this tab rendered a hardcoded 5-row `MOCK_PUBLISH_HISTORY`
+// literal with the comment "replace with real API data". That literal
+// is now sourced from `GET /api/publish/history` — see
+// web_runner/routes/tasks.py :: list_publish_history for the server-side
+// mapping + lifecycle→Timeline status reducer.
+//
+// Direct `useEffect + useCallback` is intentional: the modal is opened
+// occasionally + doesn't need cross-page query invalidation, so
+// TanStack Query is overkill here. The refresh button on the Card
+// header lets the operator re-fetch without closing the dialog.
 // ──────────────────────────────────────────────────────────────────────────
 //
 
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, GitBranch, Heart, Terminal, History } from 'lucide-react'
+import {
+  ArrowRight,
+  Heart,
+  Info,
+  Terminal,
+  History,
+  RefreshCw,
+} from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card'
 import { Button } from '@/Components/ui/button'
 import { Timeline } from '@/Components/ui/timeline'
-import type { TimelineItemData } from '@/Components/ui/timeline'
+import { api } from '@/api/client'
+import type { PublishHistoryItem } from '@/api/types'
 
-// ── Mock publish history (replace with real API data) ────────────────────
-const MOCK_PUBLISH_HISTORY: TimelineItemData[] = [
-  {
-    id: '1',
-    date: '2026-07-04 14:30',
-    title: '【Vlog】周末探店：藏在巷子里的咖啡馆',
-    platform: 'douyin',
-    status: 'success',
-    url: 'https://www.douyin.com/video/xxx',
-    description: '同步分发至 6 个平台 · 播放量 12.3k',
-  },
-  {
-    id: '2',
-    date: '2026-07-03 10:15',
-    title: 'React 19 新特性深度解析',
-    platform: 'bilibili',
-    status: 'success',
-    url: 'https://www.bilibili.com/video/xxx',
-    description: '同步分发至 4 个平台 · 播放量 8.7k',
-  },
-  {
-    id: '3',
-    date: '2026-07-02 18:00',
-    title: 'Mac 效率工具推荐',
-    platform: 'xiaohongshu',
-    status: 'failed',
-    description: '小红书图文发布失败 · 图片尺寸不符合要求',
-  },
-  {
-    id: '4',
-    date: '2026-07-01 09:00',
-    title: '2026 年中总结：我的创作之路',
-    platform: 'tencent',
-    status: 'pending',
-    description: '定时发布 · 等待队列中',
-  },
-  {
-    id: '5',
-    date: '2026-06-28 20:00',
-    title: '如何搭建个人博客',
-    platform: 'kuaishou',
-    status: 'success',
-    url: 'https://www.kuaishou.com/xxx',
-    description: '同步分发至 5 个平台 · 播放量 5.2k',
-  },
-]
+import { ROUTES } from '@/routes'
+// Module-level history cap, mirrored from the server-side default in
+// `web_runner/routes/tasks.py::list_publish_history`. The frontend
+// sends `limit` as a query param so the modal never accidentally
+// fans out into the operator's complete task archive. Server clamps
+// to max(1, min(limit, 100)) so a stray `?limit=999999` can't OOM
+// the worker.
+const HISTORY_LIMIT = 20
 
 export function AboutTab() {
   const appName =
@@ -105,11 +88,74 @@ export function AboutTab() {
   const buildSha =
     (import.meta.env?.VITE_BUILD_SHA as string | undefined) ?? 'dev'
 
+  // ── Publish history state ───────────────────────────────────────────
+  // `loading` starts true so the FIRST render shows a Skeleton. Radix
+  // `<Tabs.Content forceMount={false}>` auto-unmounts inactive panes,
+  // so re-opening the dialog naturally re-runs the mount-time effect
+  // + re-enters the loading state.
+  //
+  // `error` is a copy-able string for the issue tracker. We do NOT
+  // bubble to a toast: tab opens inside a modal where a global toast
+  // would race the dialog's slide-in animation, and the inline
+  // <Timeline.Empty message=... /> below is already user-visible.
+  const [history, setHistory] = useState<PublishHistoryItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Mount-cancellation flag: Radix `<Tabs.Content forceMount={false}>`
+  // auto-unmounts inactive panes, so closing the PreferencesDialog
+  // mid-fetch would otherwise trigger React's "setState on unmounted
+  // component" warning. The ref persists across renders (unlike a
+  // useState flag, which would itself trigger a re-render and need
+  // its own cleanup). A future AbortController upgrade is the
+  // forward-compatible path for cancelling the in-flight HTTP req
+  // itself; today the network call still completes, but its result
+  // is silently dropped.
+  const cancelledRef = useRef(false)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const items = await api.getPublishHistory(HISTORY_LIMIT)
+      if (cancelledRef.current) return
+      // Mirror server-side defensive `?? []` so a future schema drift
+      // (missing `data` envelope) renders the empty state instead of
+      // crashing the Timeline above.
+      setHistory(Array.isArray(items) ? items : [])
+    } catch (err: unknown) {
+      if (cancelledRef.current) return
+      const message =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message?: unknown }).message)
+          : '加载失败'
+      setError(message || '加载失败')
+      setHistory([])
+    } finally {
+      if (!cancelledRef.current) setLoading(false)
+    }
+  }, [])
+
+  // Mount-once fetch. `refresh` is itself memoized with empty deps,
+  // so this effect runs exactly once per mount.
+  useEffect(() => {
+    cancelledRef.current = false
+    void refresh()
+    return () => {
+      cancelledRef.current = true
+    }
+  }, [refresh])
+
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-[15px]">关于此应用</CardTitle>
+          <CardTitle className="text-[15px] flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Info className="h-4 w-4" />
+            </span>
+            关于此应用
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
           {/* App identity — enlarged brand mark (h-12 w-12) + bigger
@@ -135,52 +181,68 @@ export function AboutTab() {
               项目简介
             </span>
             <p className="mt-2 text-sm text-foreground leading-relaxed">
-              为视频创作者 / 矩阵运营 / MCN 设计的开源多平台自动发布工具。
+              为视频创作者 / 矩阵运营 / MCN 设计的多平台自动发布工具。
             </p>
             <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-              本地优先 · 数据归属您 · MIT 协议
+              本地优先 · 数据归属您 · 持续维护
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-2">
             <Button asChild variant="outline" size="sm" className="gap-1.5">
-              <Link to="/about">
+              <Link to={ROUTES.public.about}>
                 <Heart className="h-3.5 w-3.5" aria-hidden />
                 了解更多
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
-            <Button asChild variant="ghost" size="sm" className="gap-1.5">
-              <a
-                href="https://github.com/dyhBUPT/social-auto-upload"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <GitBranch className="h-3.5 w-3.5" aria-hidden />
-                GitHub 仓库
-              </a>
-            </Button>
+
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Publish history timeline ─────────────────────────────── */}
+      {/* ── Publish history timeline (API-driven) ───────────────────
+          Header gains a refresh icon button so the operator can
+          re-fetch without closing the dialog. While a refresh is
+          in flight, the icon rotates to mirror the existing Loader2
+          pattern used in publish wizard. */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-[15px] flex items-center gap-2">
-            <History className="h-4 w-4 text-muted-foreground" />
-            发布历史
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-[15px] flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" />
+              发布历史
+            </CardTitle>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void refresh()}
+              disabled={loading}
+              aria-label="刷新发布历史"
+              className="gap-1.5"
+            >
+              <RefreshCw
+                className={loading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'}
+                aria-hidden
+              />
+              刷新
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          {MOCK_PUBLISH_HISTORY.length > 0 ? (
+          {error ? (
+            <Timeline.Empty message={`加载失败：${error}`} />
+          ) : loading && history.length === 0 ? (
+            <Timeline.Empty message="加载中…" />
+          ) : history.length === 0 ? (
+            <Timeline.Empty message="暂无发布记录，快去发布你的第一个视频吧" />
+          ) : (
             <Timeline>
-              {MOCK_PUBLISH_HISTORY.map((item) => (
+              {history.map((item) => (
                 <Timeline.Item key={item.id} data={item} />
               ))}
             </Timeline>
-          ) : (
-            <Timeline.Empty message="暂无发布记录，快去发布你的第一个视频吧" />
           )}
         </CardContent>
       </Card>

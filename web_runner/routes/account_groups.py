@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 
+import psycopg.errors
 from flask import Blueprint, jsonify, request
 
 from web_runner.db import get_database
@@ -76,7 +76,10 @@ def create_account_group():
             "INSERT INTO account_groups (name, created) VALUES (?, ?)",
             (name, datetime.now().isoformat(timespec="seconds")),
         )
-    except sqlite3.IntegrityError:
+    except psycopg.errors.IntegrityError:
+        # UNIQUE collision on account_groups.name — surface 409 so the
+        # client can distinguish from a logic bug. (psycopg's
+        # IntegrityError is the parent of UniqueViolation.)
         return jsonify({"success": False, "message": "分组名已存在"}), 409
     log(f"[account-groups] created: {name}")
     return jsonify({"success": True, "data": {"id": group_id, "name": name}})
@@ -164,7 +167,7 @@ def rename_account_group(group_id: int):
                     "UPDATE account_authorizations SET cookie_file = ? WHERE id = ?",
                     (str(new_path), auth["id"]),
                 )
-    except sqlite3.IntegrityError:
+    except psycopg.errors.IntegrityError:
         for op, np in reversed(renamed_so_far):
             try:
                 os.rename(np, op)
@@ -305,7 +308,11 @@ def confirm_authorize_account_group(group_id: int):
             "(group_id, platform, cookie_file, created) VALUES (?, ?, ?, ?)",
             (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
         )
-    except sqlite3.IntegrityError:
+    except psycopg.errors.IntegrityError:
+        # Pre-existing row — fall through to UPDATE which targets
+        # the existing row by (group_id, platform). The psycopg
+        # IntegrityError is the parent of UniqueViolation, so this
+        # catches the PK collision cleanly.
         db.execute(
             "UPDATE account_authorizations SET cookie_file = ?, created = ? "
             "WHERE group_id = ? AND platform = ?",

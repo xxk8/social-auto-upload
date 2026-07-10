@@ -21,71 +21,24 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-# Module-level placeholders — populated lazily by _setup_test_env() on first call.
-_TEST_DB_DIR: str | None = None
-_ORIGINAL_ENV: dict[str, str] | None = None
-
-
-def _setup_test_env():
-    """Configure env vars deterministically BEFORE create_app() reads them.
-    Direct assignment (NOT setdefault) so conftest.py / sibling-test overrides of
-    SAU_DB_DIALECT don't silently propagate as postgres (which would then need a
-    DATABASE_URL definition that pytest fixtures don't always provide)."""
-    global _TEST_DB_DIR
-    if _TEST_DB_DIR is None:
-        _TEST_DB_DIR = tempfile.mkdtemp(prefix="sau-web-runner-monitor-test-")
-        # Clean up the tempdir at process exit; cross-session /tmp/ hygiene.
-        atexit.register(shutil.rmtree, _TEST_DB_DIR, ignore_errors=True)
-    # Use sqlite in tests; override any prior dialect set by conftest.
-    os.environ["SAU_DB_DIALECT"] = "sqlite"
-    # Tempfile-based DB path: CWD-independent, zero collision risk across pytest runs.
-    # NOTE: sqlite:///:memory: is incompatible with the project's
-    # web_runner/db.py::insert_returning_id() pattern (cursor.lastrowid returns None
-    # on some :memory:-backed INSERTs); tempfile.mkdtemp()-backed sqlite file works.
-    os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/monitor-test.db"
-    # Disable auth so /api/* requests are accepted without a real session.
-    os.environ.pop("SAU_AUTH_ENABLED", None)
-
-
-def _capture_env():
-    """Snapshot os.environ for restoration in tearDownClass."""
-    global _ORIGINAL_ENV
-    _ORIGINAL_ENV = os.environ.copy()
-
-
-def _restore_env():
-    """Restore os.environ from snapshot captured in setUpClass. Prevents
-    DATABASE_URL / SAU_DB_DIALECT mutations from bleeding into sibling tests' create_app()
-    calls (which previously triggered INSERT-didn't-return-Id failures on their seeds)."""
-    global _ORIGINAL_ENV
-    if _ORIGINAL_ENV is None:
-        return
-    extra_keys = set(os.environ.keys()) - set(_ORIGINAL_ENV.keys())
-    for k in extra_keys:
-        os.environ.pop(k, None)
-    for k, v in _ORIGINAL_ENV.items():
-        os.environ[k] = v
-    _ORIGINAL_ENV = None
-
-
 class MonitorRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # CRITICAL: snapshot env FIRST (before any mutations), THEN call _setup_test_env().
-        # Per round-6 HIGH bug: prior order called _setup_test_env() at module-load, then
-        # _capture_env() snapshots already-polluted env, so _restore_env() restored the
-        # polluted state instead of the original. Sibling tests inherited the pollution._capture_env()
-# Note: _setup_test_env() is intentionally NOT called at module-load. It runs in
-# setUpClass AFTER _capture_env() so _restore_env() restores the truly-original
-# pre-test env state (not the post-mutation state). Per round-6 HIGH bug fix.
         # Lazy import so env wiring propagates before auth.py reads SAU_AUTH_ENABLED.
+        # Post-SQLite-removal: no per-class temp SQLite DB or SAU_DB_DIALECT override.
+        # The conftest's _init_pg_schema session fixture bootstraps the test
+        # schema against $DATABASE_URL; this test class only cares about the
+        # /api/monitor/status route's artifact-file behavior (not the DB).
         from web_runner import create_app
         cls.app = create_app()
         cls.client = cls.app.test_client()
 
     @classmethod
     def tearDownClass(cls):
-        _restore_env()
+        # No env restoration needed — the conftest's session-scoped
+        # _force_sau_auth_enabled_true_for_test_session fixture handles
+        # auth env, and DATABASE_URL is set by the host (CI / dev).
+        pass
 
     def _login_as_admin(self):
         """Bypass auth: inject admin session into flask session_transaction."""
@@ -183,7 +136,6 @@ class MonitorRouteTests(unittest.TestCase):
             # Either is acceptable; the key invariant is rejection, not 200 OK.
             self.assertIn(resp.status_code, (401, 403),
                           f"non-admin must be rejected with 401/403, got {resp.status_code}")
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

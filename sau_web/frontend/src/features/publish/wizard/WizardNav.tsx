@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/Components/ui/button'
 import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -31,7 +32,16 @@ import type { WizardStep } from '@/stores/publishWizardStore'
 
 // 末步文案从「提交」改为「发布」 — 用户预期的是“把内容推到
 // 平台”而不是“提交表单”，与 ReviewStep 的跳转成功 banner 语义一致。
-const STEP_LABELS = ['下一步', '下一步', '发布'] as const
+// Uses labelKey + labelFallback (the AppShell / STATUS_META pattern) —
+// the component resolves each label via `t()` at render time. Step 0
+// + step 1 share the same key (「下一步」) by design (the wizard nav
+// reads as "next step" on intermediate steps); only the last step
+// changes copy to 「发布」.
+const STEP_LABELS: ReadonlyArray<{ key: string; fallback: string }> = [
+  { key: 'publish.wizard.nav_next', fallback: '下一步' },
+  { key: 'publish.wizard.nav_next', fallback: '下一步' },
+  { key: 'publish.wizard.nav_submit', fallback: '发布' },
+] as const
 
 export const WizardNav = memo(function WizardNav({
   currentStep,
@@ -42,9 +52,13 @@ export const WizardNav = memo(function WizardNav({
   submitLabel,
   submitting = false,
 }: WizardNavProps) {
+  const { t } = useTranslation()
   const isFirst = currentStep === 0
   const isLast = currentStep === 2
-  const buttonLabel = isLast ? (submitLabel ?? STEP_LABELS[currentStep]) : STEP_LABELS[currentStep]  
+  const labelSpec = STEP_LABELS[currentStep]
+  const buttonLabel = isLast
+    ? (submitLabel ?? t(labelSpec.key, labelSpec.fallback))
+    : t(labelSpec.key, labelSpec.fallback)
 
   return (
     <div
@@ -69,7 +83,7 @@ export const WizardNav = memo(function WizardNav({
         )}
       >
         <ArrowLeft className="h-4 w-4" />
-        上一步
+        {t('publish.wizard.nav_prev', '上一步')}
       </Button>
 
       <div className="text-xs text-muted-foreground tabular-nums">
@@ -86,7 +100,7 @@ export const WizardNav = memo(function WizardNav({
         // affordance stays clean for the happy path).
         title={
           submitting
-            ? '发布中…'
+            ? t('publish.wizard.submit_tooltip', '发布中…')
             : !canProceed
               ? disabledReason
               : undefined

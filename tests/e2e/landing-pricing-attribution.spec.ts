@@ -112,7 +112,7 @@ test.describe('Visitor-surface attribution rhythm (round 5–9)', () => {
     //   - "… · "-suffixed subjects (empty predicate)
     const SUBJECT_PREDICATE = /^.+\s·\s.+$/
     const expectedHeroCells = [
-      { value: '6',       caption: '主流平台 · 已接入' },
+      { value: '多平台',   caption: '国内主流 · 全网覆盖' },
       { value: '3h+/day', caption: '典型多账号 · 每天省下' },
       { value: '不上云',   caption: '数据归属您 · 私有部署' },
     ] as const
@@ -289,7 +289,7 @@ test.describe('Visitor-surface attribution rhythm (round 5–9)', () => {
     // data:[]}` for /api/auth/me — useAuth's `useQuery` reads this as
     // `data.user` undefined, so the authStore's `isAuthenticated`
     // stays false and LoginAuthPage's mount-time `useEffect` redirect
-    // trip (`if (isAuthenticated) navigate('/app/publish')`) does NOT
+    // trip (`if (isAuthenticated) navigate('/dashboard/publish')`) does NOT
     // fire, keeping the form mounted. No need for an explicit
     // anonymous-visit override.
     const response = await page.goto('/login/auth')
@@ -325,7 +325,7 @@ test.describe('Visitor-surface attribution rhythm (round 5–9)', () => {
    *
    * Special care for /login: the new round-13 useEffect bounce
    * redirects authed visitors landing on /login straight to
-   * /app/publish. The spec's blanket every-api mock returns
+   * /dashboard/publish. The spec's blanket every-api mock returns
    * `{success: true, data: []}` for the auth-me endpoint, which
    * useAuth interprets as anonymous (`data.length === 0`), so the
    * bounce doesn't fire and the visitor pitch mounts cleanly. Add

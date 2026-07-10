@@ -17,11 +17,11 @@ from uploader.common import (
     _emit_qrcode_callback,
     _msg,
 )
+from uploader.bilibili_uploader.locators import BilibiliLocators as L
 from utils.anti_detect import obfuscate_image, obfuscate_video
 from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.log import bilibili_logger
-from utils.login_qrcode import build_login_qrcode_path, remove_qrcode_file, save_data_url_image
 
 # ── Bilibili API endpoints for cookie verification ────────────────────────
 _BILIBILI_NAV_API = 'https://api.bilibili.com/x/web-interface/nav'
@@ -74,8 +74,8 @@ async def _bilibili_api_check(account_file: str) -> bool:
     except (requests.RequestException, json.JSONDecodeError, KeyError) as exc:
         bilibili_logger.debug(_msg('😵', f'Bilibili API 校验请求失败: {exc}'))
         return False
-BILIBILI_LOGIN_URL = 'https://passport.bilibili.com/login'
-BILIBILI_CREATOR_HOME = 'https://member.bilibili.com/platform/home'
+BILIBILI_LOGIN_URL = L.LOGIN_URL
+BILIBILI_CREATOR_HOME = L.CREATOR_HOME
 
 async def bilibili_cookie_auth(account_file: str) -> bool:
     if not os.path.exists(account_file):
@@ -97,7 +97,7 @@ async def bilibili_cookie_auth(account_file: str) -> bool:
             await page.goto(BILIBILI_CREATOR_HOME)
             await page.wait_for_load_state('domcontentloaded')
             await asyncio.sleep(2)
-            if await _check_login_markers(page, ['登录', '扫码登录']):
+            if await _check_login_markers(page, L.LOGIN_MARKER_TEXTS):
                 return False
             return True
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError, RuntimeError):
@@ -106,57 +106,62 @@ async def bilibili_cookie_auth(account_file: str) -> bool:
             await browser.close()
 
 async def _extract_bilibili_qrcode_src(page: Page) -> str:
-    qrcode_img = page.locator('img[class*="qr"], img[class*="qrcode"], div[class*="qr"] img').first
+    qrcode_img = page.locator(L.QR_IMG_PRIMARY).first
     if not await qrcode_img.count():
-        qrcode_img = page.locator('img[alt*="二维码"], img[alt*="QR"]').first
+        qrcode_img = page.locator(L.QR_IMG_ALT).first
     if not await qrcode_img.count():
-        qrcode_img = page.locator('.login-scan-box img, .qr-img img, #qrcode img').first
+        qrcode_img = page.locator(L.QR_IMG_FALLBACK_1).first
     if not await qrcode_img.count():
-        qrcode_img = page.locator('img').filter(has=page.locator('[class*="qr"]')).first
+        qrcode_img = page.locator(L.QR_IMG_FILTER).filter(has=page.locator(L.QR_IMG_FILTER_HAS)).first
     if not await qrcode_img.count():
-        qrcode_img = page.locator('div[class*="scan"] img, div[class*="qrcode"] img').first
+        qrcode_img = page.locator(L.QR_IMG_FALLBACK_2).first
     await qrcode_img.wait_for(state='visible', timeout=30000)
     src = await qrcode_img.get_attribute('src')
     if not src:
         raise RuntimeError('未获取到B站登录二维码地址')
     return src
 
-async def _save_bilibili_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None=None, qrcode_callback=None) -> dict:
-    qrcode_src = await _extract_bilibili_qrcode_src(page)
-    qrcode_path: Path | None = None
-    if qrcode_callback is None:
-        # CLI direct-path: write PNG so the user can scan via file viewer.
-        qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
-        bilibili_logger.info(_msg('🖼️', f'二维码已经准备好啦，已保存到: {qrcode_path}'))
-        bilibili_logger.info(_msg('📲', f'请用B站APP扫码，或打开：file://{qrcode_path}'))
-    if previous_qrcode_path and previous_qrcode_path != qrcode_path:
-        if remove_qrcode_file(previous_qrcode_path):
-            bilibili_logger.info(_msg('🧹', f'临时二维码文件已清理: {previous_qrcode_path}'))
-    qrcode_info = {'image_path': str(qrcode_path) if qrcode_path else '', 'image_data_url': qrcode_src}
+async def _save_bilibili_qrcode(page: Page, qrcode_callback=None) -> dict:
+    """Extract QR via DOM <img> src. No local PNG file is written.
+
+    Per round-OPT-acct-qr cleanup (2026-07-10), the B-station login flow
+    is data-URL only — the platform's own QR <img> ``src`` is forwarded
+    to the Web Shell via the SSE ``image_data_url`` field, and the
+    frontend renders it inline. CLI direct-path users (no callback) get
+    a friendly warning instead of a local file; the web shell is the
+    canonical QR scanning surface.
+    """
+    try:
+        qrcode_src = await _extract_bilibili_qrcode_src(page)
+    except Exception as exc:
+        bilibili_logger.warning(_msg('😵', f'没定位到B站登录二维码元素（{str(exc)[:50]}）——请直接在弹出的浏览器里扫码，小人继续等登录跳转'))
+        qrcode_src = ''
+    if not qrcode_src:
+        bilibili_logger.warning(_msg('😵', '没拿到B站登录二维码——请直接在弹出的浏览器里扫码，小人继续等登录跳转'))
+    qrcode_info: dict = {'image_path': '', 'image_data_url': qrcode_src}
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
     return qrcode_info
+
 
 async def _is_bilibili_login_completed(page: Page) -> bool:
     current_url = page.url
     if 'passport.bilibili.com/login' in current_url:
         return False
-    return await _all_login_markers_hidden(page, ['登录', '扫码登录'])
+    return await _all_login_markers_hidden(page, L.LOGIN_MARKER_TEXTS)
 
 async def _wait_for_bilibili_login(page: Page, account_file: str, qrcode_info: dict, qrcode_callback=None, poll_interval: int=3, max_checks: int=100) -> dict:
-    qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None
     for _ in range(max_checks):
         if await _is_bilibili_login_completed(page):
             bilibili_logger.info(_msg('🥳', f'扫码成功，已经跳转到登录后页面: {page.url}'))
             return _build_login_result(True, 'success', 'B站扫码登录成功', account_file, qrcode_info, page.url)
-        expired_box = page.get_by_text('二维码已失效', exact=True).locator('xpath=..').first
+        expired_box = page.get_by_text(L.QR_EXPIRED_TEXT, exact=True).locator('xpath=..').first
         if not await expired_box.count():
-            expired_box = page.get_by_text('已过期', exact=True).locator('xpath=..').first
+            expired_box = page.get_by_text(L.QR_EXPIRED_ALT_TEXT, exact=True).locator('xpath=..').first
         if await expired_box.count() and await expired_box.is_visible():
             bilibili_logger.warning(_msg('😵', '二维码失效了，小人马上去刷新'))
             await expired_box.click()
             await asyncio.sleep(1)
-            qrcode_info = await _save_bilibili_qrcode(page, account_file, qrcode_path, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None
+            qrcode_info = await _save_bilibili_qrcode(page, qrcode_callback=qrcode_callback)
         await asyncio.sleep(poll_interval)
     return _build_login_result(False, 'timeout', '等待B站扫码登录超时', account_file, qrcode_info, page.url)
 
@@ -165,15 +170,13 @@ async def bilibili_cookie_gen(account_file: str, qrcode_callback=None, poll_inte
         browser = await playwright.chromium.launch(headless=headless)
         context = await browser.new_context()
         context = await set_init_script(context)
-        qrcode_path = None
         result = _build_login_result(False, 'failed', 'B站登录失败', account_file)
         try:
             page = await context.new_page()
             await page.goto(BILIBILI_LOGIN_URL)
             await page.wait_for_load_state('domcontentloaded')
             await asyncio.sleep(2)
-            qrcode_info = await _save_bilibili_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info['image_path']) if qrcode_info.get('image_path') else None
+            qrcode_info = await _save_bilibili_qrcode(page, qrcode_callback=qrcode_callback)
             bilibili_logger.info(_msg('🧍', '请扫码，小人正在耐心等待登录完成'))
             result = await _wait_for_bilibili_login(page, account_file, qrcode_info, qrcode_callback=qrcode_callback, poll_interval=poll_interval, max_checks=max_checks)
             if result['success']:
@@ -182,7 +185,7 @@ async def bilibili_cookie_gen(account_file: str, qrcode_callback=None, poll_inte
                 await page.goto(BILIBILI_CREATOR_HOME)
                 await page.wait_for_load_state('domcontentloaded')
                 await asyncio.sleep(2)
-                if await _check_login_markers(page, ['登录', '扫码登录']):
+                if await _check_login_markers(page, L.LOGIN_MARKER_TEXTS):
                     result = _build_login_result(False, 'cookie_invalid', 'B站扫码流程结束，但 cookie 校验失败', account_file, qrcode_info, page.url)
                 else:
                     storage_state = await context.storage_state()
@@ -190,8 +193,6 @@ async def bilibili_cookie_gen(account_file: str, qrcode_callback=None, poll_inte
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError, RuntimeError) as exc:
             result = _build_login_result(False, 'failed', str(exc), account_file, current_url=page.url if 'page' in locals() else '')
         finally:
-            if remove_qrcode_file(qrcode_path):
-                bilibili_logger.info(_msg('🧹', f'临时二维码文件已清理: {qrcode_path}'))
             if not result['success']:
                 bilibili_logger.error(_msg('😢', f"登录失败: {result['message']}"))
             await context.close()

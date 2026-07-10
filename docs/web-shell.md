@@ -15,9 +15,9 @@ social-auto-upload 提供了统一的前端 Vite 应用，同时承载两个使�
 |---|---|---|---|
 | 官网首页 | `/` | 公开 | 营销站首页 · Hero / Platforms / Features / CTA |
 | 账号管理 | `/app` | AuthGuard | 查看已保存账号、筛选平台、登录新账号、删除账号 |
-| 发布中心 | `/app/publish` | AuthGuard | 视频/图文表单提交，选择平台和账号，设置定时发布 |
-| 运行日志 | `/app/logs` | AuthGuard | 日志查看、过滤、关键字搜索、导出 |
-| 任务列表 | `/app/tasks` | AuthGuard | 任务状态追踪、轮询更新、筛选排序 |
+| 发布中心 | `/dashboard/publish` | AuthGuard | 视频/图文表单提交，选择平台和账号，设置定时发布 |
+| 运行日志 | `/dashboard/logs` | AuthGuard | 日志查看、过滤、关键字搜索、导出 |
+| 任务列表 | `/dashboard/tasks` | AuthGuard | 任务状态追踪、轮询更新、筛选排序 |
 | 组件目录 | `/catalog` | 公开 | 设计走查 · 设计师可在不登录的情况下浏览 9 个组件 demo |
 
 ## API 接口
@@ -35,6 +35,11 @@ social-auto-upload 提供了统一的前端 Vite 应用，同时承载两个使�
 | POST | `/api/tasks/retry` | 重试失败/异常任务 |
 | GET | `/api/logs` | 运行日志（支持 after / task_id 过滤） |
 | GET | `/health` | 健康检查 |
+
+## On-call：401 race-window 噪音怎么消
+
+`useAuth.getMe()` 第一次进 `/dashboard/*` 尚未结算时，会有一批并发 `/api/*` 请求与 auth 门同时冲撞，DevTools Network 面板里会看到一片红 401 + 502。这不是真错，是源码里写明保留的 race window（`sa_web/frontend/src/api/_createAuth401ResponseInterceptor.ts` 头部注释 + `_appendAuthPendingHeader.ts`）。
+> 前端请求会打上 `X-SAU-Auth-Pending: 1`，后端 `web_runner/__init__.py` 的 `@app.after_request` 会把它在 401 响应上回声为 `X-SAU-Race-Window: 1`，是 CORS simple 之外的 preflight header，**这个窗口内每个 `/api/*` 会多一次 OPTIONS 往返**（成本限在 `isLoading=true` 期间，首屏后归零）。排查时 DevTools Network 加 filter `has-response-header:X-SAU-Race-Window` 即可一键隐藏 race window 期间的 401。
 
 ## 注意事项
 

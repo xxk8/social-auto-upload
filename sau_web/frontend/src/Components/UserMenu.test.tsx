@@ -45,11 +45,11 @@ vi.mock('@/features/preferences/PreferencesDialogProvider', () => ({
 
 function mountUserMenu({
   mode = 'expanded' as const,
-}: { mode?: 'expanded' | 'collapsed' } = {}) {
+}: { mode?: 'expanded' | 'collapsed' | 'mobile' } = {}) {
   return render(
     <TooltipProvider>
       <QueryClientProvider client={makeQueryClient()}>
-        <MemoryRouter initialEntries={['/app']}>
+        <MemoryRouter initialEntries={['/dashboard']}>
           <UserMenu mode={mode} />
         </MemoryRouter>
       </QueryClientProvider>
@@ -235,5 +235,42 @@ describe('UserMenu · avatar → dropdown with 4 navigation items', () => {
       ['personalization'],
       ['about'],
     ])
+  })
+
+  // (g) Round-OPT-marketing-chrome v5 — UserMenu is the single
+  // source of truth for the logout affordance across all 3 chrome
+  // surfaces (AppShell sidebar footer [expanded|collapsed], AppShell
+  // mobile AppBar, MarketingTopBar authed branch). The previous
+  // AppShell sidebar-footer standalone `<button aria-label="登出">`
+  // is gone, so this test pins the new contract: clicking 登出 in
+  // the dropdown invokes `logout()` from useAuth (the per-component
+  // navigate('/', { replace: true }) is internal and not asserted
+  // here — it has no observable side effect inside MemoryRouter
+  // since the test mount doesn't drive a real route change).
+  //
+  // Without this test, a future regression that accidentally drops
+  // the 5th dropdown item OR swaps its onClick to a navigation that
+  // skips the auth-store logout mutation would silently leave the
+  // authed UI mounted in a half-state: cookies gone but `useAuth.
+  // isAuthenticated` still true, AuthGuard still gating, but the
+  // next /api/auth/me GET returning 401. The assertion pins the
+  // exact behavior the v5 round depends on.
+  it('clicking 登出 dropdown item invokes logout() — UserMenu is the single source of truth for logout', async () => {
+    const user = userEvent.setup()
+    const mockLogout = vi.fn().mockResolvedValue({ success: true })
+    mockUseAuth.mockReturnValue({
+      user: { id: 1, email: 'qa@example.com', role: 'admin' },
+      isAuthenticated: true,
+      isLoading: false,
+      sendCode: vi.fn().mockResolvedValue({ success: true }),
+      login: vi.fn().mockResolvedValue({ success: true }),
+      logout: mockLogout,
+      sendCodeStatus: 'idle',
+      loginStatus: 'idle',
+    } as any)
+    mountUserMenu()
+    await user.click(screen.getByTestId('user-menu-trigger-expanded'))
+    await user.click(screen.getByTestId('user-menu-logout'))
+    expect(mockLogout).toHaveBeenCalledTimes(1)
   })
 })

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
@@ -226,6 +227,71 @@ def reschedule_task():
     })
 
 
+@bp.post("/api/tasks/copy")
+def copy_task():
+    """Clone a pending/scheduled task to a new scheduled-at time.
+
+    Used by the calendar's right-click "复制到另一天" action. The new
+    task inherits the source task's exact argv (platform / action /
+    account / media paths), so the duplicate is byte-for-byte faithful —
+    only `task_id`, `created`, and `scheduled_at` differ.
+    """
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    new_scheduled_at = payload.get("new_scheduled_at")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id is required"}), 400
+    if not new_scheduled_at:
+        return jsonify({"success": False, "message": "new_scheduled_at is required"}), 400
+
+    task = _db_get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": f"Task not found: {task_id}"}), 404
+    if task.get("status") not in ("pending", "scheduled"):
+        return jsonify({"success": False, "message": "Can only copy pending/scheduled tasks"}), 409
+
+    try:
+        new_dt = datetime.fromisoformat(new_scheduled_at)
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid datetime format. Use ISO 8601."}), 400
+    if new_dt < datetime.now():
+        return jsonify({"success": False, "message": "Cannot schedule in the past"}), 400
+
+    stored_argv = task.get("argv")
+    argv = _parse_stored_argv(stored_argv) if stored_argv else None
+    if argv is None:
+        # Fallback: reconstruct a minimal argv if the stored JSON was lost.
+        argv = [task.get("platform", "") or "", task.get("action", "") or "",
+                "--account", task.get("account", "") or ""]
+
+    new_task_id = _new_task_id("copy")
+    _db_insert_task(
+        task_id=new_task_id, status="scheduled",
+        platform=task.get("platform", "") or "",
+        action=task.get("action", "") or "",
+        account=task.get("account", "") or "",
+        created=datetime.now().isoformat(timespec="seconds"), argv=argv,
+    )
+    db = get_database()
+    db.execute(
+        "UPDATE tasks SET scheduled_at = ? WHERE task_id = ?",
+        (new_dt.isoformat(timespec="seconds"), new_task_id),
+    )
+
+    from web_runner.utils import _schedule_task
+    _schedule_task(new_task_id, argv, new_dt)
+
+    log(f"[{new_task_id}] copied from {task_id} to {new_dt.isoformat()}")
+    return jsonify({
+        "success": True,
+        "data": {
+            "task_id": new_task_id,
+            "source_task_id": task_id,
+            "scheduled_at": new_dt.isoformat(timespec="seconds"),
+        },
+    })
+
+
 @bp.get("/api/tasks/scheduled")
 def list_scheduled_tasks():
     """List tasks scheduled within a date range."""
@@ -273,6 +339,198 @@ def list_scheduled_tasks():
         })
 
     return jsonify({"success": True, "data": {"tasks": tasks}})
+
+
+# ── /api/publish/history ──────────────────────────────────────────────
+# Operator-AboutTab Timeline feed (Components/ui/timeline.tsx). Filters
+# the ``tasks`` table to upload actions only — login / cookie-validation
+# tasks are not user-facing "publish" outcomes and would otherwise pollute
+# the modal's 发布历史 pane. Reshapes each row to TimelineItemData so the
+# React frontend consumes it byte-identical to the legacy
+# MOCK_PUBLISH_HISTORY constant.
+#
+# Ponytail-ultra: NO auth gate at this route. Parity with
+# ``/api/tasks`` and ``/api/tasks/scheduled`` (lightweight read). The
+# PreferencesDialog that consumes this is route-level auth-gated at
+# ``/dashboard/*`` via the global ``/api/*`` whitelist in
+# ``web_runner/__init__.py`` when ``SAU_AUTH_ENABLED=true``. If a
+# future privacy requirement emerges (per-user publish history
+# isolation), add a ``user_id`` filter here + a column on ``tasks``
+# (see web_runner/routes/__init__.py for the registration surface).
+
+
+@bp.get("/api/publish/history")
+def list_publish_history():
+    """Return recent publish events for the operator AboutTab Timeline.
+
+    Filters: ``action IN ('upload-video', 'upload-note')`` only. Newest
+    first, capped by ``limit`` (default 20, max 100). Each row is
+    remapped to ``TimelineItemData`` shape:
+
+      • ``id``          = ``tasks.task_id``
+      • ``date``        = ISO datetime → ``"YYYY-MM-DD HH:MM"`` (matches
+                          the legacy mock format so a row's date column
+                          renders identically before/after the cutover —
+                          zero visual churn for an existing user)
+      • ``title``       = ``argv[--title]`` value OR ``--file`` basename
+                          stem OR ``<action>-<short task_id>`` placeholder
+      • ``platform``    = ``tasks.platform``
+      • ``status``      = lifecycle→Timeline 3-state mapping (see
+                          ``_timeline_status`` helper)
+      • ``url``         = ``argv[--url|--video-url]`` value OR
+                          ``tasks.result`` JSON's ``url`` / ``share_url``
+      • ``description`` = ``"账号: <account>·<error|ok|等待>"``
+                          so the user sees WHAT happened AND which
+                          account performed it without grepping logs
+    """
+    raw_limit = request.args.get("limit", default=20, type=int)
+    # Defensive clamp: limit must be positive int, cap at 100 so an
+    # accidental ``?limit=999999`` doesn't pull 10k rows into the modal.
+    # No `or 20` guard — ``request.args.get(..., default=20, type=int)``
+    # already returns 20 for any unparseable / missing value, and
+    # adding `or 20` would MASK a legitimate ``?limit=0`` (treated as
+    # default via the `or`) instead of floored-to-1 as the test
+    # contract requires.
+    limit = max(1, min(raw_limit, 100))
+    db = get_database()
+    rows = db.fetch_all(
+        "SELECT task_id, created, platform, action, account, status, "
+        "argv, result, error FROM tasks "
+        "WHERE action IN ('upload-video', 'upload-note') "
+        "ORDER BY created DESC, task_id DESC LIMIT ?",
+        (limit,),
+    )
+    items: list[dict] = []
+    for row in rows:
+        argv = _parse_stored_argv(row.get("argv") or "") or []
+        raw_status = row.get("status", "")
+        timeline_status = _timeline_status(raw_status)
+        items.append({
+            "id": row["task_id"],
+            "date": _format_timeline_date(row.get("created")),
+            "title": _title_from_argv(argv, row.get("action", ""), row["task_id"]),
+            "platform": row.get("platform") or "",
+            "status": timeline_status,
+            "url": _url_from_row(row, argv, db) or None,
+            "description": _build_description(row, timeline_status),
+        })
+    return jsonify({"success": True, "data": items})
+
+
+def _title_from_argv(argv: list[str], action: str, task_id: str) -> str:
+    """Push the 3-step title-extraction chain into a named helper.
+
+    Priority:
+      1. ``--title <value>`` (operator-chosen title)
+      2. ``--file <path>`` basename stem (recognizable video filename)
+      3. ``<action>#<short task_id>`` (last-resort placeholder)
+
+    Index safety: every ``--key`` lookup is paired with
+    ``i + 1 < len(argv)`` so a trailing-flag argv (e.g. ``[--title]``
+    with no following value) does NOT IndexError and silently falls
+    through to the next priority level.
+    """
+    for i, arg in enumerate(argv):
+        if arg == "--title" and i + 1 < len(argv) and argv[i + 1].strip():
+            return argv[i + 1]
+    for i, arg in enumerate(argv):
+        if arg == "--file" and i + 1 < len(argv):
+            stem = Path(argv[i + 1]).stem
+            if stem:
+                return stem
+    return f"{action or 'task'}#{task_id[-6:]}"
+
+
+def _url_from_row(row: dict, argv: list[str], db) -> str:
+    """Resolve the upstream-published URL for a successful task.
+
+    Fallback chain: ``argv --url|--video-url`` value (rare, older CLI
+    flags) → ``tasks.result`` JSON's ``url`` / ``share_url`` (modern
+    path; ``_store_result`` writes this when the upstream CLI emits
+    ``[UPLOAD_RESULT]<json>`` lines). Defensive against malformed
+    ``result`` blobs (non-JSON, non-dict, missing keys) — any failure
+    collapses to ``""`` so the Timeline's optional ``url`` field stays
+    forward-compatible (Timeline renders no link when empty).
+
+    The ``db`` parameter is hoisted from the route's outer
+    ``get_database()`` call so this hot-path helper doesn't
+    re-instantiate per-row (a 100-row response previously triggered
+    100 redundant ``get_database()`` calls).
+    """
+    for i, arg in enumerate(argv):
+        if arg in ("--url", "--video-url") and i + 1 < len(argv):
+            return argv[i + 1]
+    raw = row.get("result") or ""
+    if raw:
+        try:
+            # Project-wide invariant: every Database implementation
+            # exposes ``json_load`` (see web_runner/utils.py ::
+            # _LOG_ERROR_EVENTS, web_runner/routes/tasks.py ::
+            # _parse_stored_argv). No hasattr-fallback drift needed.
+            loaded = db.json_load(raw)
+            if isinstance(loaded, dict):
+                return loaded.get("url") or loaded.get("share_url") or ""
+        except (ValueError, TypeError):
+            pass
+    return ""
+
+
+def _timeline_status(raw: str) -> str:
+    """Map the broader task-lifecycle status set onto Timeline's
+    3-state contract (``success | failed | pending``).
+
+      success / cookie_valid          → success
+      failed  / error / cookie_invalid → failed
+      pending / scheduled / running,
+      anything unknown                → pending
+
+    Defensive default to ``pending`` (safe UI — neither green check
+    nor red x) so a future schema drift surfaces as a yellow dot,
+    not a confusing exception in the modal.
+    """
+    if raw in ("success", "cookie_valid"):
+        return "success"
+    if raw in ("failed", "error", "cookie_invalid"):
+        return "failed"
+    return "pending"
+
+
+def _format_timeline_date(iso: str) -> str:
+    """Render the ISO ``created`` datetime into the
+    ``"YYYY-MM-DD HH:MM"`` format the Timeline's mock data uses, so a
+    row's date column renders identically before/after the mock→API
+    cutover. Empty input → empty string. Anything that fails to slice
+    keeps the raw ISO (Timeline accepts raw ISO per its contract).
+    """
+    if not iso:
+        return ""
+    try:
+        return iso.replace("T", " ")[:16]
+    except (AttributeError, TypeError):
+        return iso
+
+
+def _build_description(row: dict, status: str) -> str:
+    """Compose the 1-line description rendered below each title.
+
+    Roles:
+      • success: ``"账号: <account>"`` — credit the account, no
+        spammy "ok" duplicate of the status badge.
+      • failed:  ``"账号: <account> · <error snippet>"`` so the
+        user sees WHAT went wrong without grepping logs.
+      • pending: ``"账号: <account> · 等待执行"`` — same shape with a
+        deterministic in-flight tag.
+    Empty account → no leading prefix; the remainder still renders.
+    """
+    account = row.get("account") or ""
+    parts: list[str] = [f"账号: {account}"] if account else []
+    if status == "failed" and row.get("error"):
+        err = (row.get("error") or "").replace("\n", " ").strip()
+        if err:
+            parts.append(err[:80])
+    elif status == "pending":
+        parts.append("等待执行")
+    return " · ".join(parts) if parts else ""
 
 
 @bp.get("/api/logs")

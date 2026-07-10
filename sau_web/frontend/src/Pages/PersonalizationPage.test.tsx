@@ -8,9 +8,13 @@ import userEvent from '@testing-library/user-event'
 // useTheme is mocked so PersonalizationPage reads the theme from
 // the mock return without booting ThemeProvider + localStorage.
 // Mirrors the helper below.
-vi.mock('@/Components/ThemeProvider.helpers', () => ({
-  useTheme: () => mockUseTheme(),
-}))
+vi.mock('@/Components/ThemeProvider.helpers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/Components/ThemeProvider.helpers')>()
+  return {
+    ...actual,
+    useTheme: () => mockUseTheme(),
+  }
+})
 
 const mockUseTheme = vi.hoisted(() => vi.fn())
 
@@ -25,7 +29,7 @@ function makeQueryClient() {
 function mountPersonalization() {
   return render(
     <QueryClientProvider client={makeQueryClient()}>
-      <MemoryRouter initialEntries={['/app/personalization']}>
+      <MemoryRouter initialEntries={['/dashboard/personalization']}>
         <PersonalizationPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -37,6 +41,8 @@ function setTheme(theme: 'light' | 'dark' | 'system') {
     theme,
     setTheme: vi.fn(),
     resolvedTheme: theme,
+    accentHue: 145,
+    setAccentHue: vi.fn(),
   })
 }
 
@@ -52,8 +58,10 @@ describe('PersonalizationPage · theme picker', () => {
   it('renders 3 themes inside a radiogroup', () => {
     setTheme('light')
     mountPersonalization()
-    const radiogroup = screen.getByRole('radiogroup')
-    expect(radiogroup).toBeInTheDocument()
+    const radiogroups = screen.getAllByRole('radiogroup')
+    // First radiogroup = theme modes, second = accent hue picker
+    expect(radiogroups).toHaveLength(2)
+    expect(radiogroups[0]).toHaveAttribute('aria-label', '主题模式')
     expect(screen.getByRole('radio', { name: '浅色' })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: '深色' })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: '跟随系统' })).toBeInTheDocument()
@@ -82,6 +90,8 @@ describe('PersonalizationPage · theme picker', () => {
       theme: 'light',
       setTheme: setThemeSpy,
       resolvedTheme: 'light',
+      accentHue: 145,
+      setAccentHue: vi.fn(),
     })
 
     mountPersonalization()
@@ -100,6 +110,8 @@ describe('PersonalizationPage · theme picker', () => {
       theme: 'system',
       setTheme: setThemeSpy,
       resolvedTheme: 'system',
+      accentHue: 145,
+      setAccentHue: vi.fn(),
     })
 
     mountPersonalization()

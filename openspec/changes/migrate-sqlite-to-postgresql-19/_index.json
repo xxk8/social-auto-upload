@@ -10,7 +10,11 @@
       "completed": 16
     }
   },
-  "layers": ["api", "tests", "deployment"],
+  "layers": [
+    "api",
+    "tests",
+    "deployment"
+  ],
   "platforms": [],
   "applyReady": true,
   "sections": {
@@ -24,5 +28,11 @@
     "7": "open",
     "8": "open",
     "9": "open"
-  }
+  },
+  "specs": [
+    "specs/pg-database-driver/spec.md",
+    "specs/pg-schema-v19/spec.md",
+    "specs/sqlite-pg-migrator/spec.md",
+    "specs/db-pool-observability/spec.md"
+  ]
 }

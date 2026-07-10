@@ -1,0 +1,374 @@
+{
+  "locale": {
+    "switch_label": "切换语言",
+    "select_label": "选择语言",
+    "name_zh-CN": "中文",
+    "name_en-US": "English"
+  },
+  "marketing": {
+    "topbar": {
+      "nav_label": "营销导航",
+      "mobile_menu_label": "导航菜单",
+      "nav": {
+        "home": "首页",
+        "pricing": "定价",
+        "hotlist": "热榜",
+        "about": "关于",
+        "login": "登录"
+      }
+    },
+    "footer": {
+      "brand": "social-auto-upload",
+      "subtitle": "多平台视频自动发布工具",
+      "copyright": "© social-auto-upload. 保留所有权利.",
+      "columns": {
+        "product": {
+          "title": "产品",
+          "features": "功能",
+          "platforms": "平台",
+          "pricing": "定价"
+        },
+        "resources": {
+          "title": "资源",
+          "hotlist": "热榜",
+          "about": "关于",
+          "login": "登录"
+        },
+        "account": {
+          "title": "账户",
+          "console": "控制台",
+          "plans": "定价方案"
+        }
+      }
+    },
+    "landing": {
+      "hero": {
+        "badge": "多平台分发 · 本地优先 · 私有部署",
+        "headline_1": "一条视频",
+        "headline_2": "一键分发",
+        "headline_3": "全网平台",
+        "subhead": "上传视频,选中账号组,定时发布到抖音、B站、小红书、快手、视频号、百家号。\n不再每天切换多个 App、复制多次文案、盯每个平台发布状态。",
+        "cta_primary": "立即开始 →",
+        "cta_secondary": "了解能力",
+        "stat_platforms": "多平台",
+        "stat_platforms_caption": "国内主流 · 全网覆盖",
+        "stat_time": "3h+/day",
+        "stat_time_caption": "典型多账号 · 每天省下",
+        "stat_privacy": "不上云",
+        "stat_privacy_caption": "数据归属您 · 私有部署"
+      },
+      "platforms": {
+        "eyebrow": "已支持平台",
+        "title_1": "国内主流平台 ",
+        "title_2": "全覆盖",
+        "description": "抖音、B站、小红书、快手、视频号、百家号 —— 一次上传,同步触达。",
+        "status_mainline": "主线",
+        "status_beta": "支持中"
+      },
+      "features": {
+        "eyebrow": "核心能力",
+        "title_1": "4 件让人头疼的事",
+        "title_2": ",我们替你做了",
+        "description": "多平台切换、文案重复编写、定时排队、账号管理 —— 创作者日常消耗最大的 4 件事。",
+        "publish": {
+          "title": "批量发布到多平台",
+          "description": "一次上传,选中账号组,同步发布到全网平台。",
+          "bullet_1": "账号组一键选取",
+          "bullet_2": "视频/图文混合",
+          "bullet_3": "进度即时回传"
+        },
+        "schedule": {
+          "title": "定时发布",
+          "description": "预排到流量高峰,任务自动排队。"
+        },
+        "ai": {
+          "title": "AI 文案生成",
+          "description": "一键得到各平台适配标题与话题。"
+        },
+        "accounts": {
+          "title": "账号组管理",
+          "description": "分组管理,登录态实时检测,过期即时提示。",
+          "bullet_1": "二维码扫码登录",
+          "bullet_2": "登录态检测",
+          "bullet_3": "分组管理"
+        }
+      },
+      "how": {
+        "eyebrow": "使用流程",
+        "title_1": "三步完成 ",
+        "title_2": "无需写代码",
+        "description": "从上传到发布,整个流程不到一分钟。",
+        "step_upload": { "title": "上传视频素材", "description": "拖入视频文件,填写标题与简介。AI 自动生成各平台适配文案。" },
+        "step_select": { "title": "选择账号组", "description": "按个人/团队/矩阵场景分组,勾选要发布的平台账号。" },
+        "step_publish": { "title": "一键发布或定时", "description": "立即同步发布,或预排到流量高峰时段,任务自动排队运行。" }
+      },
+      "cta": {
+        "eyebrow": "开始使用",
+        "title_1": "现在就把发布流水线",
+        "title_2": "交给工具",
+        "description": "选好视频素材与发布账号组,定时任务自动排队运行。不用写代码,也不用研究浏览器插件。",
+        "cta_primary": "立即开始使用 →",
+        "cta_secondary": "查看定价",
+        "trust_private": "数据归属您 · 不上云",
+        "trust_no_code": "无需编写一行代码",
+        "trust_24x7": "全天候自动运行",
+        "trust_full_coverage": "全网平台全覆盖"
+      }
+    }
+  },
+  "dashboard": {
+    "sidebar": {
+      "section_main": "导航",
+      "section_admin": "管理",
+      "nav": {
+        "accounts": "账号管理",
+        "publish": "发布中心",
+        "tasks": "任务列表",
+        "analytics": "数据分析",
+        "logs": "运行日志",
+        "inbox": "素材收件箱",
+        "calendar": "内容日历",
+        "studio": "剧本工坊"
+      },
+      "admin": {
+        "root": "管理后台",
+        "overview": "概览",
+        "users": "用户管理",
+        "audit": "审计日志"
+      },
+      "footer": {
+        "role_admin": "管理员",
+        "role_user": "用户",
+        "email_fallback": "管理员"
+      },
+      "expand_sidebar": "展开侧边栏",
+      "collapse_sidebar": "收起侧边栏",
+      "toggle_sidebar": "切换侧边栏",
+      "search_button": "搜索",
+      "help_aria": "键盘快捷键",
+      "mobile_nav_label": "主导航"
+    }
+  },
+  "common": {
+    "back": "返回",
+    "loading": "加载中…"
+  },
+  "tasks": {
+    "page": {
+      "title": "任务列表",
+      "description": "查看和管理所有上传任务",
+      "new_task_button": "新建任务",
+      "search_placeholder": "搜索任务 ID、平台、账号（按 / 聚焦）",
+      "polling_chip": "轮询中",
+      "refresh_button": "刷新",
+      "refresh_aria": "刷新任务列表",
+      "clear_button": "清理",
+      "clear_dialog": {
+        "title": "确认清理",
+        "description": "清理所有已完成、失败、异常的任务？",
+        "confirm": "清理",
+        "cancel": "取消"
+      },
+      "shortcuts": {
+        "r": "刷新列表",
+        "n": "新建任务",
+        "slash": "聚焦搜索"
+      }
+    },
+    "table": {
+      "header_select_all": "全选",
+      "header_task_id": "任务 ID",
+      "header_platform": "平台",
+      "header_action": "动作",
+      "header_account": "账号",
+      "header_status": "状态",
+      "header_created": "创建时间",
+      "header_operations": "操作",
+      "empty_title": "暂无任务",
+      "empty_description": "创建任务后会在这里显示",
+      "empty_refresh_button": "刷新列表",
+      "filter_title": "筛选「{{status}}」任务"
+    },
+    "row": {
+      "select_aria": "选择任务 {{id}}",
+      "view_detail_aria": "查看任务详情",
+      "retry_aria": "重新执行此任务",
+      "retry_tooltip": "重新执行此任务",
+      "republish_aria": "用此任务参数重新发布",
+      "republish_tooltip": "用此任务参数重新发布",
+      "delete_aria": "删除任务",
+      "delete_dialog": {
+        "title": "确认删除",
+        "description": "确认删除此任务？",
+        "confirm": "删除",
+        "cancel": "取消"
+      },
+      "detail_button": "详情"
+    },
+    "statuses": {
+      "all": "全部",
+      "pending": "等待中",
+      "running": "执行中",
+      "scheduled": "定时中",
+      "success": "成功",
+      "failed": "失败",
+      "error": "异常"
+    },
+    "batch": {
+      "selected_count": "已选 {{count}} 项",
+      "clear_selection": "取消选择",
+      "batch_retry": "批量重试",
+      "batch_delete": "批量删除",
+      "batch_retrying": "批量重试中",
+      "batch_deleting": "批量删除中",
+      "batch_close": "关闭",
+      "batch_collapse_detail": "收起详情",
+      "batch_expand_detail": "查看逐条状态",
+      "batch_success_count": "{{count}} 成功",
+      "batch_failed_count": "{{count}} 失败",
+      "batch_delete_dialog": {
+        "title": "确认批量删除",
+        "description": "确认删除选中的 {{count}} 个任务？此操作不可恢复。",
+        "confirm": "删除",
+        "cancel": "取消"
+      }
+    },
+    "progress": {
+      "empty": "暂无任务",
+      "done": "成功",
+      "active": "进行中",
+      "failed_combined": "失败/异常",
+      "total": "总计"
+    }
+  },
+  "inbox": {
+    "filters": {
+      "all": "全部",
+      "downloading": "下载中",
+      "downloaded": "已下载",
+      "failed": "失败",
+      "transcribing": "转写中",
+      "transcribed": "已转写"
+    },
+    "batch": {
+      "select_all": "全选",
+      "unselect_all": "取消全选",
+      "selected_count": "已选 {{count}} 项",
+      "remove_selected": "清除选中",
+      "retry_selected": "重试选中",
+      "transcribe_selected": "转写选中",
+      "collapse_all": "全部收起",
+      "expand_all": "全部展开"
+    },
+    "filter_empty": {
+      "title": "暂无匹配记录",
+      "clear": "清除筛选"
+    },
+    "row": {
+      "select_aria": "选择",
+      "unselect_aria": "取消选择",
+      "remove_aria": "移除",
+      "badge": {
+        "downloading": "下载中",
+        "downloaded": "已下载",
+        "failed": "失败",
+        "transcribing": "转写中",
+        "transcribed": "已转写"
+      },
+      "transcribe": "转写",
+      "copy": "复制",
+      "export": "导出",
+      "retranscribe": "再转写",
+      "transcribing": "转写中",
+      "retry": "重试",
+      "retry_transcribe": "再试转写",
+      "transcript_label": "文案 · 实时",
+      "transcript_streaming": "正在转写…",
+      "transcript_empty": "(空)",
+      "cookie_expired": {
+        "title": "平台授权已过期，请重新登录",
+        "description": "Cookie 过期可能导致下载失败，回到账号管理页重新授权即可恢复。",
+        "cta": "去账号管理重新授权"
+      }
+    }
+  },
+  "studio": {
+    "page": {
+      "title": "剧本工坊",
+      "description": "把一句话灵感变成多集剧本。先建项目,再让 AI 围绕 synopsis 持续生成候选分集,挑出值得拍的那几集一键导出 Seedance 2.0 分镜。",
+      "cta_create": "新建剧本题材",
+      "error_create_failed": "创建失败,稍后重试",
+      "error_network": "网络错误,稍后重试",
+      "error_load_failed": "加载失败:{{message}}"
+    },
+    "list": {
+      "empty_title": "还没有项目",
+      "empty_description": "创建第一个剧本项目,围绕一句话灵感搭建四幕结构,把生成分镜的时间从「想」变成「跑」。"
+    },
+    "card": {
+      "status_draft": "草稿",
+      "status_generating": "生成中",
+      "status_ready": "已完成",
+      "status_exported": "已导出",
+      "delete_aria": "删除项目 {{title}}",
+      "delete_confirm": "确定删除项目「{{title}}」吗？此操作不可撤销。"
+    },
+    "export": {
+      "copy": "复制 Markdown",
+      "download": "下载 .md",
+      "bulk_zip": "一键导出全剧 .zip",
+      "bulk_zip_pending": "正在打包…",
+      "copied": "已复制",
+      "copy_failed": "复制失败,请改用下载",
+      "error_zip_failed": "导出失败:{{message}}"
+    }
+  },
+  "publish": {
+    "wizard": {
+      "step_upload": "上传",
+      "step_content": "内容",
+      "step_review": "确认",
+      "aria_label": "发布向导步骤",
+      "nav_prev": "上一步",
+      "nav_next": "下一步",
+      "nav_submit": "发布",
+      "submit_tooltip": "发布中…"
+    },
+    "video_form": {
+      "title_placeholder": "请输入视频标题（建议 6-20 字）",
+      "desc_placeholder": "补充视频简介、背景说明或发布备注",
+      "tags_placeholder": "按 Enter 添加标签（# 可省略）",
+      "button_submit": "提交视频",
+      "button_clear": "清空",
+      "clear_dialog": {
+        "title": "确认清空表单？",
+        "description": "当前已填写 {{count}} 项字段。清空后会同时删除本地草稿，操作不可撤销。",
+        "confirm": "清空",
+        "cancel": "取消"
+      },
+      "validation": {
+        "no_group": "请先在上方选择发布账号组和平台",
+        "no_file": "请选择视频文件",
+        "no_title": "请输入标题"
+      }
+    },
+    "note_form": {
+      "title_placeholder": "请输入图文标题",
+      "content_placeholder": "请输入图文正文，多行内容会自动换行显示",
+      "tags_placeholder": "按 Enter 添加标签（# 可省略）",
+      "button_submit": "提交图文",
+      "button_clear": "清空",
+      "clear_dialog": {
+        "title": "确认清空表单？",
+        "description": "当前已填写 {{count}} 项字段。清空后会同时删除本地草稿，操作不可撤销。",
+        "confirm": "清空",
+        "cancel": "取消"
+      },
+      "validation": {
+        "no_group": "请先在上方选择发布账号组和平台",
+        "no_image": "请至少添加一张图片",
+        "no_title": "请输入标题"
+      }
+    }
+  }
+}

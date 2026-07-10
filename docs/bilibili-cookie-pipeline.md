@@ -32,7 +32,7 @@ B 站 video info API 对未登录 / 风控请求会回 `HTTP 412 Precondition Fa
 
 ```bash
 sau bilibili login --account <account_name>
-# 或在 Web Shell: /app/accounts → 添加 B 站账号 → 扫码
+# 或在 Web Shell: /dashboard/accounts → 添加 B 站账号 → 扫码
 ```
 
 **内部发生了什么**（`uploader/bilibili_uploader/main.py`）：
@@ -42,7 +42,7 @@ sau bilibili login --account <account_name>
 3. 扫码成功后保存 `bilibili_cookies_<acct>.json` 到 `cookies/`（注：CLI 走的是 biliup convention 命名；Web Shell 走的是 `_<account_name>.json` 双下划线 pattern —— 见 Stage 2）
 4. 关键 cookie：`SESSDATA`（登录态）+ `bili_jct`（CSRF token），两个都要，缺一会触发 412
 
-> ⚠ 终端跑的扫码图建议在真机终端里执行：`sau bilibili login --account <name>` 二维码有时 print 出来截断，不如直接看 `qrcode.png`。
+> ⚠ 终端跑的扫码图建议在真机终端里执行：`sau bilibili login --account <name>`（**不要带 `--headless`**），二维码有时在终端 print 出来会截断。**不要**让用户去打开 `qrcode.png` —— 该文件已不再生成（round-OPT-acct-qr cleanup，2026-07-10）。本地扫码替代方案：去掉 `--headless` 让浏览器里直接展示平台自己的二维码；远程扫码替代方案：用 Web Shell 的 QR Login 对话框，渲染内联 `<img src={data:image/...}>`。
 
 ---
 

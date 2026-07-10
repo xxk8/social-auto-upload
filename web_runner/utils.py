@@ -1,4 +1,4 @@
-"""Shared utilities for web_runner routes (PR2: dialect-aware Database)."""
+"""Shared utilities for web_runner routes (post-SQLite-removal: PG-only Database)."""
 from __future__ import annotations
 
 import base64
@@ -6,7 +6,6 @@ import binascii
 import json
 import os
 import re
-import sqlite3
 import sys
 import threading
 import time
@@ -17,7 +16,10 @@ from datetime import datetime
 from pathlib import Path
 
 from utils.log import logger as _task_logger
-from web_runner.db import BASE_DIR, get_database
+from web_runner.db import get_database
+
+BASE_DIR = Path(__file__).parent.parent.resolve()
+import psycopg  # narrow exception for the orphan-recovery watchdog loop
 
 dbi = get_database  # alias for shorter call-site reads
 
@@ -51,9 +53,12 @@ _error_event_trim_counter = 0
 MIN_UPLOAD_BYTES = 10240
 
 
-# Columns that hold JSON-encoded payloads (TEXT in sqlite; will become
-# JSON / JSONB in openspec PR3). When `_db_update_task` writes one of these
-# keys it routes the value through `db.json_dump` for canonical encoding.
+# Columns that hold JSON-encoded payloads. On PG, ``argv`` / ``result``
+# / ``publish_detail`` are stored as TEXT (canonical JSON) for
+# cross-dialect uniformity. ``db.json_dump`` is the identity passthrough
+# on PG; on the prior SQLite backend it serialized Python dicts to
+# JSON strings. When `_db_update_task` writes one of these keys it
+# still routes the value through `db.json_dump` for contract symmetry.
 _JSON_COLUMNS = frozenset({"argv", "result", "publish_detail"})
 
 _TASK_COLUMNS = frozenset({
@@ -214,9 +219,6 @@ def _new_task_id(prefix: str) -> str:
     return f"{prefix}-{ts}-{short_uuid}"
 
 
-_IS_POSTGRES = os.environ.get("SAU_DB_DIALECT", "postgres").lower() == "postgres"
-
-
 def _db_insert_log(ts: str, message: str) -> None:
     """Insert a log row + opportunistically trim to `LOG_MAX_ROWS` rows."""
     global _log_trim_counter
@@ -225,18 +227,14 @@ def _db_insert_log(ts: str, message: str) -> None:
     _log_trim_counter += 1
     if _log_trim_counter >= 200:
         _log_trim_counter = 0
-        if _IS_POSTGRES:
-            db.execute(
-                "DELETE FROM logs WHERE id < (SELECT id FROM logs "
-                "ORDER BY id DESC LIMIT 1 OFFSET ?)",
-                (LOG_MAX_ROWS,),
-            )
-        else:
-            db.execute(
-                "DELETE FROM logs WHERE rowid < (SELECT rowid FROM logs "
-                "ORDER BY rowid DESC LIMIT 1 OFFSET ?)",
-                (LOG_MAX_ROWS,),
-            )
+        # PG-only path: trim by `id` (SERIAL PRIMARY KEY on logs.id).
+        #
+        # post-cutover.
+        db.execute(
+            "DELETE FROM logs WHERE id < (SELECT id FROM logs "
+            "ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            (LOG_MAX_ROWS,),
+        )
 
 
 def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0) -> list[dict]:
@@ -245,7 +243,7 @@ def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: in
       - `task_id`: prefix match `[{task_id}]`, leveraging the canonical
         log message format used by `_run_sau(...)`. The `[...]` braces
         prevent `run-1` from accidentally matching `[run-12] ...`. Tied
-        with `ORDER BY ts ASC, rowid ASC` for deterministic pagination.
+        with `ORDER BY ts ASC, id ASC` for deterministic pagination.
     """
     db = dbi()
     query = "SELECT ts, message FROM logs"
@@ -259,10 +257,10 @@ def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: in
         params.append(f"[{task_id}]%")
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-    if _IS_POSTGRES:
-        query += " ORDER BY ts ASC, id ASC"
-    else:
-        query += " ORDER BY ts ASC, rowid ASC"
+    # PG-only: order by SERIAL `id` (no `id` concept after SQLite
+    # removal). The `(ts, id)` composite guarantees deterministic
+    # pagination when many rows share the same `ts` ISO string.
+    query += " ORDER BY ts ASC, id ASC"
     if limit is not None:
         query += " LIMIT ?"
         params.append(limit)
@@ -377,8 +375,14 @@ def _start_orphan_watchdog(interval_seconds: int = 120) -> None:
             time.sleep(interval_seconds)
             try:
                 _recover_orphaned_tasks()
-            except (sqlite3.Error, OSError) as exc:
-                log(f"[watchdog] error: {exc}")
+            except psycopg.Error as exc:
+                # Narrow catch: only DB-layer errors. ``RuntimeError``
+                # was previously listed but is too broad (it would
+                # swallow any Python runtime error, masking real bugs
+                # in the recovery path). The watchdog is best-effort,
+                # so we log and continue — the operator-visible trail
+                # is the log line below.
+                log(f"[watchdog] DB error: {exc}")
 
     t = threading.Thread(target=_watchdog, daemon=True, name="orphan-watchdog")
     t.start()
@@ -425,7 +429,7 @@ def _sync_cookie_files_to_db() -> None:
             # Empirical evidence: `scripts/audit_account_groups_unique_collision.py
             # --threads 8` captured this pattern under the UPSERT-RETURNING
             # harden (1/8 thread raised `RuntimeError("INSERT did not return id")`
-            # from `web_runner/db.py::SqliteDatabase.insert_returning_id`'s
+            # from `web_runner/db.py::PostgresDatabase.insert_returning_id`'s
             # `if not row` fallback).
             #
             # The INSERT-or-IGNORE + SELECT-by-name pair is bulletproof
@@ -438,13 +442,17 @@ def _sync_cookie_files_to_db() -> None:
             # standard form — a single statement handles both dialects
             # without `_IS_POSTGRES` branching (the `account_authorizations`
             # INSERT below still uses dialect branching because SQLite's
-            # `INSERT OR IGNORE` combines differently with `ON CONFLICT`).
+            # The PG-native ``INSERT ... ON CONFLICT (name) DO NOTHING``
+            # is atomic + idempotent — never raises on UNIQUE match;
+            # the subsequent SELECT-by-unique-key is deterministic —
+            # exactly one row matches ``WHERE name = ?`` after the
+            # atomic INSERT-or-IGNORE step, by construction.
             #
-            # Bonus semantic: `account_groups.created` is now locked at
-            # row-creation time (the first walker to INSERT wins), making
-            # it a stable "first_seen" timestamp. The prior DO-UPDATE
-            # pattern artificially bumped `created` on every reconciliation
-            # pass which obscured the audit trail.
+            # Bonus semantic: ``account_groups.created`` is now locked
+            # at row-creation time (the first walker to INSERT wins),
+            # making it a stable "first_seen" timestamp. The prior
+            # DO-UPDATE pattern artificially bumped ``created`` on
+            # every reconciliation pass which obscured the audit trail.
             db.execute(
                 "INSERT INTO account_groups (name, created) VALUES (?, ?) "
                 "ON CONFLICT (name) DO NOTHING",
@@ -467,17 +475,11 @@ def _sync_cookie_files_to_db() -> None:
                     f"account_groups(name={account_name!r}); UNIQUE-invariant broken"
                 )
             group_id = group["id"]  # noqa: PLW2901 — rebind to outer-scope name for symmetry with the prior branch
-        if _IS_POSTGRES:
-            db.execute(
-                "INSERT INTO account_authorizations (group_id, platform, cookie_file, created) "
-                "VALUES (?, ?, ?, ?) ON CONFLICT (group_id, platform) DO NOTHING",
-                (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
-            )
-        else:
-            db.execute(
-                "INSERT OR IGNORE INTO account_authorizations (group_id, platform, cookie_file, created) VALUES (?, ?, ?, ?)",
-                (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
-            )
+        db.execute(
+            "INSERT INTO account_authorizations (group_id, platform, cookie_file, created) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT (group_id, platform) DO NOTHING",
+            (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
+        )
 
 
 def _account_files(platform: str | None = None) -> list[dict]:
@@ -541,6 +543,11 @@ def _store_result(task_id: str, stdout: str) -> None:
 
 def _run_sau(task_id: str, argv: list[str]) -> None:
     import subprocess
+
+    # Local import avoids a circular import at module load time
+    # (web_runner.notifications lazily imports utils._db_get_task).
+    from web_runner.notifications import emit_event, build_event_from_result
+
     _db_update_task(task_id, status="running")
     log(f"[{task_id}] starting: sau {' '.join(argv)}")
     try:
@@ -555,10 +562,14 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
             _db_update_task(task_id, status="success", code=0)
             _store_result(task_id, result.stdout)
             log(f"[{task_id}] completed successfully")
+            emit_event(build_event_from_result(task_id, "upload.success", result.stdout))
         else:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             _db_update_task(task_id, status="failed", code=result.returncode, error=error_msg)
             log(f"[{task_id}] failed with code {result.returncode}: {error_msg[:200]}")
+            emit_event(
+                build_event_from_result(task_id, "upload.failed", result.stdout)
+            )
             _log_error_event(
                 phase="cli",
                 task_id=task_id,
@@ -571,6 +582,9 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
     except subprocess.TimeoutExpired:
         _db_update_task(task_id, status="error", error="Task timed out after 600 seconds")
         log(f"[{task_id}] timed out")
+        emit_event(
+            build_event_from_result(task_id, "upload.failed", "", status="error")
+        )
         _log_error_event(
             phase="cli",
             task_id=task_id,
@@ -581,6 +595,9 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
     except (OSError, ValueError) as exc:
         _db_update_task(task_id, status="error", error=str(exc))
         log(f"[{task_id}] error: {exc}")
+        emit_event(
+            build_event_from_result(task_id, "upload.failed", "", status="error")
+        )
         _log_error_event(
             phase="cli",
             task_id=task_id,

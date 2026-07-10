@@ -1,19 +1,30 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
+import { ROUTES, RELATIVE_DASHBOARD_ROUTES, type DashboardRoute, type AdminRoute } from '@/routes'
+import type { LucideIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Button } from '@/Components/ui/button'
 import { ScrollArea } from '@/Components/ui/scroll-area'
 import { ThemeToggle } from './Components/ThemeToggle'
 import { UserMenu } from './Components/UserMenu'
 import { CommandPalette } from './Components/CommandPalette'
+import { KeyboardShortcutsCheatSheet } from './Components/KeyboardShortcutsCheatSheet'
+import { SidebarNav } from './Components/SidebarNav'
 import { NotFound } from './Components/NotFound'
 import { cn } from '@/lib/utils'
 import { AuthGuard } from './features/auth/AuthGuard'
+import { AuthLoadingSkeleton } from './features/auth/AuthLoadingSkeleton'
 import { useAuth } from './features/auth/useAuth'
-import { LogOut } from 'lucide-react'
+import { PreferencesDialogProvider } from '@/features/preferences'
+import { usePreferencesDialog } from '@/features/preferences/PreferencesDialogProvider'
+import { usePreferencesShortcut } from '@/features/preferences/shared/usePreferencesShortcut'
 import {
   BarChart3,
+  Calendar,
+  Clapperboard,
   FileText,
+  HelpCircle,
   Inbox,
   LineChart,
   Menu,
@@ -21,6 +32,7 @@ import {
   PanelLeftOpen,
   Search,
   Send,
+  Shield,
   Terminal,
   Users,
 } from 'lucide-react'
@@ -31,9 +43,20 @@ const LogsPage = lazy(() => import('./Pages/LogsPage'))
 const TasksPage = lazy(() => import('./Pages/TasksPage'))
 const AnalyticsPage = lazy(() => import('./Pages/AnalyticsPage'))
 const InboxPage = lazy(() => import('./Pages/InboxPage'))
+const CalendarPage = lazy(() => import('./Pages/CalendarPage'))
 const ProfilePage = lazy(() => import('./Pages/ProfilePage'))
 const SettingsPage = lazy(() => import('./Pages/SettingsPage'))
 const PersonalizationPage = lazy(() => import('./Pages/PersonalizationPage'))
+const AdminOverviewPage = lazy(() => import('./features/admin/AdminOverviewPage'))
+const AdminUsersPage = lazy(() => import('./features/admin/AdminUsersPage'))
+const AdminAuditPage = lazy(() => import('./features/admin/AdminAuditPage'))
+// Script Studio (Phase 1 of openspec/changes/script-studio).
+// Lives in `/Pages` because it's a top-level Web Shell page (mirrors
+// InboxPage / PublishPage / LogsPage), not a feature — `useStudioStore`
+// and `Studio/ProjectList`/`Studio/ProjectCreateDialog` are siblings in
+// `Components/Studio/`.
+const StudioPage = lazy(() => import('./Pages/StudioPage'))
+const StudioDetailPage = lazy(() => import('./Pages/StudioDetailPage'))
 
 const APP_NAME =
   (import.meta.env.VITE_APP_NAME && import.meta.env.VITE_APP_NAME.trim()) || 'sau'
@@ -42,16 +65,19 @@ const APP_GIT_SHA = (
   'dev'
 ).slice(0, 7)
 
-export function PageLoader() {
-  return (
-    <div className="flex items-center justify-center h-64">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
-        <span className="text-sm text-muted-foreground">加载中...</span>
-      </div>
-    </div>
-  )
-}
+const MODIFIER_LABEL =
+  typeof navigator !== 'undefined' && /mac|darwin/i.test(navigator.platform)
+    ? '⌘'
+    : 'Ctrl+'
+
+// Round-OPT-3J follow-up: <Suspense> fallbacks now render the shared
+// `AuthLoadingSkeleton` (features/auth/AuthLoadingSkeleton.tsx) —
+// the same chrome + sketched content-area contract as the AuthGuard
+// auth window. A slow lazy chunk paints identically to a slow
+// /api/auth/me: chrome stays mounted, content area gets a generic
+// PageHeader + 3 content-block placeholder. No "加载中…" overlay,
+// no layout jank. The error path still surfaces via the hoisted
+// ErrorBoundary card.
 
 const MOBILE_BREAKPOINT = 768
 const COLLAPSE_BREAKPOINT = 1024
@@ -85,18 +111,115 @@ function useViewport() {
   return { isMobile, shouldAutoCollapse }
 }
 
-const navItems = [
-  { path: '/app', label: '账号管理', icon: Users },
-  { path: '/app/publish', label: '发布中心', icon: Send },
-  { path: '/app/tasks', label: '任务列表', icon: BarChart3 },
-  { path: '/app/analytics', label: '数据分析', icon: LineChart },
-  { path: '/app/logs', label: '运行日志', icon: FileText },
-  { path: '/app/inbox', label: '素材收件箱', icon: Inbox },
+// Typed nav-item manifests. Each `path` is constrained to a specific
+// route union from `routes.ts` so the IDE catches typos at the call
+// site (e.g. `path: '/dashbord/admin/users'` fails the type check
+// instead of silently 404ing in production). The narrower unions
+// (`DashboardRoute` for the main nav, `AdminRoute` for the admin
+// group) catch MORE typos than the broadest `Route` would — e.g. a
+// public path like `/login` accidentally dropped into the admin nav
+// fails the `AdminRoute` check, not just the `Route` check.
+interface DashboardNavItem {
+  path: DashboardRoute
+  label: string
+  icon: LucideIcon
+  shortcut: string
+}
+
+interface AdminNavItem {
+  path: AdminRoute
+  label: string
+  icon: LucideIcon
+  children?: readonly AdminNavItem[]
+}
+
+// Locale-key manifests for the static nav. Resolved inside the
+// AppShell component via `useTranslation()` — `labelKey` is the
+// dotted-path into the resource bundles, `labelFallback` is the
+// zh-CN string used when i18n init hasn't completed yet (e.g. SSR)
+// OR when the key is missing in the active resource. Mirrors
+// MarketingTopBar.tsx's NAV_ITEMS shape; full rationale in
+// `docs/dev/adr-i18n-invariant.md` (flat-namespace rule).
+interface DashboardNavItemDef {
+  path: DashboardRoute
+  labelKey: string
+  labelFallback: string
+  icon: LucideIcon
+  shortcut: string
+}
+
+interface AdminNavItemDef {
+  path: AdminRoute
+  labelKey: string
+  labelFallback: string
+  icon: LucideIcon
+  children?: readonly AdminNavItemDef[]
+}const DASHBOARD_NAV_DEFS: readonly DashboardNavItemDef[] = [
+  { path: ROUTES.dashboard.root, labelKey: 'dashboard.sidebar.nav.accounts', labelFallback: '账号管理', icon: Users, shortcut: '1' },
+  { path: ROUTES.dashboard.publish, labelKey: 'dashboard.sidebar.nav.publish', labelFallback: '发布中心', icon: Send, shortcut: '2' },
+  { path: ROUTES.dashboard.tasks, labelKey: 'dashboard.sidebar.nav.tasks', labelFallback: '任务列表', icon: BarChart3, shortcut: '3' },
+  { path: ROUTES.dashboard.analytics, labelKey: 'dashboard.sidebar.nav.analytics', labelFallback: '数据分析', icon: LineChart, shortcut: '4' },
+  { path: ROUTES.dashboard.logs, labelKey: 'dashboard.sidebar.nav.logs', labelFallback: '运行日志', icon: FileText, shortcut: '5' },
+  { path: ROUTES.dashboard.inbox, labelKey: 'dashboard.sidebar.nav.inbox', labelFallback: '素材收件箱', icon: Inbox, shortcut: '6' },
+  { path: ROUTES.dashboard.calendar, labelKey: 'dashboard.sidebar.nav.calendar', labelFallback: '内容日历', icon: Calendar, shortcut: '7' },
+  // Studio (Script Studio) — Phase 1 of openspec/changes/script-studio.
+  // Shortcut '8' lands cleanly because no existing navItemDef claims '8';
+  // the existing resolved `navItems.find((n) => n.shortcut === e.key)`
+  // handler inside the component picks it up automatically. Phase 2
+  // will add the detail-route subpath `/dashboard/studio/:id` once
+  // ScriptViewer ships.
+  { path: ROUTES.dashboard.studio, labelKey: 'dashboard.sidebar.nav.studio', labelFallback: '剧本工坊', icon: Clapperboard, shortcut: '8' },
 ]
+
+const ADMIN_NAV_DEFS: readonly AdminNavItemDef[] = [
+  {
+    path: ROUTES.dashboard.admin.root,
+    labelKey: 'dashboard.sidebar.admin.root',
+    labelFallback: '管理后台',
+    icon: Shield,
+    children: [
+      { path: ROUTES.dashboard.admin.root, labelKey: 'dashboard.sidebar.admin.overview', labelFallback: '概览', icon: BarChart3 },
+      { path: ROUTES.dashboard.admin.users, labelKey: 'dashboard.sidebar.admin.users', labelFallback: '用户管理', icon: Users },
+      { path: ROUTES.dashboard.admin.audit, labelKey: 'dashboard.sidebar.admin.audit', labelFallback: '审计日志', icon: FileText },
+    ],
+  },
+] 
 
 export function AppShell() {
   const { isMobile, shouldAutoCollapse } = useViewport()
   const location = useLocation()
+  // Resolve static i18n manifests into SidebarNav-compatible rows.
+  // The .map is cheap (~9 + ~4 items) and re-runs on locale change
+  // because `t` is stable per-language from useTranslation(). The
+  // resolved arrays swap atomically when i18n.changeLanguage fires
+  // — both desktop sidebar nav + mobile bottom nav see the same
+  // swapped labels because both consume these function-scoped
+  // arrays. Mirrors MarketingTopBar's NAV_ITEMS pattern; full
+  // invariant rationale in docs/dev/adr-i18n-invariant.md (labelKey
+  // + labelFallback rule + never-mutate-the-DEFS invariant).
+  const { t } = useTranslation()
+  const navItems: readonly DashboardNavItem[] = DASHBOARD_NAV_DEFS.map((d): DashboardNavItem => ({
+    ...d,
+    label: t(d.labelKey, d.labelFallback),
+  }))
+  // The trailing `as AdminNavItem` casts are required because
+  // the i18next `CustomTypeOptions` augmentation narrows
+  // `t(string-key, fallback)` to a `never` return when the
+  // `labelKey` argument is a widened `string` (not a literal) —
+  // the resolver can't pick a single resource shape. Without
+  // the cast, the inferred lambda return type has `label: never`
+  // and TS2322 fires against the `AdminNavItem` contract
+  // (`label: string`). The cast preserves the actual runtime
+  // string while satisfying the type checker. (See
+  // docs/dev/adr-i18n-invariant.md §type-augmentation-quirks.)
+  const adminNavItems: readonly AdminNavItem[] = ADMIN_NAV_DEFS.map((d): AdminNavItem => ({
+    ...d,
+    label: t(d.labelKey, d.labelFallback),
+    children: d.children?.map((c): AdminNavItem => ({
+      ...c,
+      label: t(c.labelKey, c.labelFallback),
+    })),
+  } as AdminNavItem))
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
     const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY)
@@ -121,13 +244,73 @@ export function AppShell() {
     })
   }, [])
 
+  // Logout is intentionally NOT inlined here as a standalone button.
+  // Round-OPT-marketing-chrome v5 consolidated the AppShell sidebar
+  // footer's standalone `<button aria-label="登出">` (and the parallel
+  // one in the expanded-mode footer) into the <UserMenu> dropdown —
+  // it's the 5th item after the 4 PREFERENCE_ITEMS, behind a
+  // <DropdownMenuSeparator>, with the same `await logout(); navigate(
+  // '/', { replace: true })` shape as the removed AppShell callback.
+  // Three chrome surfaces now share ONE logout affordance: the
+  // AppShell sidebar footer (mode=expanded | collapsed), the
+  // AppShell mobile AppBar (mode=mobile), and the MarketingTopBar
+  // authed branch (mode=mobile). MarketingTopBar's file-level
+  // comment block documents the same consolidation.
   const navigate = useNavigate()
-  const { user: authUser, logout } = useAuth()
-  const handleLogout = useCallback(async () => {
-    await logout()
-    navigate('/', { replace: true })
-  }, [logout, navigate])
+  const { user: authUser } = useAuth()
+  const { openPreferences } = usePreferencesDialog()
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+
+  // Round-OPT-3G+ v3: Cmd+, / Ctrl+, opens PreferencesDialog
+  // already-focused on the Overview jump-off surface. Mirrors
+  // Spotify / Slack / VSCode conventions so existing power users
+  // land here without reading docs. Suppressed while typing
+  // (handled inside the hook). Memoized so the hook's
+  // `useEffect([onTrigger, enabled])` dep doesn't re-attach the
+  // document-level listener on every render.
+  const openPreferencesOverview = useCallback(
+    () => openPreferences('overview'),
+    [openPreferences],
+  )
+  usePreferencesShortcut({
+    onTrigger: openPreferencesOverview,
+  })
+
+  // ── Main nav keyboard shortcuts (Cmd/Ctrl+1-6) ────────────────────────
+  // Scoped to NON-admin pages so they don't collide with sidebar nav shortcuts.
+  // Cmd+1/2/3. On /dashboard/admin/* the admin tab shortcuts win; everywhere
+  // else the sidebar nav shortcuts win.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.altKey || e.shiftKey) return
+
+      // Only active outside admin pages (exact /dashboard/admin AND subpaths).
+      if (
+        location.pathname === ROUTES.dashboard.admin.root ||
+        location.pathname.startsWith(`${ROUTES.dashboard.admin.root}/`)
+      )
+        return
+
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName?.toLowerCase()
+      const isTyping =
+        tag === 'input' || tag === 'textarea' || target?.isContentEditable === true
+      if (isTyping) return
+
+      // Suppress when a modal/dialog is open.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+
+      const item = navItems.find((n) => n.shortcut === e.key)
+      if (item) {
+        e.preventDefault()
+        navigate(item.path)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [location.pathname, navigate])
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -140,6 +323,21 @@ export function AppShell() {
       ) {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+        return
+      }
+
+      // Global keyboard shortcut: Cmd+? / Ctrl+? opens the shortcuts
+      // cheat-sheet. The `Shift` key is required because `?` is
+      // `Shift+/` on most layouts. We reject pure `/` (no modifier)
+      // because that already maps to "focus search".
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key === '?' &&
+        e.shiftKey &&
+        !e.altKey
+      ) {
+        e.preventDefault()
+        setHelpOpen(true)
         return
       }
 
@@ -158,7 +356,7 @@ export function AppShell() {
 
       if (e.key === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
         e.preventDefault()
-        navigate('/app/publish')
+        navigate(ROUTES.dashboard.publish)
         return
       }
     }
@@ -173,9 +371,13 @@ export function AppShell() {
       <div className="flex flex-col min-h-dvh bg-background">
         <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur-xl px-4">
           <div className="flex items-center gap-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-[3px] bg-foreground">
+          <Link
+            to={ROUTES.public.landing}
+            className="flex h-7 w-7 items-center justify-center rounded-[3px] bg-foreground hover:opacity-90 transition-opacity"
+            aria-label={t('dashboard.sidebar.home_aria', '返回首页')}
+          >
             <Terminal className="h-3.5 w-3.5 text-background" strokeWidth={2.5} />
-          </div>
+          </Link>
             <span className="font-mono text-[11px] text-muted-foreground/80 tabular-nums">{APP_NAME}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -185,30 +387,37 @@ export function AppShell() {
         </header>
 
         <main className="flex-1 p-4 pb-20">
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<AuthLoadingSkeleton />}>
             <Routes location={location}>
-              <Route path="/" element={<AuthGuard><AccountsPage /></AuthGuard>} />
-              <Route path="/publish" element={<AuthGuard><PublishPage /></AuthGuard>} />
-              <Route path="/logs" element={<AuthGuard><LogsPage /></AuthGuard>} />
-              <Route path="/tasks" element={<AuthGuard><TasksPage /></AuthGuard>} />
-              <Route path="/analytics" element={<AuthGuard><AnalyticsPage /></AuthGuard>} />
-              <Route path="/inbox" element={<AuthGuard><InboxPage /></AuthGuard>} />
-              <Route path="/account" element={<AuthGuard><ProfilePage /></AuthGuard>} />
-              <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
-              <Route path="/personalization" element={<AuthGuard><PersonalizationPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.root} element={<AuthGuard><AccountsPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.publish} element={<AuthGuard><PublishPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.logs} element={<AuthGuard><LogsPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.tasks} element={<AuthGuard><TasksPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.analytics} element={<AuthGuard><AnalyticsPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.inbox} element={<AuthGuard><InboxPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.calendar} element={<AuthGuard><CalendarPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.account} element={<AuthGuard><ProfilePage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.settings} element={<AuthGuard><SettingsPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.personalization} element={<AuthGuard><PersonalizationPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.admin.root} element={<AuthGuard><AdminOverviewPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.admin.users} element={<AuthGuard><AdminUsersPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.admin.audit} element={<AuthGuard><AdminAuditPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.studio} element={<AuthGuard><StudioPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.studioDetail} element={<AuthGuard><StudioDetailPage /></AuthGuard>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </main>
 
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <KeyboardShortcutsCheatSheet open={helpOpen} onOpenChange={setHelpOpen} />
 
         <nav
-          aria-label="主导航"
+          aria-label={t('dashboard.sidebar.mobile_nav_label', '主导航')}
           className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/40 bg-background/85 backdrop-blur-xl shadow-[0_-1px_0_var(--border),0_-8px_24px_-12px_rgba(0,0,0,0.08)]"
         >
           <div className="flex items-stretch justify-around gap-1 px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            {navItems.map((item) => {
+            {[...navItems, ...(authUser?.role === 'admin' ? adminNavItems : [])].map((item) => {
               const active = location.pathname === item.path
               const Icon = item.icon
               return (
@@ -266,9 +475,13 @@ export function AppShell() {
           "flex items-center h-14 border-b border-border/30",
           isCollapsed ? "justify-center px-2" : "px-4 gap-3"
         )}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background flex-shrink-0">
+          <Link
+            to={ROUTES.public.landing}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background flex-shrink-0 hover:opacity-90 transition-opacity"
+            aria-label={t('dashboard.sidebar.home_aria', '返回首页')}
+          >
             <Terminal className="h-4 w-4" strokeWidth={2.5} />
-          </div>
+          </Link>
           {!isCollapsed && (
             <div className="flex flex-col min-w-0 flex-1">
               <span className="font-mono text-[13px] font-semibold tracking-tight text-foreground">{APP_NAME}</span>
@@ -279,7 +492,7 @@ export function AppShell() {
             <button
               className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-foreground/5 transition-all hover:scale-105 active:scale-95"
               onClick={toggleSidebar}
-              aria-label="Collapse sidebar"
+              aria-label={t('dashboard.sidebar.collapse_sidebar', '收起侧边栏')}
             >
               <PanelLeftClose className="h-4 w-4" />
             </button>
@@ -292,7 +505,7 @@ export function AppShell() {
             <button
               className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-foreground/5 transition-all hover:scale-105 active:scale-95"
               onClick={toggleSidebar}
-              aria-label="Expand sidebar"
+              aria-label={t('dashboard.sidebar.expand_sidebar', '展开侧边栏')}
             >
               <PanelLeftOpen className="h-4 w-4" />
             </button>
@@ -305,54 +518,32 @@ export function AppShell() {
             {!isCollapsed && (
               <div className="px-2 mb-1.5">
                 <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-widest">
-                  导航
+                  {t('dashboard.sidebar.section_main', '导航')}
                 </span>
               </div>
             )}
-            <div className="flex flex-col gap-0.5">
-              {navItems.map((item) => {
-                const active = location.pathname === item.path
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.path}
-                    className={cn(
-                      "group relative flex items-center rounded-lg text-[13px] font-medium transition-all duration-150",
-                      isCollapsed ? "justify-center px-2 py-2 mx-0.5" : "px-2.5 py-2 mx-0.5 gap-2.5",
-                      active
-                        ? "text-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]",
-                    )}
-                    to={item.path}
-                    onClick={isTabletMode ? () => setSidebarCollapsed(true) : undefined}
-                    data-tour={item.path === '/publish' ? 'nav-publish' : undefined}
-                  >
-                    {/* Active indicator */}
-                    {active && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r-full bg-primary" />
-                    )}
-                    <Icon className={cn(
-                      "h-4 w-4 shrink-0 transition-colors duration-150",
-                      active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-                    )} />
-                    {!isCollapsed && (
-                      <span className={cn(
-                        "truncate transition-colors duration-150",
-                        active && "font-medium"
-                      )}>
-                        {item.label}
-                      </span>
-                    )}
-                    {isCollapsed && (
-                      <div className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-foreground text-background text-xs font-medium opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-150 whitespace-nowrap z-50 shadow-lg scale-95 group-hover:scale-100">
-                        {item.label}
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-foreground rotate-45" />
-                      </div>
-                    )}
-                  </Link>
-                )
-              })}
-            </div>
+            <SidebarNav
+              items={[...navItems]}
+              isCollapsed={isCollapsed}
+              onNavigate={isTabletMode ? () => setSidebarCollapsed(true) : undefined}
+              modifierLabel={MODIFIER_LABEL}
+            />
+
+            {authUser?.role === 'admin' && (
+              <>
+                <div className="px-2 mt-4 mb-1.5">
+                  <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-widest">
+                    {t('dashboard.sidebar.section_admin', '管理')}
+                  </span>
+                </div>
+                <SidebarNav
+                  items={[...adminNavItems]}
+                  isCollapsed={isCollapsed}
+                  onNavigate={isTabletMode ? () => setSidebarCollapsed(true) : undefined}
+                  modifierLabel={MODIFIER_LABEL}
+                />
+              </>
+            )}
           </nav>
         </ScrollArea>
 
@@ -371,14 +562,6 @@ export function AppShell() {
             >
               <UserMenu mode="collapsed" />
               <ThemeToggle size="compact" />
-              <button
-                onClick={handleLogout}
-                className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all"
-                aria-label="登出"
-                title="登出"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
             </div>
           ) : (
             <div
@@ -387,20 +570,10 @@ export function AppShell() {
             >
               <UserMenu mode="expanded" />
               <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-[14px] font-medium text-foreground truncate leading-tight" data-testid="app-shell-sidebar-email">{authUser?.email ?? "管理员"}</span>
-                <span className="mt-0.5 text-[12px] text-muted-foreground/70 font-medium leading-tight">{authUser?.role === 'admin' ? '管理员' : '用户'}</span>
+                <span className="text-[14px] font-medium text-foreground truncate leading-tight" data-testid="app-shell-sidebar-email">{authUser?.email ?? t('dashboard.sidebar.footer.email_fallback', '管理员')}</span>
+                <span className="mt-0.5 text-[12px] text-muted-foreground/70 font-medium leading-tight">{authUser?.role === 'admin' ? t('dashboard.sidebar.footer.role_admin', '管理员') : t('dashboard.sidebar.footer.role_user', '用户')}</span>
               </div>
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={handleLogout}
-                  className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all"
-                  aria-label="登出"
-                  title="登出"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
-                <ThemeToggle />
-              </div>
+              <ThemeToggle />
             </div>
           )}
         </div>
@@ -427,7 +600,7 @@ export function AppShell() {
           </div>
           <div className="flex items-center gap-2">
             {isTabletMode && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleSidebar} aria-label="Toggle sidebar">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleSidebar} aria-label={t('dashboard.sidebar.toggle_sidebar', '切换侧边栏')}>
                 <Menu className="h-4 w-4" />
               </Button>
             )}
@@ -438,10 +611,20 @@ export function AppShell() {
               className="gap-2 text-muted-foreground hover:text-foreground btn-elegant"
             >
               <Search className="h-3.5 w-3.5" />
-              <span>搜索</span>
+              <span>{t('dashboard.sidebar.search_button', '搜索')}</span>
               <kbd className="ml-1 hidden sm:inline-flex h-5 items-center px-1.5 rounded border border-border/40 bg-muted/40 text-[10px] font-mono text-muted-foreground">
                 ⌘K
               </kbd>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setHelpOpen(true)}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              aria-label={t('dashboard.sidebar.help_aria', '键盘快捷键')}
+              title={`${t('dashboard.sidebar.help_aria', '键盘快捷键')} (${MODIFIER_LABEL}?)`}
+            >
+              <HelpCircle className="h-4 w-4" />
             </Button>
           </div>
         </header>
@@ -455,17 +638,23 @@ export function AppShell() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
             >
-              <Suspense fallback={<PageLoader />}>
+              <Suspense fallback={<AuthLoadingSkeleton />}>
                 <Routes location={location}>
-                  <Route path="/" element={<AuthGuard><AccountsPage /></AuthGuard>} />
-                  <Route path="/publish" element={<AuthGuard><PublishPage /></AuthGuard>} />
-                  <Route path="/logs" element={<AuthGuard><LogsPage /></AuthGuard>} />
-                  <Route path="/tasks" element={<AuthGuard><TasksPage /></AuthGuard>} />
-                  <Route path="/analytics" element={<AuthGuard><AnalyticsPage /></AuthGuard>} />
-                  <Route path="/inbox" element={<AuthGuard><InboxPage /></AuthGuard>} />
-                  <Route path="/account" element={<AuthGuard><ProfilePage /></AuthGuard>} />
-                  <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
-                  <Route path="/personalization" element={<AuthGuard><PersonalizationPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.root} element={<AuthGuard><AccountsPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.publish} element={<AuthGuard><PublishPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.logs} element={<AuthGuard><LogsPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.tasks} element={<AuthGuard><TasksPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.analytics} element={<AuthGuard><AnalyticsPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.inbox} element={<AuthGuard><InboxPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.calendar} element={<AuthGuard><CalendarPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.account} element={<AuthGuard><ProfilePage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.settings} element={<AuthGuard><SettingsPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.personalization} element={<AuthGuard><PersonalizationPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.admin.root} element={<AuthGuard><AdminOverviewPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.admin.users} element={<AuthGuard><AdminUsersPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.admin.audit} element={<AuthGuard><AdminAuditPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.studio} element={<AuthGuard><StudioPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.studioDetail} element={<AuthGuard><StudioDetailPage /></AuthGuard>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
@@ -474,13 +663,13 @@ export function AppShell() {
         </main>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <KeyboardShortcutsCheatSheet open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   )
 }
 
 import {
   PreferencesDialog,
-  PreferencesDialogProvider,
 } from '@/features/preferences'
 
 function AppShellWithPrefs() {

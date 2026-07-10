@@ -1,15 +1,16 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
 import { BrandMark } from '@/Components/ui/brand-glyph'
-import { ThemeToggle } from '@/Components/ThemeToggle'
+import MarketingFooter from '@/Components/MarketingFooter'
+import MarketingTopBar from '@/Components/MarketingTopBar'
 import { SectionHeading } from '@/Components/ui/section-heading'
 import { Stat } from '@/Components/ui/stat'
 import { PricingTier } from '@/Components/ui/pricing-tier'
 import type { PricingTierProps } from '@/Components/ui/pricing-tier'
 import { PlatformIcon } from '@/Components/ui/platform-icon'
-import { useScrollPast } from '@/lib/use-scroll-past'
 import { useRevealStagger } from '@/lib/use-reveal-stagger'
+import { ROUTES } from '@/routes'
 import {
   Send,
   ShieldCheck,
@@ -377,10 +378,10 @@ function CtaSection() {
       {/* Button row cell */}
       <div data-section-cell className="mx-auto mt-6 flex max-w-3xl flex-col items-center gap-3 sm:flex-row sm:justify-center sm:gap-4">
         <Button asChild size="lg" className="h-11 px-6 text-sm font-medium">
-          <Link to="/pricing">查看定价 →</Link>
+          <Link to={ROUTES.public.pricing}>查看定价 →</Link>
         </Button>
         <Button asChild variant="outline" size="lg" className="h-11 px-6 text-sm font-medium">
-          <Link to="/">回到首页</Link>
+          <Link to={ROUTES.public.landing}>回到首页</Link>
         </Button>
       </div>
 
@@ -403,137 +404,18 @@ function CtaSection() {
   )
 }
 
-// ── Chrome: TopBar ────────────────────────────────────────────────────────
-
-function TopBar() {
-  const location = useLocation()
-  const isActive = (path: string) => location.pathname === path
-  const past = useScrollPast(80)
-  return (
-    <header
-      className={`sticky top-0 z-50 flex h-14 items-center justify-between bg-background/85 px-6 backdrop-blur-xl transition-colors duration-200 ${
-        past ? 'border-b border-primary/45' : 'border-b border-border/40'
-      }`}
-    >
-      <Link to="/" className="flex items-center gap-2.5">
-        <BrandMark size="sm" />
-        <span className="text-[14px] font-medium tracking-tight text-foreground">
-          social-auto-upload
-        </span>
-      </Link>
-      <div className="flex items-center gap-5 text-[13px] font-medium">
-        <Link
-          to="/"
-          className={`transition-colors hover:text-foreground ${isActive('/') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          首页
-        </Link>
-        <Link
-          to="/about"
-          aria-current={isActive('/about') ? 'page' : undefined}
-          className={`transition-colors hover:text-foreground ${isActive('/about') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          关于
-        </Link>
-        <Link
-          to="/pricing"
-          aria-current={isActive('/pricing') ? 'page' : undefined}
-          className={`transition-colors hover:text-foreground ${isActive('/pricing') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          定价
-        </Link>
-        <Link
-          to="/login"
-          aria-current={isActive('/login') ? 'page' : undefined}
-          className={`transition-colors hover:text-foreground ${isActive('/login') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          登录
-        </Link>
-        <ThemeToggle />
-      </div>
-    </header>
-  )
-}
-
-// ── Dense footer (Raycast pattern: categorized sitemap) ──────────────────
-
-const FOOTER_COLS = [
-  {
-    title: '产品',
-    links: [
-      { label: '功能', to: '/#features' },
-      { label: '平台', to: '/#platforms' },
-      { label: '定价', to: '/pricing' },
-    ],
-  },
-  {
-    title: '资源',
-    links: [
-      { label: '关于', to: '/about' },
-      { label: '登录', to: '/login' },
-    ],
-  },
-  {
-    title: '账户',
-    links: [
-      { label: '控制台', to: '/app' },
-      { label: '定价方案', to: '/pricing' },
-    ],
-  },
-] as const
-
-function PageFooter() {
-  return (
-    <footer className="border-t border-border/40 px-6 py-10">
-      <div className="mx-auto max-w-5xl">
-        {/* Brand row */}
-        <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-            <BrandMark size="sm" />
-            <span>social-auto-upload</span>
-          </div>
-        </div>
-        {/* Dense sitemap */}
-        <div className="mt-8 grid grid-cols-3 gap-6 sm:max-w-md">
-          {FOOTER_COLS.map((col) => (
-            <div key={col.title}>
-              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                {col.title}
-              </div>
-              <ul className="mt-3 space-y-2">
-                {col.links.map((link) => (
-                  <li key={link.label}>
-                    <Link
-                      to={link.to}
-                      className="text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    </footer>
-  )
-}
-
-// ── Page composition ────────────────────────────────────────────────────
-
 export default function AboutPage() {
   const motionRoot = useRevealStagger()
   return (
     <div ref={motionRoot} className="min-h-screen w-full bg-background text-foreground">
-      <TopBar />
+      <MarketingTopBar />
       <main>
         <MissionSection />
         <ScaleSection />
         <TiersSection />
         <CtaSection />
       </main>
-      <PageFooter />
+      <MarketingFooter />
     </div>
   )
 }

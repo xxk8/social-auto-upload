@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '@/Components
 import { EmptyState } from '@/Components/ui/empty-state'
 import { BarChart3 } from 'lucide-react'
 import type { AnalyticsSummary } from '@/hooks/useAnalytics'
+import { formatDay } from './format'
 
 /**
  * §12.3 — VolumeTrendChart: stacked area chart showing daily publish
@@ -22,13 +23,6 @@ import type { AnalyticsSummary } from '@/hooks/useAnalytics'
 interface VolumeTrendChartProps {
   data: AnalyticsSummary['by_day']
   loading: boolean
-}
-
-/** Format an ISO date string to MM-DD for the X axis. */
-function formatDay(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const tooltipStyle = {

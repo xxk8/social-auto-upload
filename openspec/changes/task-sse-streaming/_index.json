@@ -5,9 +5,30 @@
   "artifacts": {
     "proposal": "任务日志从 polling + 静态展示升级为 SSE 流式 + 实时进度报点,前端 EventSource 实时显示",
     "design": "内存 ring buffer + asyncio.Queue fanout + uploader 显式报 stage + EventSource 而非 WebSocket",
-    "tasks": { "total": 28, "completed": 0 }
+    "tasks": {
+      "total": 28,
+      "completed": 0
+    }
   },
-  "layers": ["api", "frontend", "uploader"],
-  "platforms": ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent", "tiktok", "baijiahao", "youtube"],
-  "applyReady": true
+  "layers": [
+    "api",
+    "frontend",
+    "uploader"
+  ],
+  "platforms": [
+    "douyin",
+    "kuaishou",
+    "xiaohongshu",
+    "bilibili",
+    "tencent",
+    "tiktok",
+    "baijiahao",
+    "youtube"
+  ],
+  "applyReady": true,
+  "specs": [
+    "specs/task-log-sse-streaming/spec.md",
+    "specs/task-progress-events/spec.md",
+    "specs/task-history-rest/spec.md"
+  ]
 }

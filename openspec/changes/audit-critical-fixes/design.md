@@ -2,7 +2,7 @@
 
 A comprehensive audit of the social-auto-upload repository identified 16 actionable issues across 4 severity levels. The project is in active refactoring: migrating from a monolithic `web_runner.py` to a package-based `web_runner/` with a Database abstraction layer (`db.py`), and from `playwright` to `patchright`. Several files and patterns from the pre-refactor era remain, creating inconsistency and risk.
 
-Key stakeholders: the maintainer (dreammis), 9k+ GitHub stars, 2000+ community members, and AI agent users (OpenClaw, Codex, Claude Code) who install this repo directly.
+Key stakeholders: the project maintainer, AI agent users (OpenClaw, Codex, Claude Code), and the user community that adopts the project directly.
 
 ## Goals / Non-Goals
 

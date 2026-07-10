@@ -42,10 +42,10 @@ test.describe('OPT-3F · AI sidebar collapse + LS persistence', () => {
   })
 
   test('collapse → LS flips → reload restores collapsed rail', async ({ page }) => {
-    // Navigate directly to /app/publish (the canonical route).
-    // /publish is a legacy shim that Navigates → /app/publish;
+    // Navigate directly to /dashboard/publish (the canonical route).
+    // /publish is a legacy shim that Navigates → /dashboard/publish;
     // going direct avoids the extra redirect tick.
-    await page.goto('/app/publish')
+    await page.goto('/dashboard/publish')
 
     // Sanity: expanded panel renders the close button + the panel
     // region id we anchor assertions on.

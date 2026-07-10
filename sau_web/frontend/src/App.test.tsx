@@ -5,6 +5,7 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from 'react-router-dom'
 import { AuthGuard } from '@/features/auth/AuthGuard'
 import { mockUseAuth } from '@/test/auth-router-spies'
@@ -35,10 +36,10 @@ import { mockUseAuth } from '@/test/auth-router-spies'
 // WHAT this file DOES cover:
 //
 //   • `/`        → public marketing LandingPage (direct, no auth gate)
-//   • `/app/*`   → Shell + AuthGuard → AccountsPage (authed) or /login (anon)
+//   • `/dashboard/*` → Shell + AuthGuard → AccountsPage (authed) or /login (anon)
 //   • `/login`   → login page (anonymous)
-//   • Legacy `/publish` / `/tasks` / `/logs` shims → /app/* form
-//   • AuthGuard `isLoading` spinner branch
+//   • Legacy `/publish` / `/tasks` / `/logs` shims → /dashboard/* form
+//   • AuthGuard `isLoading` null-render branch (no spinner, no /login)
 //   • Outer 404 + inner 404 fallback
 //
 // ─────────────────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ function setAuth({
 // not replicated — it's orthogonal to the routing invariants.
 //
 // Note: the mirror's `/` element matches App.tsx's current shape — a
-// marketing LandingPage rendered directly (not via `<Navigate to="/app" />`).
+// marketing LandingPage rendered directly (not via `<Navigate to="/dashboard" />`).
 // Historical screenshots of these tests live in the git log; the
 // redirect-to-app shape was retired when LandingPage replaced the
 // redirect per the marketing-merge PR.
@@ -145,7 +146,7 @@ function mountAppRoutesAt(initialPath: string) {
         {/* `/pricing` is a public visitor-facing route (parallel to `/`
          *  and `/login`). No AuthGuard — anonymous visitors must be able
          *  to compare tiers without sign-in friction. Locked here so any
-         *  future move into `/app/*` (or behind AuthGuard) breaks the
+         *  future move into `/dashboard/*` (or behind AuthGuard) breaks the
          *  paid-conversion funnel shape. */}
         <Route
           path="/pricing"
@@ -165,14 +166,14 @@ function mountAppRoutesAt(initialPath: string) {
         {/* Legacy URL shims — see App.tsx comment for WHY these live at
          *  the outer Routes table (catches in-app `navigate()` call
          *  sites that still target the pre-merge paths). */}
-        <Route path="/publish" element={<Navigate to="/app/publish" replace />} />
-        <Route path="/tasks" element={<Navigate to="/app/tasks" replace />} />
-        <Route path="/logs" element={<Navigate to="/app/logs" replace />} />
-        {/* Authenticated dashboard under /app/*. The wildcard is what
-         *  makes the inner Routes' RELATIVE paths (`/publish`, `/tasks`,
-         *  ...) resolve against /app/* at runtime. */}
-        <Route path="/app/*" element={<AppShellInnerRoutes />} />
-        {/* Outer 404 (catches anything that bypasses both /login and /app/*). */}
+        <Route path="/publish" element={<Navigate to="/dashboard/publish" replace />} />
+        <Route path="/tasks" element={<Navigate to="/dashboard/tasks" replace />} />
+        <Route path="/logs" element={<Navigate to="/dashboard/logs" replace />} />
+        {/* Authenticated dashboard under /dashboard/*. The wildcard is
+         *  what makes the inner Routes' RELATIVE paths (`/publish`,
+         *  `/tasks`, ...) resolve against /dashboard/* at runtime. */}
+        <Route path="/dashboard/*" element={<AppShellInnerRoutes />} />
+        {/* Outer 404 (catches anything that bypasses both /login and /dashboard/*). */}
         <Route path="*" element={<div data-testid="not-found">notFound</div>} />
       </Routes>
     </MemoryRouter>,
@@ -180,10 +181,10 @@ function mountAppRoutesAt(initialPath: string) {
 }
 
 // Mirror of AppShell's INNER <Routes> block. AppShell renders its own
-// <Routes> with RELATIVE paths nested inside the outer /app/*; this
-// helper replicates that mirror with the same RELATIVE paths so the
-// routing spec doesn't depend on AppShell's chrome (sidebar, header,
-// command palette, viewport logic).
+// <Routes> with RELATIVE paths nested inside the outer /dashboard/*;
+// this helper replicates that mirror with the same RELATIVE paths so
+// the routing spec doesn't depend on AppShell's chrome (sidebar,
+// header, command palette, viewport logic).
 function AppShellInnerRoutes() {
   return (
     <Routes>
@@ -251,23 +252,23 @@ describe('App · post-merge routing split', () => {
     expect(screen.getByTestId('landing-page')).toBeInTheDocument()
   })
 
-  // `/app` is the canonical dashboard entry point (the LandingPage CTA
-  // routes here). Anonymous visitors still bounce to /login; authed
-  // operators land on AccountsPage. This contract was preserved when
-  // the marketing LandingPage replaced the historical /·→/app·→AccountsPage
-  // redirect.
-  it('/app (anonymous) → AuthGuard → /login', async () => {
+  // `/dashboard` is the canonical dashboard entry point (the
+  // LandingPage CTA routes here). Anonymous visitors still bounce
+  // to /login; authed operators land on AccountsPage. This contract
+  // was preserved when the marketing LandingPage replaced the
+  // historical /·→/dashboard·→AccountsPage redirect.
+  it('/dashboard (anonymous) → AuthGuard → /login', async () => {
     setAuth({ isAuthenticated: false })
-    mountAppRoutesAt('/app')
+    mountAppRoutesAt('/dashboard')
     expect(await screen.findByTestId('login-page')).toBeInTheDocument()
   })
 
-  it('/app (authenticated) → AccountsPage', () => {
+  it('/dashboard (authenticated) → AccountsPage', () => {
     setAuth({
       isAuthenticated: true,
       user: { id: 1, email: 'qa@example.com', role: 'admin' },
     })
-    mountAppRoutesAt('/app')
+    mountAppRoutesAt('/dashboard')
     expect(screen.getByTestId('accounts-page')).toBeInTheDocument()
   })
 
@@ -290,7 +291,7 @@ describe('App · post-merge routing split', () => {
   // `/pricing` is the paid-conversion funnel entrance: an anonymous
   // visitor from the LandingPage footer should be able to compare the
   // 3 SaaS tiers WITHOUT signing in first. Locking the contract here so
-  // future moves into `/app/*` or auth-guard protection break the test.
+  // future moves into `/dashboard/*` or auth-guard protection break the test.
   it('/pricing (anonymous) renders PricingPage directly', () => {
     setAuth({ isAuthenticated: false })
     mountAppRoutesAt('/pricing')
@@ -313,7 +314,7 @@ describe('App · post-merge routing split', () => {
   // /about is a public visitor surface parallel to /pricing. No
   // AuthGuard — anonymous visitors must be able to read the project's
   // mission / scale / tier preview / CTA narrative without signing
-  // in. Locked here so any future move into /app/* breaks the test.
+  // in. Locked here so any future move into /dashboard/* breaks the test.
   it('/about (anonymous) renders AboutPage directly', () => {
     setAuth({ isAuthenticated: false })
     mountAppRoutesAt('/about')
@@ -343,24 +344,24 @@ describe('App · post-merge routing split', () => {
 
   // ── Legacy URL shims (anonymous: bounce to /login) ──────────────────────
 
-  // Step chain: /publish → Navigate → /app/publish → /app/* route →
+  // Step chain: /publish → Navigate → /dashboard/publish → /dashboard/* route →
   // AppShellInnerRoutes → /publish → AuthGuard → isAuthenticated=false →
   // <Navigate to="/login" replace> → /login route → login-page. We
   // use `findByTestId` because the bounce fires an async router
   // commit; without the async matcher the test races the re-render.
-  it('/publish (anonymous) → /app/publish → AuthGuard → /login', async () => {
+  it('/publish (anonymous) → /dashboard/publish → AuthGuard → /login', async () => {
     setAuth({ isAuthenticated: false })
     mountAppRoutesAt('/publish')
     expect(await screen.findByTestId('login-page')).toBeInTheDocument()
   })
 
-  it('/tasks (anonymous) → /app/tasks → AuthGuard → /login', async () => {
+  it('/tasks (anonymous) → /dashboard/tasks → AuthGuard → /login', async () => {
     setAuth({ isAuthenticated: false })
     mountAppRoutesAt('/tasks')
     expect(await screen.findByTestId('login-page')).toBeInTheDocument()
   })
 
-  it('/logs (anonymous) → /app/logs → AuthGuard → /login', async () => {
+  it('/logs (anonymous) → /dashboard/logs → AuthGuard → /login', async () => {
     setAuth({ isAuthenticated: false })
     mountAppRoutesAt('/logs')
     expect(await screen.findByTestId('login-page')).toBeInTheDocument()
@@ -389,43 +390,42 @@ describe('App · post-merge routing split', () => {
     expect(screen.getByTestId('logs-page')).toBeInTheDocument()
   })
 
-  // ── Direct /app/* navigation (the canonical form) ─────────────────────
-
-  it('/app/publish (anonymous, no shim) → AuthGuard → /login', async () => {
+  // ── Direct /dashboard/* navigation (the canonical form) ─────────────────────
+  it('/dashboard/publish (anonymous, no shim) → AuthGuard → /login', async () => {
     setAuth({ isAuthenticated: false })
-    mountAppRoutesAt('/app/publish')
+    mountAppRoutesAt('/dashboard/publish')
     expect(await screen.findByTestId('login-page')).toBeInTheDocument()
   })
 
-  it('/app/publish (authenticated) → PublishPage', () => {
+  it('/dashboard/publish (authenticated) → PublishPage', () => {
     setAuth({ isAuthenticated: true })
-    mountAppRoutesAt('/app/publish')
+    mountAppRoutesAt('/dashboard/publish')
     expect(screen.getByTestId('publish-page')).toBeInTheDocument()
   })
 
-  it('/app/tasks (authenticated) → TasksPage', () => {
+  it('/dashboard/tasks (authenticated) → TasksPage', () => {
     setAuth({ isAuthenticated: true })
-    mountAppRoutesAt('/app/tasks')
+    mountAppRoutesAt('/dashboard/tasks')
     expect(screen.getByTestId('tasks-page')).toBeInTheDocument()
   })
 
-  it('/app/logs (authenticated) → LogsPage', () => {
+  it('/dashboard/logs (authenticated) → LogsPage', () => {
     setAuth({ isAuthenticated: true })
-    mountAppRoutesAt('/app/logs')
+    mountAppRoutesAt('/dashboard/logs')
     expect(screen.getByTestId('logs-page')).toBeInTheDocument()
   })
 
-  it('/app (authenticated, the silent default) → AccountsPage', () => {
+  it('/dashboard (authenticated, the silent default) → AccountsPage', () => {
     setAuth({ isAuthenticated: true })
-    mountAppRoutesAt('/app')
+    mountAppRoutesAt('/dashboard')
     expect(screen.getByTestId('accounts-page')).toBeInTheDocument()
   })
 
   // ── 404 handling ─────────────────────────────────────────────────────
 
-  it('/app/dashboard/unknown (authenticated) → inner NotFound', () => {
+  it('/dashboard/dashboard/unknown (authenticated) → inner NotFound', () => {
     setAuth({ isAuthenticated: true })
-    mountAppRoutesAt('/app/dashboard/unknown')
+    mountAppRoutesAt('/dashboard/dashboard/unknown')
     expect(screen.getByTestId('not-found')).toBeInTheDocument()
   })
 
@@ -437,21 +437,48 @@ describe('App · post-merge routing split', () => {
 
   // ── AuthGuard loading state ───────────────────────────────────────────
 
-  // AuthGuard.tsx checks `isLoading` BEFORE `isAuthenticated` and
-  // renders a spinner in between. Removing the loading branch (or
-  // flipping its order) would let authenticated-but-pre-hydrate
-  // visitors bounce to /login before /api/auth/me resolves. Use a
-  // text matcher because AuthGuard's spinner has no data-testid (yet).
-  it('/app/publish (isLoading=true) → AuthGuard spinner, NOT /login', () => {
+  // Round-OPT-3J + follow-up: the original implementation rendered
+  // a centered spinner with "验证登录状态…" during the initial
+  // /api/auth/me resolution. The follow-up round first tried
+  // `null` (blank content area) which felt too abrupt, so the
+  // current contract is a lightweight `AuthLoadingSkeleton`
+  // (generic PageHeader + 3 content blocks) inside the guard. The
+  // AppShell's chrome (sidebar / header) is rendered outside the
+  // guard so the operator sees the familiar shell with a sketched
+  // content area until the auth query resolves. We assert four
+  // observable signals — skeleton IS present, NO spinner text,
+  // NO bounce to /login, NO premature children commit. The
+  // isLoading gate MUST stay BEFORE the !isAuthenticated check so
+  // a freshly-hydrated authed user (initial store: isLoading=true,
+  // isAuthenticated=false) doesn't flash to /login before /me
+  // lands.
+  it('/dashboard/publish (isLoading=true) → AuthGuard renders loading skeleton (no spinner, no /login, no children)', () => {
     setAuth({ isAuthenticated: false, isLoading: true })
-    mountAppRoutesAt('/app/publish')
-    expect(screen.getByText(/验证登录状态/)).toBeInTheDocument()
-    // We must NOT have bounced — login-page should not be visible.
+    mountAppRoutesAt('/dashboard/publish')
+    // The shared page-loading skeleton IS rendered during the auth
+    // window — gives the operator a sense of "content is coming"
+    // without the old "验证登录状态…" spinner noise. Same testid as
+    // the route-level Suspense fallback (AppShell.tsx / App.tsx) so
+    // e2e tests can assert on one selector across both loading
+    // surfaces.
+    expect(
+      screen.getByTestId('page-loading-skeleton'),
+    ).toBeInTheDocument()
+    // No spinner text (regression guard for the old implementation).
+    expect(screen.queryByText(/验证登录状态/)).not.toBeInTheDocument()
+    // We must NOT have bounced — login-page should not be visible
+    // during the loading window. Flipping this assertion would
+    // mean an authed visitor flashes to /login before /me lands.
     expect(screen.queryByTestId('login-page')).not.toBeInTheDocument()
+    // And we must NOT have prematurely committed children — the
+    // auth query hasn't resolved yet, so the page stub stays out
+    // of the DOM until either the authed branch or the Navigate
+    // branch fires on a subsequent render.
+    expect(screen.queryByTestId('publish-page')).not.toBeInTheDocument()
   })
 
   // Shim-presence note: deleting `<Route path="/publish" element={
-  // <Navigate to="/app/publish" replace />}/>` (or its /tasks|/logs
+  // <Navigate to="/dashboard/publish" replace />}/>` (or its /tasks|/logs
   // siblings) is locked INDIRECTLY by the three anonymous-bounce
   // tests above: with the shim gone, the legacy URL falls through to
   // the outer `*` → NotFound, so `findByTestId('login-page')` returns
@@ -461,4 +488,53 @@ describe('App · post-merge routing split', () => {
   // pipeline doesn't preserve the literal `path="/publish"` strings;
   // the `.toString()` approach was strictly noisier than the
   // behavioral coverage.
+
+  // ── Round-OPT-route-rename — legacy /app/* → /dashboard/* shims ──
+  // Bookmarks + shared links may still use the pre-rename `/app/*`
+  // prefix. App.tsx renders two shims: (a) a bare `/app` → `/dashboard`
+  // redirect (React Router v6's `path="/app/*"` requires at least one
+  // character after the slash), and (b) a `LegacyAppRedirect` that
+  // preserves the descending subpath, query string, and hash. These
+  // two tests lock both branches of the migration shim — the bare case
+  // is the one the v6 wildcard would otherwise miss, so it gets a
+  // dedicated test.
+
+  function LegacyAppRedirect() {
+    const location = useLocation()
+    return (
+      <Navigate
+        to={location.pathname.replace(/^\/app/, '/dashboard') + location.search + location.hash}
+        replace
+      />
+    )
+  }
+
+  function mountRoutesWithAppShim(initialPath: string) {
+    return render(
+      <MemoryRouter initialEntries={[initialPath]}>
+        <Routes>
+          <Route path="/app" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/app/*" element={<LegacyAppRedirect />} />
+          <Route
+            path="/dashboard"
+            element={<div data-testid="dashboard-shim-target">dashboard</div>}
+          />
+          <Route
+            path="/dashboard/*"
+            element={<div data-testid="dashboard-shim-target">dashboard</div>}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('legacy /app (bare) → /dashboard via the bare-prefix shim', async () => {
+    mountRoutesWithAppShim('/app')
+    expect(await screen.findByTestId('dashboard-shim-target')).toBeInTheDocument()
+  })
+
+  it('legacy /app/studio/abc?focus=x → /dashboard/studio/abc?focus=x via the wildcard shim', async () => {
+    mountRoutesWithAppShim('/app/studio/abc?focus=x')
+    expect(await screen.findByTestId('dashboard-shim-target')).toBeInTheDocument()
+  })
 })

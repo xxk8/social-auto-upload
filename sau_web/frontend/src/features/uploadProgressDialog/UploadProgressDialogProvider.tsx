@@ -8,7 +8,7 @@
 // Why this slice HAS a Provider (even though the slice is scaffold-
 // only today): an upload-progress poll can't live in trigger-local
 // state because the trigger site is typically the publish-form
-// (`/app/publish`) while the user wants progress visibly echoed
+// (`/dashboard/publish`) while the user wants progress visibly echoed
 // elsewhere (sidebar status badge, AI sidebar progress chip, the
 // toast queue). Cross-surface mounting is the WHOLE point.
 // ──────────────────────────────────────────────────────────────────────────

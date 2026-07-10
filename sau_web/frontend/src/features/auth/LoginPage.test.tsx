@@ -28,6 +28,7 @@ import type { HTMLAttributes, ReactNode } from 'react'
 // factory closures and the helper's `mockUseAuth.mockReturnValue(...)`
 // calls reach a single, stable vi.fn shared across this file.
 import { mockNavigate, mockUseAuth } from '@/test/auth-router-spies'
+import { ROUTES } from '@/routes'
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>(
@@ -126,7 +127,7 @@ describe('LoginPage · post-merge redirect target', () => {
   // Locks the conditions that fired off the e2e routing-split PR fix:
   // post-merge `/` belongs to marketing, so an authed visitor who
   // lands on /login must be bounced into the dashboard at
-  // /app/publish, NOT back onto the marketing surface.
+  // /dashboard/publish, NOT back onto the marketing surface.
   //
   // NOT asserted on call-count. Reason: react-hook-form's
   // `useForm({ resolver: zodResolver(...) })` creates a fresh resolver
@@ -135,14 +136,14 @@ describe('LoginPage · post-merge redirect target', () => {
   // per mount (initial + RHF re-render). The behavioural invariant
   // is the redirect *target*, not the call count. See redirect-spy.ts
   // docblock for the full breakdown.
-  it('redirects already-authed visitors to /app/publish (replace)', () => {
+  it('redirects already-authed visitors to /dashboard/publish (replace)', () => {
     const { navigateSpy } = mountLoginPage({
       isAuthenticated: true,
       isLoading: false,
       user: { id: 1, email: 'qa@example.com', role: 'admin' },
     })
     expect(navigateSpy).toHaveBeenCalled()
-    expect(navigateSpy).toHaveBeenCalledWith('/app/publish', {
+    expect(navigateSpy).toHaveBeenCalledWith(ROUTES.dashboard.publish, {
       replace: true,
     })
   })

@@ -222,9 +222,12 @@ describe('TaskTableRow — display + callbacks', () => {
     const onRetry = vi.fn()
     const { container } = renderRow({ status: 'failed' }, { onRetry })
     const buttons = Array.from(container.querySelectorAll('button'))
-    // Retry button has aria-label="Retry task" per the implementation.
+    // Retry button has aria-label from `tasks.row.retry_aria` (zh-CN
+    // fallback: '重新执行此任务'). Pinned to the zh-CN literal because
+    // the i18n singleton defaults to zh-CN and the row reads the
+    // resource via `t(key, fallback)` at render time.
     const retry = buttons.find((b) =>
-      b.getAttribute('aria-label') === 'Retry task',
+      b.getAttribute('aria-label') === '重新执行此任务',
     )
     expect(retry).toBeDefined()
     fireEvent.click(retry!)
@@ -236,7 +239,7 @@ describe('TaskTableRow — display + callbacks', () => {
     // canRetry is true only for failed/error.
     const { container } = renderRow({ status: 'success' })
     const retry = Array.from(container.querySelectorAll('button')).find(
-      (b) => b.getAttribute('aria-label') === 'Retry task',
+      (b) => b.getAttribute('aria-label') === '重新执行此任务',
     )
     expect(retry).toBeDefined()
     expect(retry!.hasAttribute('disabled')).toBe(true)

@@ -3,8 +3,9 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TestProviders } from '@/test/render-harness'
 import { makeQueryClient } from '@/test/render-harness.helpers'
+import { ROUTES } from '@/routes'
 
-// ── mock react-router-dom useNavigate so AdminNavTabs navigation is spyable ─
+// ── mock react-router-dom useNavigate so navigation is spyable ─
 
 const mockNavigate = vi.fn()
 
@@ -145,7 +146,7 @@ describe('AdminOverviewPage', () => {
       },
     })
     mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
+    mountOverview([ROUTES.dashboard.admin.root])
     await waitFor(() =>
       expect(screen.getByTestId('admin-nav-tab-overview')).toHaveAttribute('data-state', 'active'),
     )
@@ -312,7 +313,7 @@ describe('AdminOverviewPage', () => {
         recent_actions: [],
       },
     })
-    mountOverview(['/app/admin/overview?range=today'])
+    mountOverview([`${ROUTES.dashboard.admin.root}?range=today`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '今天' })).toHaveAttribute('data-state', 'active'),
     )
@@ -331,7 +332,7 @@ describe('AdminOverviewPage', () => {
         recent_actions: [],
       },
     })
-    mountOverview(['/app/admin/overview?range=custom&start=2026-07-01&end=2026-07-05'])
+    mountOverview([`${ROUTES.dashboard.admin.root}?range=custom&start=2026-07-01&end=2026-07-05`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '自定义' })).toHaveAttribute('data-state', 'active'),
     )
@@ -351,7 +352,7 @@ describe('AdminOverviewPage', () => {
         recent_actions: [],
       },
     })
-    mountOverview(['/app/admin/overview?range=invalid'])
+    mountOverview([`${ROUTES.dashboard.admin.root}?range=invalid`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('data-state', 'active'),
     )
@@ -370,7 +371,7 @@ describe('AdminOverviewPage', () => {
         recent_actions: [],
       },
     })
-    mountOverview(['/app/admin/overview?range=today'])
+    mountOverview([`${ROUTES.dashboard.admin.root}?range=today`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '今天' })).toHaveAttribute('data-state', 'active'),
     )
@@ -405,7 +406,7 @@ describe('AdminOverviewPage', () => {
 describe('AdminUsersPage', () => {
   it('renders page header with title and description', async () => {
     mockGetUsers.mockResolvedValue({ success: true, data: [] })
-    mountUsers(['/app/admin/users'])
+    mountUsers([ROUTES.dashboard.admin.users])
     expect(
       await screen.findByRole('heading', { name: '用户管理' }),
     ).toBeInTheDocument()
@@ -415,7 +416,7 @@ describe('AdminUsersPage', () => {
   it('renders admin nav tabs with users active', async () => {
     mockGetUsers.mockResolvedValue({ success: true, data: [] })
     mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountUsers(['/app/admin/users'])
+    mountUsers([ROUTES.dashboard.admin.users])
     await waitFor(() =>
       expect(screen.getByTestId('admin-nav-tab-users')).toHaveAttribute('data-state', 'active'),
     )
@@ -681,7 +682,7 @@ describe('AdminAuditPage', () => {
       success: true,
       data: { logs: [], total: 0, page: 1, per_page: 50 },
     })
-    mountAudit(['/app/admin/audit'])
+    mountAudit([ROUTES.dashboard.admin.audit])
     expect(
       await screen.findByRole('heading', { name: '操作日志' }),
     ).toBeInTheDocument()
@@ -695,7 +696,7 @@ describe('AdminAuditPage', () => {
     })
     mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
     mockAcknowledgeAuditLogs.mockResolvedValue({ success: true, data: { updated: 0 } })
-    mountAudit(['/app/admin/audit'])
+    mountAudit([ROUTES.dashboard.admin.audit])
     await waitFor(() =>
       expect(screen.getByTestId('admin-nav-tab-audit')).toHaveAttribute('data-state', 'active'),
     )
@@ -1025,7 +1026,7 @@ describe('AdminAuditPage', () => {
         per_page: 50,
       },
     })
-    mountAudit(['/app/admin/audit?range=today&page=2'])
+    mountAudit([`${ROUTES.dashboard.admin.audit}?range=today&page=2`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '今天' })).toHaveAttribute('data-state', 'active'),
     )
@@ -1041,7 +1042,7 @@ describe('AdminAuditPage', () => {
       success: true,
       data: { logs: [], total: 0, page: 1, per_page: 50 },
     })
-    mountAudit(['/app/admin/audit?range=custom&start=2026-07-01&end=2026-07-05'])
+    mountAudit([`${ROUTES.dashboard.admin.audit}?range=custom&start=2026-07-01&end=2026-07-05`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '自定义' })).toHaveAttribute('data-state', 'active'),
     )
@@ -1055,7 +1056,7 @@ describe('AdminAuditPage', () => {
       success: true,
       data: { logs: [], total: 0, page: 1, per_page: 50 },
     })
-    mountAudit(['/app/admin/audit?range=invalid'])
+    mountAudit([`${ROUTES.dashboard.admin.audit}?range=invalid`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('data-state', 'active'),
     )
@@ -1081,7 +1082,7 @@ describe('AdminAuditPage', () => {
         per_page: 50,
       },
     })
-    mountAudit(['/app/admin/audit?range=all&page=-1'])
+    mountAudit([`${ROUTES.dashboard.admin.audit}?range=all&page=-1`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('data-state', 'active'),
     )
@@ -1111,7 +1112,7 @@ describe('AdminAuditPage', () => {
         per_page: 50,
       },
     })
-    mountAudit(['/app/admin/audit?range=all&page=abc'])
+    mountAudit([`${ROUTES.dashboard.admin.audit}?range=all&page=abc`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('data-state', 'active'),
     )
@@ -1142,7 +1143,7 @@ describe('AdminAuditPage', () => {
         per_page: 50,
       },
     })
-    mountAudit(['/app/admin/audit?range=today&page=2'])
+    mountAudit([`${ROUTES.dashboard.admin.audit}?range=today&page=2`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '今天' })).toHaveAttribute('data-state', 'active'),
     )
@@ -1206,7 +1207,7 @@ describe('AdminAuditPage', () => {
         per_page: 50,
       },
     })
-    mountAudit(['/app/admin/audit?range=custom&start=2026-07-01&end=2026-07-05&page=2'])
+    mountAudit([`${ROUTES.dashboard.admin.audit}?range=custom&start=2026-07-01&end=2026-07-05&page=2`])
     await waitFor(() =>
       expect(screen.getByRole('tab', { name: '自定义' })).toHaveAttribute('data-state', 'active'),
     )
@@ -1254,254 +1255,6 @@ describe('AdminAuditPage', () => {
   })
 })
 
-// ── AdminNavTabs ────────────────────────────────────────────────────────
-
-describe('AdminNavTabs', () => {
-  it('clicking an inactive tab calls navigate() with the correct path', async () => {
-    const user = userEvent.setup()
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toHaveAttribute('data-state', 'active'),
-    )
-
-    // Click "users" tab — should navigate to /app/admin/users
-    await user.click(screen.getByTestId('admin-nav-tab-users'))
-    expect(mockNavigate).toHaveBeenCalledWith('/app/admin/users')
-
-    // Click "audit" tab — should navigate to /app/admin/audit
-    await user.click(screen.getByTestId('admin-nav-tab-audit'))
-    expect(mockNavigate).toHaveBeenCalledWith('/app/admin/audit')
-  })
-
-  it('shows badge on audit tab when unacknowledged count > 0', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 5 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-audit-badge')).toBeInTheDocument(),
-    )
-    expect(screen.getByTestId('admin-nav-audit-badge')).toHaveTextContent('5')
-  })
-
-  it('caps badge at 99+ when unacknowledged count exceeds 99', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 150 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-audit-badge')).toBeInTheDocument(),
-    )
-    expect(screen.getByTestId('admin-nav-audit-badge')).toHaveTextContent('99+')
-  })
-
-  it('does NOT show badge on audit tab when unacknowledged count is 0', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toHaveAttribute('data-state', 'active'),
-    )
-    expect(screen.queryByTestId('admin-nav-audit-badge')).not.toBeInTheDocument()
-  })
-
-  it('renders keyboard shortcut kbd hints (1 / 2 / 3) on each tab', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toBeInTheDocument(),
-    )
-    // Each tab trigger should contain a <kbd> with its shortcut digit.
-    const overviewTab = screen.getByTestId('admin-nav-tab-overview')
-    const usersTab = screen.getByTestId('admin-nav-tab-users')
-    const auditTab = screen.getByTestId('admin-nav-tab-audit')
-    expect(overviewTab).toHaveTextContent('1')
-    expect(usersTab).toHaveTextContent('2')
-    expect(auditTab).toHaveTextContent('3')
-  })
-
-  it('Cmd+1/2/3 navigates to the corresponding admin tab when on an admin page', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toHaveAttribute('data-state', 'active'),
-    )
-
-    // Cmd+2 → users
-    const user = userEvent.setup()
-    await user.keyboard('{Meta>}{2}{/Meta}')
-    expect(mockNavigate).toHaveBeenCalledWith('/app/admin/users')
-
-    // Cmd+3 → audit
-    await user.keyboard('{Meta>}{3}{/Meta}')
-    expect(mockNavigate).toHaveBeenCalledWith('/app/admin/audit')
-
-    // Cmd+1 → overview
-    await user.keyboard('{Meta>}{1}{/Meta}')
-    expect(mockNavigate).toHaveBeenCalledWith('/app/admin')
-  })
-
-  it('does NOT navigate when Cmd+1/2/3 is pressed outside admin pages', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app']) // NOT an admin page
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toBeInTheDocument(),
-    )
-
-    const user = userEvent.setup()
-    await user.keyboard('{Meta>}{2}{/Meta}')
-    expect(mockNavigate).not.toHaveBeenCalledWith('/app/admin/users')
-  })
-
-  it('does NOT navigate when typing in an input field', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toHaveAttribute('data-state', 'active'),
-    )
-
-    // Add an input to the document and focus it.
-    const input = document.createElement('input')
-    input.type = 'text'
-    document.body.appendChild(input)
-    input.focus()
-
-    const user = userEvent.setup()
-    await user.keyboard('{Meta>}{2}{/Meta}')
-    expect(mockNavigate).not.toHaveBeenCalledWith('/app/admin/users')
-
-    document.body.removeChild(input)
-  })
-
-  it('does NOT navigate when a modal dialog is open', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toHaveAttribute('data-state', 'active'),
-    )
-
-    // Inject a fake open Radix Dialog into the DOM.
-    const dialog = document.createElement('div')
-    dialog.setAttribute('role', 'dialog')
-    dialog.setAttribute('aria-modal', 'true')
-    document.body.appendChild(dialog)
-
-    const user = userEvent.setup()
-    await user.keyboard('{Meta>}{2}{/Meta}')
-    expect(mockNavigate).not.toHaveBeenCalledWith('/app/admin/users')
-
-    document.body.removeChild(dialog)
-  })
-
-  it('does NOT navigate when Shift is held (Shift+Cmd+2)', async () => {
-    mockGetOverview.mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 0,
-        active_today: 0,
-        total_tasks: 0,
-        task_success_rate: 0,
-        recent_actions: [],
-      },
-    })
-    mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 0 } })
-    mountOverview(['/app/admin'])
-    await waitFor(() =>
-      expect(screen.getByTestId('admin-nav-tab-overview')).toHaveAttribute('data-state', 'active'),
-    )
-
-    const user = userEvent.setup()
-    await user.keyboard('{Shift>}{Meta>}{2}{/Meta}{/Shift}')
-    expect(mockNavigate).not.toHaveBeenCalledWith('/app/admin/users')
-  })
-})
-
 // ── AdminAuditPage acknowledgement ──────────────────────────────────────
 
 describe('AdminAuditPage acknowledgement', () => {
@@ -1512,7 +1265,7 @@ describe('AdminAuditPage acknowledgement', () => {
     })
     mockGetUnacknowledgedAuditCount.mockResolvedValue({ success: true, data: { count: 3 } })
     mockAcknowledgeAuditLogs.mockResolvedValue({ success: true, data: { updated: 3 } })
-    mountAudit(['/app/admin/audit'])
+    mountAudit([ROUTES.dashboard.admin.audit])
 
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: '操作日志' })).toBeInTheDocument(),
@@ -1625,7 +1378,7 @@ describe('AdminOverviewPage · v3-mini sparkline + delta', () => {
 //
 //   1. Sort asc via column header click (header caret ↑).
 //   2. Sort desc on second click (caret ↓).
-//   3. Per-column filter input narrows the row model.
+//   3. Single top-level global filter narrows the row model.
 //   4. Column-visibility dropdown hides the tier column.
 //   5. Row multi-select shows the bulk toolbar with selected count.
 //   6. Bulk toolbar 取消选择 unmounts the toolbar.
@@ -1718,14 +1471,14 @@ describe('AdminUsersPage · v3-table · TanStack primitives', () => {
     })
   })
 
-  it('filters rows by typing in the 邮箱 column filter input', async () => {
+  it('filters rows by typing in the single top-level search box', async () => {
     const user = userEvent.setup()
     mountUsersWithThreeRows()
     await waitFor(() =>
       expect(screen.getByText('alice@test.com')).toBeInTheDocument(),
     )
 
-    const filterInput = screen.getByTestId('admin-table-filter-email')
+    const filterInput = screen.getByTestId('admin-table-filter')
     await user.type(filterInput, 'alice')
 
     // Only alice matches the substring; bob and carol hidden by filter.
@@ -1814,6 +1567,118 @@ describe('AdminUsersPage · v3-table · TanStack primitives', () => {
     })
     // Header checkbox reflects 0 selected.
     expect(screen.getByRole('checkbox', { name: '全选' })).not.toBeChecked()
+  })
+})
+
+// ── AdminUsersPage · Founder 身份 surface ──────────────────────────────
+//
+// Two tests pinning the Founder-transfer UI branches added in round
+// ai-api-keys-founder:
+//
+//   (a) `is_founder=true row renders Founder pill inline with role
+//       pill` — locks the row-level rendering contract.
+//       FounderPill is mounted inside RolePill's flex container so
+//       founder rows visually distinguish from plain admins. Without
+//       this assertion, a future refactor that drops the pill
+//       (e.g. moves founder to a dedicated column) would silently
+//       regress the founder visualization across the dashboard,
+//       and existing rows-without-is_founder assertions would still
+//       pass.
+//   (b) `does NOT render Founder dropdown item when viewer is not
+//       founder` — locks the viewer-side conditional. The dropdown
+//       item lives inside an `{isCurrentFounder && (...)}` short-
+//       circuit block, so non-founder viewers see the SAME menu as
+//       before (just "设为管理员" / "设为用户") with the Founder item
+//       entirely absent from the DOM. Mirrors backend's
+//       @founder_required gate so the affordance cannot leak to
+//       non-founders.
+//
+describe('AdminUsersPage · Founder 身份 surface', () => {
+  it('renders Founder pill inline with the role pill when row.is_founder=true', async () => {
+    mockGetUsers.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          id: 7,
+          email: 'founder@test.com',
+          role: 'admin',
+          tier: 'pro',
+          created_at: '2026-04-01T00:00:00+00:00',
+          last_login: '2026-07-05T09:00:00+00:00',
+          is_founder: true,
+        },
+      ],
+    })
+    mountUsers()
+    await waitFor(() =>
+      expect(screen.getByText('founder@test.com')).toBeInTheDocument(),
+    )
+    // Tooltip title validates the explanatory Chinese string ("AI API Key
+    // 唯一管理者 (Founder)"). getByTitle walks the DOM tree for any element
+    // carrying the title attribute; that's the OUTER <span> of FounderPill.
+    // Title text is unique enough to assert globally, so a future refactor
+    // that mistypes it fires the assertion before a charts-page flank can
+    // shadow the change.
+    expect(
+      screen.getByTitle('AI API Key 唯一管理者（Founder）'),
+    ).toBeInTheDocument()
+    // Row-level pair-check: both pills mount in the same row's cell.
+    // Scope to the row to keep the suite robust against future surface
+    // changes (admin sidebar / audit / etc. could reintroduce 管理员/用户
+    // chips and break a global assertion).
+    const founderRow = within(screen.getByRole('table'))
+      .getByText('founder@test.com')
+      .closest('tr')!
+    expect(within(founderRow).getByText('管理员')).toBeInTheDocument()
+    expect(within(founderRow).getByText('Founder')).toBeInTheDocument()
+  })
+
+  it('does NOT render Founder dropdown item when viewer is not founder', async () => {
+    mockGetUsers.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          id: 8,
+          email: 'target@test.com',
+          role: 'admin',
+          tier: 'pro',
+          created_at: '2026-04-01T00:00:00+00:00',
+          last_login: null,
+        },
+      ],
+    })
+    mountUsers()
+    await waitFor(() =>
+      expect(screen.getByText('target@test.com')).toBeInTheDocument(),
+    )
+    // Test harness default: useAuth returns user=null → isCurrentFounder
+    // = false (empirically verified by the existing 59-test suite
+    // running green with the same harness — no useAuth override
+    // needed in this file). The Founder dropdown block is wrapped in
+    // `{isCurrentFounder && (...)}` so the entire item AND its
+    // divider short-circuit out of the DOM. Mirror the backend's
+    // @founder_required gate so the affordance cannot leak to
+    // non-founders. If a future harness refactor makes the default
+    // viewer a founder, this test will surface the change loudly.
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /变更角色/ }))
+    // Sibling role-change menu items remain rendered (we didn't
+    // accidentally break the existing affordance).
+    expect(
+      screen.getByRole('menuitem', { name: '设为管理员' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: '设为用户' }),
+    ).toBeInTheDocument()
+    // Founder transfer item is conditionally hidden — NOT in DOM at
+    // all (not just aria-disabled). Belt for a future refactor that
+    // might leak the item into a hidden-disabled state.
+    expect(
+      screen.queryByRole('menuitem', { name: '移交 Founder 身份' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('founder-transfer-8'),
+    ).not.toBeInTheDocument()
   })
 })
 

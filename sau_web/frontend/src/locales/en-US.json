@@ -1,0 +1,374 @@
+{
+  "locale": {
+    "switch_label": "Switch language",
+    "select_label": "Select language",
+    "name_zh-CN": "中文",
+    "name_en-US": "English"
+  },
+  "marketing": {
+    "topbar": {
+      "nav_label": "Marketing navigation",
+      "mobile_menu_label": "Open menu",
+      "nav": {
+        "home": "Home",
+        "pricing": "Pricing",
+        "hotlist": "Hot List",
+        "about": "About",
+        "login": "Sign In"
+      }
+    },
+    "footer": {
+      "brand": "social-auto-upload",
+      "subtitle": "Multi-platform video auto-publish tool",
+      "copyright": "© social-auto-upload. All rights reserved.",
+      "columns": {
+        "product": {
+          "title": "Product",
+          "features": "Features",
+          "platforms": "Platforms",
+          "pricing": "Pricing"
+        },
+        "resources": {
+          "title": "Resources",
+          "hotlist": "Hot List",
+          "about": "About",
+          "login": "Sign In"
+        },
+        "account": {
+          "title": "Account",
+          "console": "Console",
+          "plans": "Plans"
+        }
+      }
+    },
+    "landing": {
+      "hero": {
+        "badge": "Multi-platform · Local-first · Self-hosted",
+        "headline_1": "One video.",
+        "headline_2": "One command.",
+        "headline_3": "Every platform.",
+        "subhead": "Upload a video, pick an account group, schedule to Douyin / Bilibili / Xiaohongshu / Kuaishou / WeChat Video / Baijia. Stop switching apps, copy-pasting captions, watching each platform feed.",
+        "cta_primary": "Get started →",
+        "cta_secondary": "See what it does",
+        "stat_platforms": "Multi",
+        "stat_platforms_caption": "platform · full coverage",
+        "stat_time": "3h+/day",
+        "stat_time_caption": "saved vs. multi-account chaos",
+        "stat_privacy": "No cloud",
+        "stat_privacy_caption": "your data · your server"
+      },
+      "platforms": {
+        "eyebrow": "Supported platforms",
+        "title_1": "Mainstream Chinese platforms, ",
+        "title_2": "end to end",
+        "description": "Douyin, Bilibili, Xiaohongshu, Kuaishou, WeChat Video, Baijia — one upload, every feed.",
+        "status_mainline": "Mainline",
+        "status_beta": "Beta"
+      },
+      "features": {
+        "eyebrow": "Core capabilities",
+        "title_1": "Four daily headaches.",
+        "title_2": " We automate them.",
+        "description": "Switching apps, hand-writing captions, scheduling queues, account management — the four drags every creator faces.",
+        "publish": {
+          "title": "Batch publish everywhere",
+          "description": "One upload, one group, every feed.",
+          "bullet_1": "One-click group selection",
+          "bullet_2": "Video + image posts",
+          "bullet_3": "Live progress mirror"
+        },
+        "schedule": {
+          "title": "Smart scheduling",
+          "description": "Pre-queue to peak hours, tasks auto-run."
+        },
+        "ai": {
+          "title": "AI captioning",
+          "description": "One tap, multi-platform-native titles and hashtags."
+        },
+        "accounts": {
+          "title": "Account groups",
+          "description": "Group by scenario, live cookie status, expiry nudges.",
+          "bullet_1": "QR code login",
+          "bullet_2": "Cookie health check",
+          "bullet_3": "Group management"
+        }
+      },
+      "how": {
+        "eyebrow": "How it works",
+        "title_1": "Three steps. ",
+        "title_2": "Zero code.",
+        "description": "Upload to publish in under a minute.",
+        "step_upload": { "title": "Upload media", "description": "Drop in your video, fill title + description. AI drafts platform-native copies." },
+        "step_select": { "title": "Pick your group", "description": "Group by creator / team / matrix scenario, tick the target platform accounts." },
+        "step_publish": { "title": "Publish or schedule", "description": "One click to ship everywhere, or queue to peak hours — tasks run unattended." }
+      },
+      "cta": {
+        "eyebrow": "Start now",
+        "title_1": "Hand the publishing pipeline",
+        "title_2": "to the tool.",
+        "description": "Pick your media + groups, scheduled tasks run unattended. No code, no browser extensions.",
+        "cta_primary": "Get started →",
+        "cta_secondary": "View pricing",
+        "trust_private": "Your data · your server",
+        "trust_no_code": "Zero lines of code",
+        "trust_24x7": "Runs 24/7",
+        "trust_full_coverage": "Full platform coverage"
+      }
+    }
+  },
+  "dashboard": {
+    "sidebar": {
+      "section_main": "Workspace",
+      "section_admin": "Admin",
+      "nav": {
+        "accounts": "Accounts",
+        "publish": "Publish",
+        "tasks": "Tasks",
+        "analytics": "Analytics",
+        "logs": "Logs",
+        "inbox": "Inbox",
+        "calendar": "Calendar",
+        "studio": "Script Studio"
+      },
+      "admin": {
+        "root": "Admin",
+        "overview": "Overview",
+        "users": "Users",
+        "audit": "Audit logs"
+      },
+      "footer": {
+        "role_admin": "Admin",
+        "role_user": "User",
+        "email_fallback": "Admin"
+      },
+      "expand_sidebar": "Expand sidebar",
+      "collapse_sidebar": "Collapse sidebar",
+      "toggle_sidebar": "Toggle sidebar",
+      "search_button": "Search",
+      "help_aria": "Keyboard shortcuts",
+      "mobile_nav_label": "Main navigation"
+    }
+  },
+  "common": {
+    "back": "Back",
+    "loading": "Loading…"
+  },
+  "tasks": {
+    "page": {
+      "title": "Tasks",
+      "description": "View and manage all upload tasks",
+      "new_task_button": "New task",
+      "search_placeholder": "Search task ID, platform, account (press / to focus)",
+      "polling_chip": "Polling",
+      "refresh_button": "Refresh",
+      "refresh_aria": "Refresh tasks",
+      "clear_button": "Clear",
+      "clear_dialog": {
+        "title": "Confirm clear",
+        "description": "Clear all completed, failed, and errored tasks?",
+        "confirm": "Clear",
+        "cancel": "Cancel"
+      },
+      "shortcuts": {
+        "r": "Refresh list",
+        "n": "New task",
+        "slash": "Focus search"
+      }
+    },
+    "table": {
+      "header_select_all": "Select all",
+      "header_task_id": "Task ID",
+      "header_platform": "Platform",
+      "header_action": "Action",
+      "header_account": "Account",
+      "header_status": "Status",
+      "header_created": "Created",
+      "header_operations": "Actions",
+      "empty_title": "No tasks yet",
+      "empty_description": "Tasks you create will appear here",
+      "empty_refresh_button": "Refresh list",
+      "filter_title": "Filter \"{{status}}\" tasks"
+    },
+    "row": {
+      "select_aria": "Select task {{id}}",
+      "view_detail_aria": "View task details",
+      "retry_aria": "Retry this task",
+      "retry_tooltip": "Retry this task",
+      "republish_aria": "Re-publish with these task parameters",
+      "republish_tooltip": "Re-publish with these task parameters",
+      "delete_aria": "Delete task",
+      "delete_dialog": {
+        "title": "Confirm delete",
+        "description": "Are you sure you want to delete this task?",
+        "confirm": "Delete",
+        "cancel": "Cancel"
+      },
+      "detail_button": "Details"
+    },
+    "statuses": {
+      "all": "All",
+      "pending": "Pending",
+      "running": "Running",
+      "scheduled": "Scheduled",
+      "success": "Succeeded",
+      "failed": "Failed",
+      "error": "Errored"
+    },
+    "batch": {
+      "selected_count": "{{count}} selected",
+      "clear_selection": "Clear selection",
+      "batch_retry": "Batch retry",
+      "batch_delete": "Batch delete",
+      "batch_retrying": "Batch retrying",
+      "batch_deleting": "Batch deleting",
+      "batch_close": "Close",
+      "batch_collapse_detail": "Collapse details",
+      "batch_expand_detail": "View per-item status",
+      "batch_success_count": "{{count}} succeeded",
+      "batch_failed_count": "{{count}} failed",
+      "batch_delete_dialog": {
+        "title": "Confirm batch delete",
+        "description": "Delete the {{count}} selected tasks? This cannot be undone.",
+        "confirm": "Delete",
+        "cancel": "Cancel"
+      }
+    },
+    "progress": {
+      "empty": "No tasks yet",
+      "done": "Succeeded",
+      "active": "In progress",
+      "failed_combined": "Failed/Errored",
+      "total": "Total"
+    }
+  },
+  "inbox": {
+    "filters": {
+      "all": "All",
+      "downloading": "Downloading",
+      "downloaded": "Downloaded",
+      "failed": "Failed",
+      "transcribing": "Transcribing",
+      "transcribed": "Transcribed"
+    },
+    "batch": {
+      "select_all": "Select all",
+      "unselect_all": "Clear selection",
+      "selected_count": "{{count}} selected",
+      "remove_selected": "Remove selected",
+      "retry_selected": "Retry selected",
+      "transcribe_selected": "Transcribe selected",
+      "collapse_all": "Collapse all",
+      "expand_all": "Expand all"
+    },
+    "filter_empty": {
+      "title": "No matching entries",
+      "clear": "Clear filter"
+    },
+    "row": {
+      "select_aria": "Select",
+      "unselect_aria": "Unselect",
+      "remove_aria": "Remove",
+      "badge": {
+        "downloading": "Downloading",
+        "downloaded": "Downloaded",
+        "failed": "Failed",
+        "transcribing": "Transcribing",
+        "transcribed": "Transcribed"
+      },
+      "transcribe": "Transcribe",
+      "copy": "Copy",
+      "export": "Export",
+      "retranscribe": "Re-transcribe",
+      "transcribing": "Transcribing",
+      "retry": "Retry",
+      "retry_transcribe": "Retry transcribe",
+      "transcript_label": "Transcript · live",
+      "transcript_streaming": "Transcribing…",
+      "transcript_empty": "(empty)",
+      "cookie_expired": {
+        "title": "Platform authorization expired — please sign in again",
+        "description": "Expired cookies may cause download failures. Return to the account management page to re-authorize and resume.",
+        "cta": "Re-authorize in account management"
+      }
+    }
+  },
+  "studio": {
+    "page": {
+      "title": "Script Studio",
+      "description": "Turn a one-line spark into a multi-episode script. Create a project first, then let AI continuously draft candidate episodes around the synopsis — pick the shootable ones and one-click export Seedance 2.0 storyboards.",
+      "cta_create": "New project",
+      "error_create_failed": "Create failed, please try again later",
+      "error_network": "Network error, please try again later",
+      "error_load_failed": "Load failed: {{message}}"
+    },
+    "list": {
+      "empty_title": "No projects yet",
+      "empty_description": "Create your first script project — build a four-act structure around a one-line spark, and turn storyboard generation from thinking into running."
+    },
+    "card": {
+      "status_draft": "Draft",
+      "status_generating": "Generating",
+      "status_ready": "Ready",
+      "status_exported": "Exported",
+      "delete_aria": "Delete project {{title}}",
+      "delete_confirm": "Delete project \"{{title}}\"? This cannot be undone."
+    },
+    "export": {
+      "copy": "Copy Markdown",
+      "download": "Download .md",
+      "bulk_zip": "Export whole project .zip",
+      "bulk_zip_pending": "Packaging…",
+      "copied": "Copied",
+      "copy_failed": "Copy failed, try download instead",
+      "error_zip_failed": "Export failed: {{message}}"
+    }
+  },
+  "publish": {
+    "wizard": {
+      "step_upload": "Upload",
+      "step_content": "Content",
+      "step_review": "Review",
+      "aria_label": "Publish wizard steps",
+      "nav_prev": "Back",
+      "nav_next": "Next",
+      "nav_submit": "Publish",
+      "submit_tooltip": "Publishing…"
+    },
+    "video_form": {
+      "title_placeholder": "Enter video title (6-20 chars recommended)",
+      "desc_placeholder": "Add a description, background notes, or posting remarks",
+      "tags_placeholder": "Press Enter to add tags (# optional)",
+      "button_submit": "Submit video",
+      "button_clear": "Clear",
+      "clear_dialog": {
+        "title": "Clear the form?",
+        "description": "You've filled in {{count}} fields. Clearing will also delete the local draft — this cannot be undone.",
+        "confirm": "Clear",
+        "cancel": "Cancel"
+      },
+      "validation": {
+        "no_group": "Please select an account group and platforms above first",
+        "no_file": "Please choose a video file",
+        "no_title": "Please enter a title"
+      }
+    },
+    "note_form": {
+      "title_placeholder": "Enter a title for the post",
+      "content_placeholder": "Enter the post body — multi-line text wraps automatically",
+      "tags_placeholder": "Press Enter to add tags (# optional)",
+      "button_submit": "Submit post",
+      "button_clear": "Clear",
+      "clear_dialog": {
+        "title": "Clear the form?",
+        "description": "You've filled in {{count}} fields. Clearing will also delete the local draft — this cannot be undone.",
+        "confirm": "Clear",
+        "cancel": "Cancel"
+      },
+      "validation": {
+        "no_group": "Please select an account group and platforms above first",
+        "no_image": "Please add at least one image",
+        "no_title": "Please enter a title"
+      }
+    }
+  }
+}

@@ -154,7 +154,7 @@ export const PublishWizard = memo(function PublishWizard({
   // video ↔ note. The original PublishPage effect fired on every
   // first mount (`mode='video'` was already in deps), wiping any
   // pre-existing pick — so a user who picked accounts and was then
-  // routed back to /app/publish lost their pick silently.
+  // routed back to /dashboard/publish lost their pick silently.
   // `modeHasMounted` ref gate skips the first commit, leaving the
   // reset to fire only on real mode transitions.
   const modeHasMounted = useRef(false)

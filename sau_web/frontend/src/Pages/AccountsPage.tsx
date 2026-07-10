@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/Components/ui/button'
 import { EmptyState } from '@/Components/ui/empty-state'
@@ -17,6 +17,9 @@ import { HomepageOverview } from '@/features/accounts/HomepageOverview'
 import { DialogHost } from '@/features/accounts/dialogs'
 import { Loader2, Plus, RefreshCw, Search, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+import { ROUTES } from '@/routes'
+const BatchRefreshDialog = lazy(() => import('./BatchRefreshDialog'))
 
 /**
  * AccountsPage — App.tsx import target. Composes AccountsShell, which
@@ -51,8 +54,8 @@ function AccountsShell() {
   const dispatch = useAccountsDispatch()
   const navigate = useNavigate()
 
-  const onOpenTasks = useCallback(() => navigate('/tasks'), [navigate])
-  const onOpenPublish = useCallback(() => navigate('/publish'), [navigate])
+  const onOpenTasks = useCallback(() => navigate(ROUTES.dashboard.tasks), [navigate])
+  const onOpenPublish = useCallback(() => navigate(ROUTES.dashboard.publish), [navigate])
 
   const ctxValue = useMemo<AccountsBodyContextValue>(
     () => ({
@@ -120,6 +123,12 @@ export function AccountsBody() {
 
 function HeaderActions() {
   const { state, dispatch } = useAccountsBody()
+  const [refreshOpen, setRefreshOpen] = useState(false)
+
+  const staleCount = useMemo(() => {
+    return state.localGroups.flatMap((g) => g.authorizations).filter((a) => !a.valid || a.stale).length
+  }, [state.localGroups])
+
   return (
     <div className="flex items-center gap-2">
       <Button
@@ -135,10 +144,26 @@ function HeaderActions() {
         />
         {state.isCheckingStatus ? '检测中…' : '一键检测'}
       </Button>
+      {staleCount > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setRefreshOpen(true)}
+          disabled={state.isCheckingStatus}
+          className="gap-1.5"
+          data-tour="refresh-stale"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          刷新过期 ({staleCount})
+        </Button>
+      )}
       <Button size="sm" onClick={() => dispatch.setCreateDialogOpen(true)} data-tour="new-group">
         <Plus className="h-4 w-4 mr-1" />
         新建分组
       </Button>
+      <Suspense fallback={null}>
+        <BatchRefreshDialog open={refreshOpen} onOpenChange={setRefreshOpen} onComplete={() => state.refetch()} />
+      </Suspense>
     </div>
   )
 }

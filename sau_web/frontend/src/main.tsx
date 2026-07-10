@@ -1,7 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { I18nextProvider } from 'react-i18next'
 import './index.css'
+// Default import of the config module ALSO triggers the
+// `void i18n.use(initReactI18next).init({...})` block — Vite/CJS
+// ES-module cache guarantees one module-record per physical file,
+// so importing for the `i18n` default value is also the implicit
+// side-effect that initialises i18next. The <I18nextProvider>
+// below binds that live singleton to React so `useTranslation()`
+// everywhere reads the SAME instance — no double-init, no
+// race-on-bootstrap. See src/lib/i18n/config.ts §"Side-effect
+// import" for the full bootstrap invariants + locale-detection
+// chain.
+import i18n from '@/lib/i18n/config'
 import App from './App.tsx'
 
 /**
@@ -50,7 +62,9 @@ queryClient.setQueryDefaults(['ai-keys'], { staleTime: 300_000 })
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <I18nextProvider i18n={i18n}>
+        <App />
+      </I18nextProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

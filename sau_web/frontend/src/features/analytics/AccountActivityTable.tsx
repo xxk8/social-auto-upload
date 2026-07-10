@@ -5,6 +5,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Pagination,
   Skeleton,
   Table,
   TableBody,
@@ -67,6 +68,16 @@ export const AccountActivityTable = memo(function AccountActivityTable({
       setSortDir('desc')
     }
   }
+
+  // ── pagination ──
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
+  const safePage = Math.min(Math.max(1, page), totalPages)
+  const pageItems = useMemo(
+    () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [sorted, safePage, pageSize],
+  )
 
   const renderSortIcon = (column: SortKey) => {
     if (sortKey !== column) return <ArrowUpDown className="h-3 w-3 opacity-40" />
@@ -171,7 +182,7 @@ export const AccountActivityTable = memo(function AccountActivityTable({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sorted.map((row) => {
+                {pageItems.map((row) => {
                   const tone = row.total > 0 ? pctToTone(row.success_rate * 100) : null
                   return (
                     <TableRow key={`${row.platform}-${row.account}`}>
@@ -209,6 +220,19 @@ export const AccountActivityTable = memo(function AccountActivityTable({
                 })}
               </TableBody>
             </Table>
+            {sorted.length > pageSize && (
+              <Pagination
+                className="border-t-0"
+                page={safePage}
+                pageSize={pageSize}
+                total={sorted.length}
+                onPageChange={setPage}
+                onPageSizeChange={(s) => {
+                  setPageSize(s)
+                  setPage(1)
+                }}
+              />
+            )}
           </div>
         )}
       </CardContent>

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 # ── Image search (Pexels + Pixabay)─────────────────────────────────────
-# AI 助手侧栏 (/app/publish) 的「图片素材」面板从 os.environ 直读 —
+# AI 助手侧栏 (/dashboard/publish) 的「图片素材」面板从 os.environ 直读 —
 # 这里是 Python config no-op。配在 `.env`，不是这里：
 #   PEXELS_API_KEY=<hex>     # https://www.pexels.com/api/   注册后即可获得
 #   PIXABAY_API_KEY=<32位>   # https://pixabay.com/api/docs/

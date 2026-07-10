@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { FormPreviewData } from './previewTypes'
 import type { GroupSelection, PlatformSpecificSection } from './GroupPublishSelector'
 import type { FormHandle } from '@/lib/chat/chatFormBridge'
@@ -165,6 +166,7 @@ export const VideoForm = memo(
     ref,
   ) {
     const { addToast } = useToast()
+    const { t } = useTranslation()
 
     const [title, setTitle] = useState('')
     const [desc, setDesc] = useState('')
@@ -270,8 +272,18 @@ export const VideoForm = memo(
       if (d.title) { setTitle(d.title); restored++ }
       if (d.desc) { setDesc(d.desc); restored++ }
       if (Array.isArray(d.tags)) { setTags(d.tags); if (d.tags.length > 0) restored++ }
+      // Legacy pre-Path-C draft (tags stored as a comma-joined string
+      // in localStorage). The `as typeof draftSnapshot` cast above
+      // narrows `d.tags` to `string[]` for the current snapshot shape,
+      // making this branch UNREACHABLE in the type system — but at
+      // runtime `usePublishDraft` may return a legacy draft where
+      // `tags` is a string. The `@ts-expect-error` on the line below
+      // suppresses the tsc error on the `.split` call (where `d.tags`
+      // is `never` per the narrowed type) while preserving the runtime
+      // legacy handling. If a future refactor widens the cast to
+      // `string[] | string`, the `@ts-expect-error` can be removed.
       else if (typeof d.tags === 'string' && d.tags) {
-        // Legacy pre-Path-C draft: comma-joined string. Parse and re-set.
+        // @ts-expect-error - legacy drafts have `tags: string`; current type cast asserts `string[]`
         const parsed = d.tags.split(/[,，]+/).map((t) => t.trim().replace(/^#+/, '#').replace(/#+/, '#')).filter(Boolean)
         setTags(parsed)
         if (parsed.length > 0) restored++
@@ -537,15 +549,15 @@ export const VideoForm = memo(
 
     const submit = useCallback(async () => {
       if (!groupSelection?.platforms.length) {
-        addToast('请先在上方选择发布账号组和平台', 'warning')
+        addToast(t('publish.video_form.validation.no_group', '请先在上方选择发布账号组和平台'), 'warning')
         return
       }
       if (!fileRef.current) {
-        addToast('请选择视频文件', 'warning')
+        addToast(t('publish.video_form.validation.no_file', '请选择视频文件'), 'warning')
         return
       }
       if (!title.trim()) {
-        addToast('请输入标题', 'warning')
+        addToast(t('publish.video_form.validation.no_title', '请输入标题'), 'warning')
         return
       }
 
@@ -606,6 +618,7 @@ export const VideoForm = memo(
     }, [
       groupSelection,
       title,
+      t,
       desc,
       tags,
       schedule,
@@ -768,7 +781,7 @@ export const VideoForm = memo(
                   <Input
                     id="video-title"
                     name="title"
-                    placeholder="请输入视频标题（建议 6-20 字）"
+                    placeholder={t('publish.video_form.title_placeholder', '请输入视频标题（建议 6-20 字）')}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     maxLength={100}
@@ -798,7 +811,7 @@ export const VideoForm = memo(
                     <Textarea
                       id="video-desc"
                       className="min-h-[90px]"
-                      placeholder="补充视频简介、背景说明或发布备注"
+                      placeholder={t('publish.video_form.desc_placeholder', '补充视频简介、背景说明或发布备注')}
                       value={desc}
                       onChange={(e) => setDesc(e.target.value)}
                       maxLength={1000}
@@ -813,7 +826,7 @@ export const VideoForm = memo(
                       </span>
                     </div>
                     <TagInput
-                      placeholder="按 Enter 添加标签（# 可省略）"
+                      placeholder={t('publish.video_form.tags_placeholder', '按 Enter 添加标签（# 可省略）')}
                       value={tags}
                       onChange={setTags}
                       maxTags={effectiveMaxTags([...activePlatforms])}
@@ -1058,7 +1071,7 @@ export const VideoForm = memo(
         {/* ── 提交按钮 ─────────────────────────────────────────── */}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={handleClearClick}>
-            清空
+            {t('publish.video_form.button_clear', '清空')}
           </Button>
           <Button
             onClick={submit}
@@ -1066,7 +1079,7 @@ export const VideoForm = memo(
             className="btn-elegant"
           >
             {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            提交视频
+            {t('publish.video_form.button_submit', '提交视频')}
           </Button>
         </div>
 
@@ -1084,20 +1097,24 @@ export const VideoForm = memo(
         <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>确认清空表单？</AlertDialogTitle>
+              <AlertDialogTitle>{t('publish.video_form.clear_dialog.title', '确认清空表单？')}</AlertDialogTitle>
               <AlertDialogDescription>
-                当前已填写 {filledFieldCount} 项字段。清空后会同时删除本地草稿，操作不可撤销。
+                {t(
+                  'publish.video_form.clear_dialog.description',
+                  '当前已填写 {{count}} 项字段。清空后会同时删除本地草稿，操作不可撤销。',
+                  { count: filledFieldCount },
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogCancel>{t('publish.video_form.clear_dialog.cancel', '取消')}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   setConfirmClearOpen(false)
                   clearEverything()
                 }}
               >
-                清空
+                {t('publish.video_form.clear_dialog.confirm', '清空')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

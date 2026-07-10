@@ -37,6 +37,7 @@ export function BrandMark({
 }) {
   return (
     <div
+      data-testid="marketing-brand-mark"
       className={cn(
         'flex items-center justify-center rounded-[4px] bg-foreground text-background font-mono font-medium leading-none tracking-tight',
         BRAND_MARK_DIM[size],
@@ -60,7 +61,7 @@ export function BrandMark({
 //  the canonical brand glyph without an extra box. Same `.brand-
 //  cursor` blink cadence as BrandMark.
 //
-//  Used by `/app/inbox`'s URL auto-detect strip (locked, NOT URL-
+//  Used by `/dashboard/inbox`'s URL auto-detect strip (locked, NOT URL-
 //  driven — pair of `<BrandGlyph>` + platform name + mono engine
 //  label). See `Pages/InboxPage.tsx::BrandGlyph call site` for
 //  the rationale comment.
@@ -69,7 +70,7 @@ export function BrandMark({
 //  rendered with the `.brand-cursor` keyframe applied. When
 //  `false`, only the static `>` prefix is emitted — no trailing
 //  cursor span, no blink. Reserved for surfaces where N > 1
-//  glyphs render in close proximity (e.g. the `/app/inbox`
+//  glyphs render in close proximity (e.g. the `/dashboard/inbox`
 //  "支持下载" chip strip's 15 chips), where in-sync blinking reads
 //  as visual repetition noise rather than brand identity. Count==1
 //  surfaces (PageHeader title slug / per-row leading slot / URL

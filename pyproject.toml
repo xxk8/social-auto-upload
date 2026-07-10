@@ -25,14 +25,24 @@ dependencies = [
 sau = "sau_cli:main"
 
 [project.optional-dependencies]
+# Round-Video-Backgrounds-v1: the Studio render now uses Remotion only
+# (the MoviePy fallback was deleted along with `web_runner/studio_render.py`
+# + `tests/test_studio_render.py`). MoviePy/Pillow/pysubs2 are no longer
+# Studio deps; Pillow stays as a top-level dep for visual-content
+# steganography / screenshot utilities under `utils/anti_detect/`.
+# Edge-TTS CLI (used to synthesise per-scene voiceover MP3s) is added
+# here so a fresh `pip install -e .[web]` lands it on PATH alongside
+# ffmpeg / patchright.
 web = [
   "Flask[async]==3.1.1",
   "aiohttp>=3.9.5",
   "aiohttp-cors>=0.8.1",
+  "authlib>=1.3",
   "duckduckgo-search>=7.0.0",
+  "edge-tts>=6.1.9",
   "flask-cors==6.0.0",
   "websocket-client>=1.8.0",
-]# Enables PostgreSQL as the Web backend's persistent store.
+ ]# Enables PostgreSQL as the Web backend's persistent store.
 # Used by openspec/changes/migrate-sqlite-to-postgresql-19 (PR2/PR3+).
 # The `web` extra remains SQLite-only (legacy dev path). Install only one of:
 #   uv pip install -e ".[web]"        # SQLite only

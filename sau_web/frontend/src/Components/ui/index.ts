@@ -14,6 +14,7 @@ export * from "./input";
 export * from "./label";
 export * from "./multi-select";
 export * from "./page-header";
+export * from "./pagination";
 export * from "./platform-icon";
 export * from "./popover";
 export * from "./progress";

@@ -1,5 +1,3 @@
-"""Unit tests for public-inbox kill criteria.
-
 Coverage:
   * _evaluate: per-metric threshold rule + min_sample_size floor + NOT_IMPLEMENTED
   * _cascade_overall: CRUISE / WATCHFUL / STOP-SHIP / INSUFFICIENT_DATA verdict cascade
@@ -11,7 +9,6 @@ Coverage:
 from __future__ import annotations
 
 import json
-import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,6 +26,44 @@ import public_inbox_kill_criteria as kc  # noqa: E402
 from web_runner.routes import public_inbox_kill_criteria as route_module  # noqa: E402
 
 # ── Test fixtures ─────────────────────────────────────────────────
+
+
+
+
+# ── Test isolation: clean public-inbox tables per-test ──────────────────
+
+
+@pytest.fixture(autouse=True)
+def _clean_kc_tables():
+    """Wipe the public-inbox tables before AND after each test.
+
+    Post-SQLite-removal: name preserved for back-compat with the prior
+    in-memory sqlite fixture. Now returns ``get_database()`` (production
+    PG) so the existing ``_seed_recent`` + test method signatures work
+    unchanged. Tests use the production PG via ``get_database()`` and rely on
+    per-test cleanup for isolation.
+    """
+    from web_runner.db import get_database
+    db = get_database()
+    for sql in (
+        "DELETE FROM guest_usage_logs",
+        "DELETE FROM reward_events",
+        "DELETE FROM users",
+    ):
+        try:
+            db.execute(sql)
+        except Exception:
+            pass
+    yield
+    for sql in (
+        "DELETE FROM guest_usage_logs",
+        "DELETE FROM reward_events",
+        "DELETE FROM users",
+    ):
+        try:
+            db.execute(sql)
+        except Exception:
+            pass
 
 
 @pytest.fixture

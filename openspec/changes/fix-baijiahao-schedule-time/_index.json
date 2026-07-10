@@ -18,5 +18,8 @@
   ],
   "parentChange": "cli-uploader-architecture-consistency",
   "parentTaskReference": "Task 4.4 (add FIXME annotation — to be removed by this change once implemented)",
-  "applyReady": false
+  "applyReady": false,
+  "specs": [
+    "specs/baijiahao-schedule-time/spec.md"
+  ]
 }

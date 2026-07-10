@@ -1,0 +1,12 @@
+{
+  "name": "studio-visual-presets",
+  "kind": "feature",
+  "title": "Visual Style Presets for the Studio Renderer",
+  "summary": "Ship 4 visual presets (Classic + Noir + Vibrant + Minimalist) selectable from a dropdown beside the 渲染成片 button. PG JSONB column carries the chosen preset id; backend is a pure pass-through so the TS catalog is the single source of truth.",
+  "owners": ["@studio", "@frontend"],
+  "status": "in-review",
+  "depends_on": [],
+  "supersedes": [],
+  "related": ["studio-ai-video-renderer", "studio-remotion-renderer", "studio-whiteboard"],
+  "specs": ["visual-presets"]
+}

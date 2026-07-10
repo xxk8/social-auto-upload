@@ -60,7 +60,7 @@ Button:
   recipe-examples:
     primary-cta: '<Button type="submit" loading={isPending}>发布</Button>'
     icon-only:   '<Button variant="ghost" size="icon" aria-label="关闭"><X className="h-4 w-4" /></Button>'
-    as-link:     '<Button asChild variant="link"><Link to="/app/tasks">查看任务</Link></Button>'
+    as-link:     '<Button asChild variant="link"><Link to="/dashboard/tasks">查看任务</Link></Button>'
   recipe-supply-chain: |
     The cva recipe driving these variants is the module-local `buttonVariants`
     const in `button.tsx`. It is consumed by `<Button>` AND by the
@@ -311,7 +311,7 @@ SidebarRow:
   props:
     label: "Visible row label (Chinese or English). e.g. '账号管理', '发布中心'."
     icon: "Lucide icon component. e.g. Users, Send, BarChart3, LineChart, FileText."
-    path: "React Router path. e.g. '/app/publish'. Active detection is `pathname === path`."
+    path: "React Router path. e.g. '/dashboard/publish'. Active detection is `pathname === path`."
     isActive: "Computed from `location.pathname === path` (NOT from a prop). The row is active by location, not by feature flag."
     tour-anchor: "Use `data-tour='nav-publish'` (or similar) to expose the row to the OnboardingTour step anchors."
   recipe-examples:

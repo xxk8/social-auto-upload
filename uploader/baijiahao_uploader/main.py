@@ -10,34 +10,30 @@ from patchright.async_api import Page, Playwright, async_playwright
 from conf import LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
 from uploader.common import (
+    MAX_NAV_POLL,
+    MAX_UPLOAD_POLL,
     _all_login_markers_hidden,
     _build_login_result,
     _check_login_markers,
     _emit_qrcode_callback,
     _msg,
 )
+from uploader.baijiahao_uploader.locators import BaijiahaoLocators as L
 from utils.anti_detect import obfuscate_video
 from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
 from utils.log import baijiahao_logger
-from utils.login_qrcode import (
-    build_login_qrcode_path,
-    decode_qrcode_from_path,
-    print_terminal_qrcode,
-    remove_qrcode_file,
-    save_data_url_image,
-)
 from utils.network import async_retry
 
-BAIJIAHAO_LOGIN_URL = 'https://baijiahao.baidu.com/builder/theme/bjh/login'
-BAIJIAHAO_HOME_URL = 'https://baijiahao.baidu.com/builder/rc/home'
+BAIJIAHAO_LOGIN_URL = L.LOGIN_URL
+BAIJIAHAO_HOME_URL = L.HOME_URL
 
 async def _extract_baijiahao_qrcode_src(page: Page) -> str:
-    qrcode_img = page.locator('div[class*="qrcode"] img, div[class*="qr"] img, .qr-code-img').first
+    qrcode_img = page.locator(L.QR_IMG_PRIMARY).first
     if not await qrcode_img.count():
-        qrcode_img = page.locator('img[alt*="二维码"], img[alt*="QR"], img[alt*="qr"]').first
+        qrcode_img = page.locator(L.QR_IMG_ALT).first
     if not await qrcode_img.count():
-        qrcode_img = page.locator('img[src*="passport.baidu.com"], img[src*="qrcode"]').first
+        qrcode_img = page.locator(L.QR_IMG_SRC).first
     await qrcode_img.wait_for(state='visible', timeout=30000)
     src = await qrcode_img.get_attribute('src')
     if not src:
@@ -46,7 +42,7 @@ async def _extract_baijiahao_qrcode_src(page: Page) -> str:
 
 async def _open_baijiahao_login_modal(page: Page) -> None:
     """Click to open the Baidu Passport login modal if it is not already visible."""
-    login_triggers = [page.get_by_text('登录', exact=True).first, page.get_by_role('button', name='登录').first, page.locator('a:has-text("登录")').first, page.locator('button:has-text("登录")').first]
+    login_triggers = [page.get_by_text(L.LOGIN_TRIGGER_TEXT, exact=True).first, page.get_by_role('button', name=L.LOGIN_TRIGGER_ROLE_BUTTON).first, page.locator(L.LOGIN_TRIGGER_LINK).first, page.locator(L.LOGIN_TRIGGER_BUTTON).first]
     for trigger in login_triggers:
         try:
             if await trigger.count() and await trigger.is_visible():
@@ -57,30 +53,41 @@ async def _open_baijiahao_login_modal(page: Page) -> None:
             continue
     baijiahao_logger.info(_msg('🧍', '未找到登录按钮，假设二维码已在页面上'))
 
-async def _save_baijiahao_qrcode(page: Page, account_file: str, previous_qrcode_path: Path | None=None, qrcode_callback=None) -> dict:
-    qrcode_src = await _extract_baijiahao_qrcode_src(page)
-    qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
-    if previous_qrcode_path and previous_qrcode_path != qrcode_path:
-        if remove_qrcode_file(previous_qrcode_path):
-            baijiahao_logger.info(_msg('🧹', f'临时二维码文件已清理: {previous_qrcode_path}'))
-    baijiahao_logger.info(_msg('🖼️', f'二维码已经准备好啦，已保存到: {qrcode_path}'))
-    qrcode_content = decode_qrcode_from_path(qrcode_path)
-    if qrcode_content:
-        print_terminal_qrcode(qrcode_content, qrcode_path, '百度APP')
-    else:
-        baijiahao_logger.warning(_msg('😵', f'终端没法完整显示二维码，请打开 {qrcode_path} 扫码'))
-    qrcode_info = {'image_path': str(qrcode_path), 'image_data_url': qrcode_src}
+async def _save_baijiahao_qrcode(page: Page, account_file: str, qrcode_callback=None) -> dict:
+    """Extract QR via DOM <img> src. No local PNG file is written.
+
+    Per round-OPT-acct-qr cleanup (2026-07-10), the baijiahao login flow
+    is data-URL only — the platform's own QR <img> ``src`` is forwarded
+    to the Web Shell via the SSE ``image_data_url`` field. The prior
+    CLI direct-path ``save_data_url_image(...)`` round-trip and the
+    ``decode_qrcode_from_path`` → ``print_terminal_qrcode`` zxing
+    terminal-ASCII chain were both removed because:
+      * CLI direct-path users (no ``qrcode_callback``) get a friendly
+        warning instead of a local file; the web shell is the canonical
+        QR scanning surface.
+      * Removing the zxing decode also removes the unreliable cropped
+        QR decode path (cf. ``tests/test_login_qrcode.py`` for the prior
+        zxing→pyzbar fallback chain).
+    """
+    try:
+        qrcode_src = await _extract_baijiahao_qrcode_src(page)
+    except Exception as exc:
+        baijiahao_logger.warning(_msg('😵', f'没定位到百家号登录二维码元素（{str(exc)[:50]}）——请直接在弹出的浏览器里扫码，小人继续等登录跳转'))
+        qrcode_src = ''
+    if not qrcode_src:
+        baijiahao_logger.warning(_msg('😵', '没拿到百家号登录二维码——请直接在弹出的浏览器里扫码，小人继续等登录跳转'))
+    qrcode_info: dict = {'image_path': '', 'image_data_url': qrcode_src}
     await _emit_qrcode_callback(qrcode_callback, qrcode_info)
     return qrcode_info
 
 async def _is_baijiahao_login_completed(page: Page) -> bool:
     current_url = page.url
-    if 'baijiahao.baidu.com/builder/rc/home' in current_url:
+    if L.LOGIN_COMPLETED_HOME in current_url:
         return True
-    if 'baijiahao.baidu.com/builder/rc/edit' in current_url:
+    if L.LOGIN_COMPLETED_EDIT in current_url:
         return True
     # 如果页面还在 baijiahao.baidu.com 域下但没有登录文本，说明已登录
-    if 'baijiahao.baidu.com' in current_url and await _all_login_markers_hidden(page, ['注册/登录百家号']):
+    if 'baijiahao.baidu.com' in current_url and await _all_login_markers_hidden(page, [L.LOGIN_MARKER_TEXT]):
         return True
     return False
 
@@ -97,7 +104,6 @@ async def baijiahao_cookie_gen(account_file, qrcode_callback=None, headless: boo
         browser = await playwright.chromium.launch(headless=headless, args=['--lang en-GB'])
         context = await browser.new_context()
         context = await set_init_script(context)
-        qrcode_path = None
         result = _build_login_result(False, 'failed', '百家号登录失败', account_file)
         try:
             page = await context.new_page()
@@ -106,7 +112,6 @@ async def baijiahao_cookie_gen(account_file, qrcode_callback=None, headless: boo
             await asyncio.sleep(2)
             await _open_baijiahao_login_modal(page)
             qrcode_info = await _save_baijiahao_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info['image_path'])  # noqa: F841
             baijiahao_logger.info(_msg('🧍', '请扫码，正在等待百家号登录完成'))
             result = await _wait_for_baijiahao_login(page, account_file, qrcode_info, qrcode_callback=qrcode_callback, poll_interval=poll_interval, max_checks=max_checks)
             if result['success']:
@@ -117,8 +122,6 @@ async def baijiahao_cookie_gen(account_file, qrcode_callback=None, headless: boo
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError, RuntimeError) as exc:
             result = _build_login_result(False, 'failed', str(exc), account_file, current_url=page.url if 'page' in locals() else '')
         finally:
-            if remove_qrcode_file(qrcode_path):
-                baijiahao_logger.info(_msg('🧹', f'临时二维码文件已清理: {qrcode_path}'))
             if not result['success']:
                 baijiahao_logger.error(_msg('😢', f"登录失败: {result['message']}"))
             await context.close()
@@ -133,7 +136,7 @@ async def cookie_auth(account_file):
         page = await context.new_page()
         await page.goto('https://baijiahao.baidu.com/builder/rc/home')
         await page.wait_for_timeout(timeout=5000)
-        if await _check_login_markers(page, ['注册/登录百家号']):
+        if await _check_login_markers(page, [L.LOGIN_MARKER_TEXT]):
             baijiahao_logger.error('等待5秒 cookie 失效')
             return False
         else:
@@ -231,35 +234,35 @@ class BaiJiaHaoVideo(BaseVideoUploader):
         """
         publish_date_day = f'{publish_date.month}月{publish_date.day}日' if publish_date.day > 9 else f'{publish_date.month}月0{publish_date.day}日'
         publish_date_hour = f'{publish_date.hour}点'
-        await page.wait_for_selector('div.select-wrap', timeout=5000)
+        await page.wait_for_selector(L.SCHEDULE_SELECT_WRAP, timeout=5000)
         for _ in range(3):
             try:
-                await page.locator('div.select-wrap').nth(0).click()
-                await page.wait_for_selector('div.rc-virtual-list  div.cheetah-select-item', timeout=5000)
+                await page.locator(L.SCHEDULE_SELECT_WRAP).nth(0).click()
+                await page.wait_for_selector(L.SCHEDULE_OPTION_LIST, timeout=5000)
                 break
             except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
-                await page.locator('div.select-wrap').nth(0).click()
+                await page.locator(L.SCHEDULE_SELECT_WRAP).nth(0).click()
         await page.wait_for_timeout(2000)
-        await page.locator(f'div.rc-virtual-list  div.cheetah-select-item >> text={publish_date_day}').click()
+        await page.locator(f'{L.SCHEDULE_OPTION_LIST} >> text={publish_date_day}').click()
         await page.wait_for_timeout(2000)
         for _ in range(3):
             try:
-                await page.locator('div.select-wrap').nth(1).click()
-                await page.wait_for_selector('div.rc-virtual-list div.rc-virtual-list-holder-inner:visible', timeout=5000)
+                await page.locator(L.SCHEDULE_SELECT_WRAP).nth(1).click()
+                await page.wait_for_selector(L.SCHEDULE_OPTION_LIST_HOLDER, timeout=5000)
                 break
             except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
-                await page.locator('div.select-wrap').nth(1).click()
+                await page.locator(L.SCHEDULE_SELECT_WRAP).nth(1).click()
         await page.wait_for_timeout(2000)
         # Playwright text= 默认是 substring 匹配 —— `text=2点` 会同时命中 "12点" / "22点"。
         # `get_by_text(..., exact=True)` 强制精确匹配, 与上方 day 的 `text={day}` substring
         # 恰好不冲突 (day 只取 month+day, 没有 day=1 vs day=11/21 这种前缀碰撞风险)。
         try:
-            await page.locator('div.rc-virtual-list:visible div.cheetah-select-item-option').get_by_text(publish_date_hour, exact=True).click()
+            await page.locator(L.SCHEDULE_OPTION_LIST_VISIBLE).get_by_text(publish_date_hour, exact=True).click()
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             # 设计 D2: 错误消息必须包含 requested hour + 实际可见 options, 让 AC #4 probe 能
             # 从日志/堆栈直接读到 dropdown 实际渲染的文本格式 (无需重跑也能诊断)。
             try:
-                available = await page.locator('div.rc-virtual-list:visible div.cheetah-select-item-option').all_inner_texts()
+                available = await page.locator(L.SCHEDULE_OPTION_LIST_VISIBLE).all_inner_texts()
             except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 available = ['<unavailable — dropdown may have closed after timeout>']
             # Empty-list vs unavailable-str have different operator-facing semantics —
@@ -275,11 +278,11 @@ class BaiJiaHaoVideo(BaseVideoUploader):
                 f'openspec/changes/fix-baijiahao-schedule-time/ AC #4 真实账号 probe 任务。'
             ) from exc
         await page.wait_for_timeout(2000)
-        await page.locator('button >> text=定时发布').click()
+        await page.locator(L.SCHEDULE_SUBMIT_BUTTON).click()
 
     async def handle_upload_error(self, page):
         baijiahao_logger.error('视频出错了，重新上传中')
-        await page.locator("div[class^='video-main-container'] input").set_input_files(self.file_path)
+        await page.locator(L.FILE_INPUT).set_input_files(self.file_path)
 
     async def upload(self, playwright: Playwright) -> None:
         await self.validate_upload_args()
@@ -287,18 +290,20 @@ class BaiJiaHaoVideo(BaseVideoUploader):
         context = await browser.new_context(storage_state=f'{self.account_file}', user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.4324.150 Safari/537.36')
         await context.grant_permissions(['geolocation'])
         page = await context.new_page()
-        await page.goto('https://baijiahao.baidu.com/builder/rc/edit?type=videoV2', timeout=60000)
+        await page.goto(L.EDIT_URL, timeout=60000)
         baijiahao_logger.info(f'正在上传-------{self.title}.mp4')
         baijiahao_logger.info('正在打开主页...')
-        await page.wait_for_url('https://baijiahao.baidu.com/builder/rc/edit?type=videoV2', timeout=60000)
-        await page.locator("div[class^='video-main-container'] input").set_input_files(self.file_path)
-        while True:
+        await page.wait_for_url(L.EDIT_URL, timeout=60000)
+        await page.locator(L.FILE_INPUT).set_input_files(self.file_path)
+        for _ in range(MAX_NAV_POLL):
             try:
-                await page.wait_for_selector('div#formMain:visible')
+                await page.wait_for_selector(L.FORM_MAIN)
                 break
             except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 baijiahao_logger.info('正在等待进入视频发布页面...')
                 await asyncio.sleep(0.1)
+        else:
+            raise TimeoutError('等待进入百家号视频发布页面超时')
         await asyncio.sleep(1)
         baijiahao_logger.info('正在填充标题和话题...')
         await self.add_title_tags(page)
@@ -306,20 +311,22 @@ class BaiJiaHaoVideo(BaseVideoUploader):
         if not upload_status:
             baijiahao_logger.error(f'发现上传出错了... 文件:{self.file_path}')
             raise
-        while True:
+        for _ in range(MAX_UPLOAD_POLL):
             baijiahao_logger.info('正在确认封面完成, 准备去点击定时/发布...')
-            if await page.locator('div.cheetah-spin-container img').count():
+            if await page.locator(L.COVER_IMAGE).count():
                 baijiahao_logger.info('封面已完成，点击定时/发布...')
                 break
             else:
                 baijiahao_logger.info('等待封面生成...')
                 await asyncio.sleep(3)
+        else:
+            raise TimeoutError('等待百家号封面生成超时')
         await self.publish_video(page, self.publish_date)
         await page.wait_for_timeout(2000)
-        if await page.locator('div.passMod_dialog-container >> text=百度安全验证:visible').count():
+        if await page.locator(L.SECURITY_VERIFY_DIALOG).count():
             baijiahao_logger.error('出现验证，退出')
             raise Exception('出现验证，退出')
-        await page.wait_for_url('https://baijiahao.baidu.com/builder/rc/clue**', timeout=5000)
+        await page.wait_for_url(L.MANAGE_URL_PATTERN, timeout=5000)
         baijiahao_logger.success('视频发布成功')
         await context.storage_state(path=self.account_file)
         baijiahao_logger.info('cookie更新完毕！')
@@ -329,12 +336,12 @@ class BaiJiaHaoVideo(BaseVideoUploader):
 
     @async_retry(timeout=300)
     async def uploading_video(self, page):
-        while True:
-            upload_failed = await page.locator('div .cover-overlay:has-text("上传失败")').count()
+        for _ in range(MAX_UPLOAD_POLL):
+            upload_failed = await page.locator(L.UPLOAD_FAILED_OVERLAY).count()
             if upload_failed:
                 baijiahao_logger.error('发现上传出错了...')
                 return False
-            uploading = await page.locator('div .cover-overlay:has-text("上传中")').count()
+            uploading = await page.locator(L.UPLOADING_OVERLAY).count()
             if uploading:
                 baijiahao_logger.info('正在上传视频中...')
                 await asyncio.sleep(2)
@@ -342,13 +349,16 @@ class BaiJiaHaoVideo(BaseVideoUploader):
             if not uploading and (not upload_failed):
                 baijiahao_logger.success('视频上传完毕')
                 return True
+        else:
+            baijiahao_logger.error('等待百家号视频上传超时')
+            return False
 
     async def set_schedule_publish(self, page, publish_date):
         while True:
-            schedule_element = page.locator('div.op-btn-outter-content >> text=定时发布').locator('..').locator('button')
+            schedule_element = page.locator(L.SCHEDULE_PUBLISH_ENTRY).locator('..').locator('button')
             try:
                 await schedule_element.click()
-                await page.wait_for_selector('div.select-wrap:visible', timeout=3000)
+                await page.wait_for_selector(L.SCHEDULE_SELECT_WRAP_VISIBLE, timeout=3000)
                 await page.wait_for_timeout(timeout=2000)
                 baijiahao_logger.info('开始点击发布定时...')
                 await self.set_schedule_time(page, publish_date)
@@ -366,7 +376,7 @@ class BaiJiaHaoVideo(BaseVideoUploader):
 
     async def direct_publish(self, page):
         try:
-            publish_button = page.locator('button >> text=发布')
+            publish_button = page.locator(L.PUBLISH_BUTTON)
             if await publish_button.count():
                 await publish_button.click()
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
@@ -374,7 +384,7 @@ class BaiJiaHaoVideo(BaseVideoUploader):
             raise
 
     async def add_title_tags(self, page):
-        title_container = page.get_by_placeholder('添加标题获得更多推荐')
+        title_container = page.get_by_placeholder(L.TITLE_PLACEHOLDER)
         if len(self.title) <= 8:
             self.title += ' 你不知道的'
         await title_container.fill(self.title[:30])
@@ -388,10 +398,10 @@ class BaiJiaHaoVideo(BaseVideoUploader):
         context = await browser.new_context(viewport={'width': 1600, 'height': 900}, storage_state=f'{self.account_file}', user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.4324.150 Safari/537.36')
         await context.grant_permissions(['geolocation'])
         page = await context.new_page()
-        await page.goto('https://aigc.baidu.com/make', timeout=60000)
+        await page.goto(L.AIGC_URL, timeout=60000)
         baijiahao_logger.info('正在打开主页...')
-        await page.wait_for_url('https://aigc.baidu.com/make', timeout=60000)
-        await page.locator('div.rounded-lg.border:has-text("全网")').click()
+        await page.wait_for_url(L.AIGC_URL, timeout=60000)
+        await page.locator(L.AIGC_ALL_NETWORK).click()
         await asyncio.sleep(1)
         now = datetime.now()
         datetime_str = now.strftime('%Y%m%d%H%M')

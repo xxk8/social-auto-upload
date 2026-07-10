@@ -8,8 +8,8 @@ import { test, expect, type Page } from '@playwright/test'
  * canvas onto the industrial-tool canvas:
  *
  *   (A) Active AppShell sidebar nav row
- *       (the "/app" → navItems[0] ("账号管理") row,
- *        which is active when location.pathname === "/app"):
+ *       (the "/dashboard" → navItems[0] ("账号管理") row,
+ *        which is active when location.pathname === "/dashboard"):
  *       - The row's OWN background is transparent (no
  *         `bg-foreground/[0.08]` row-level fill — the prior
  *         Linear signature that read "soft SaaS row hover").
@@ -52,7 +52,7 @@ import { test, expect, type Page } from '@playwright/test'
  * at the source of truth. Test #3 is a sanity that the utilities
  * AND the cascade remain in sync.
  *
- * Auth flipping race: After `goto('/app')`, AuthGuard mounts and
+ * Auth flipping race: After `goto('/dashboard')`, AuthGuard mounts and
  * reads `useAuth()` which sources `isAuthenticated` (from the
  * store directly) and `isLoading` (composed as rq-state
  * ORed-with store-state via `isLoading: isLoading || store.isLoading`).
@@ -219,13 +219,13 @@ test.describe('Engineering-tool aesthetic locks · linear-hairline + tightened r
   })
 
   test('active sidebar nav row locks: text-foreground + 2px bg-primary hairline, no block-fill', async ({ page }) => {
-    await page.goto('/app')
-    // /app is navItems[0].path → first sidebar nav link
-    // ("账号管理") is active when pathname === '/app'. AccountPage
+    await page.goto('/dashboard')
+    // /dashboard is navItems[0].path → first sidebar nav link
+    // ("账号管理") is active when pathname === '/dashboard'. AccountPage
     // mounts at AppShell's inner `/` route, which (via the outer
-    // `<Route path="/app/*" element={<AppShell/>}>` wrapper) is
-    // mounted for /app/accounts because the inner `<Route path="/">`
-    // matches /app as the layout root.
+    // `<Route path="/dashboard/*" element={<AppShell/>}>` wrapper)
+    // mounted for /dashboard because the inner `<Route path="/">`
+    // matches /dashboard as the layout root.
 
     const activeLink = page.getByRole('link', { name: '账号管理' })
     await expect(activeLink).toBeVisible()
@@ -316,7 +316,7 @@ test.describe('Engineering-tool aesthetic locks · linear-hairline + tightened r
   })
 
   test('--radius cascade locks: sm=2px, md=4px, lg=6px, xl=10px at :root', async ({ page }) => {
-    await page.goto('/app')
+    await page.goto('/dashboard')
 
     // Wait for React mount + Vite async CSS injection before reading
     // computed styles. Without this wait, `getComputedStyle` may run
@@ -372,7 +372,7 @@ test.describe('Engineering-tool aesthetic locks · linear-hairline + tightened r
   })
 
   test('Tailwind rounded-{sm,md,lg,xl} utilities bound to the cascade', async ({ page }) => {
-    await page.goto('/app')
+    await page.goto('/dashboard')
 
     // Wait for React mount + Vite async CSS injection (same as test #2).
     await expect(page.getByRole('link', { name: '账号管理' })).toBeVisible()

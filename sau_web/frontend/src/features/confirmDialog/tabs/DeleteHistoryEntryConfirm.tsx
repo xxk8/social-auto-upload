@@ -8,7 +8,7 @@
 // its `target.type === 'history'` branch).
 //
 // Future trigger sites that need a history-specific confirm (e.g.
-// a dedicated "clear history" button at /app/logs) can render this
+// a dedicated "clear history" button at /dashboard/logs) can render this
 // tab directly via:
 //
 //   <DeleteHistoryEntryConfirm

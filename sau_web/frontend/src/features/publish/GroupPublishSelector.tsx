@@ -23,6 +23,7 @@ import type { AccountGroup } from '@/api/client'
 import { PLATFORMS, NOTE_PLATFORMS } from '@/api/client'
 import { LoginProgressModal } from '@/Components/LoginProgressModal'
 
+import { ROUTES } from '@/routes'
 /**
  * OPT-3G — the three platforms that have dedicated, conditional
  * accordion sections in the wizard's advanced options (商品链接
@@ -327,7 +328,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => navigate('/app/accounts')}
+                      onClick={() => navigate(ROUTES.dashboard.root)}
                     >
                       前往账号管理 →
                     </Button>

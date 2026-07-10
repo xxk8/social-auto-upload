@@ -28,7 +28,6 @@ import {
   AlertCircle,
   Terminal,
   Shield,
-  Download,
 } from 'lucide-react'
 import { Button } from '@/Components/ui/button'
 import { CliCommandBlock } from '@/Components/CliCommand'
@@ -526,31 +525,16 @@ export function LoginProgressModal({
                         (data: URL) into a Blob and triggers a programmatic download.
                         Native <a download href="data:..."> is unreliable across
                         browsers; the Blob dance works in all of them. */}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="mt-4"
-                      onClick={() => {
-                        const [meta, b64] = qrCodeUrl.split(',', 2)
-                        const mime = meta.match(/data:([^;]+)/)?.[1] ?? 'image/png'
-                        const bin = atob(b64)
-                        const bytes = new Uint8Array(bin.length)
-                        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-                        const blob = new Blob([bytes], { type: mime })
-                        const url = URL.createObjectURL(blob)
-                        const a = document.createElement('a')
-                        a.href = url
-                        a.download = `${platformLabel}-${groupName}-qr.png`
-                        document.body.appendChild(a)
-                        a.click()
-                        a.remove()
-                        URL.revokeObjectURL(url)
-                      }}
-                    >
-                      <Download className="h-3.5 w-3.5 mr-1.5" />
-                      保存为 PNG
-                    </Button>
+                    {/* Save-as-PNG affordance removed: per round-OPT-acct-qr
+                       cleanup (2026-07-10), the Web Shell's QR flow is
+                       data-URL only (no local image capture / no PNG
+                       round-trip). Users who can't see the inline <img>
+                       should switch to the headed browser (where the
+                       platform's own QR <img> is visible) or copy the
+                       URL directly from DevTools. Adding a
+                       "保存为 PNG" button here would re-introduce the
+                       local file artifact that the user asked us to
+                       remove end-to-end. */}
                   </div>
                 </motion.div>
               )}

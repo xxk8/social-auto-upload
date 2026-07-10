@@ -25,7 +25,7 @@ function makeQueryClient() {
 function mountProfile() {
   return render(
     <QueryClientProvider client={makeQueryClient()}>
-      <MemoryRouter initialEntries={['/app/account']}>
+      <MemoryRouter initialEntries={['/dashboard/account']}>
         <ProfilePage />
       </MemoryRouter>
     </QueryClientProvider>,

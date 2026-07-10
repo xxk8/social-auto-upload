@@ -53,7 +53,14 @@
 //     Comments at the top of this file.
 // ──────────────────────────────────────────────────────────────────────────
 
-import { LogOut, Info, Settings as SettingsIcon, Sun, User } from 'lucide-react'
+import {
+  LayoutGrid,
+  LogOut,
+  Info,
+  Settings as SettingsIcon,
+  Sun,
+  User,
+} from 'lucide-react'
 import * as Tabs from '@radix-ui/react-tabs'
 import { Dialog, DialogContent, DialogTitle } from '@/Components/ui/dialog'
 import { Button } from '@/Components/ui/button'
@@ -61,8 +68,10 @@ import { cn } from '@/lib/utils'
 import {
   usePreferencesDialog,
 } from './PreferencesDialogProvider'
+import type { PreferencesTab } from './PreferencesDialogProvider.helpers'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { OverviewTab } from './tabs/OverviewTab'
 import { AccountTab } from './tabs/AccountTab'
 import { SettingsTab } from './tabs/SettingsTab'
 import { PersonalizationTab } from './tabs/PersonalizationTab'
@@ -89,12 +98,19 @@ interface TabMeta {
   Icon: typeof User
 }
 
+// Round-OPT-3G+ (Overview up-front): the Overview tile-grid is the
+// left-MOST nav item because "show me everything at once" is the
+// most common operator intent. The 4 source tabs (账户 / 设置 /
+// 个性化 / 关于) remain below as full-canvas surfaces for the
+// "drill into X" path. TABS array order IS the nav order IS the
+// keyboard cycling order — keep these three consistent.
 const TABS: ReadonlyArray<TabMeta> = [
+  { id: 'overview', label: '概览', Icon: LayoutGrid, description: '一键跳转所有偏好设置' },
   { id: 'account', label: '账户', Icon: User, description: '查看账号信息与活动记录' },
   { id: 'settings', label: '设置', Icon: SettingsIcon, description: '管理订阅套餐与跨页面跳转' },
   { id: 'personalization', label: '个性化', Icon: Sun, description: '外观与显示偏好' },
   { id: 'about', label: '关于', Icon: Info, description: '应用元数据与社区信息' },
-]
+] 
 
 export function PreferencesDialog() {
   const { open, activeTab, setActiveTab, closePreferences } = usePreferencesDialog()
@@ -135,7 +151,7 @@ export function PreferencesDialog() {
           // Auto-activation: focus moves + body swap together.
           activationMode="automatic"
           data-testid="preferences-dialog-content"
-          className="grid grid-cols-[200px_1fr] sm:h-[min(70vh,640px)] h-[calc(100vh-2rem)] outline-none"
+          className="grid grid-cols-[220px_1fr] sm:h-[min(70vh,640px)] h-[calc(100vh-2rem)] outline-none"
         >
           {/* ── Left nav (Radix tablist) ───────────────────────────
               Trigger text-ink and icon-ink use
@@ -147,11 +163,31 @@ export function PreferencesDialog() {
           <Tabs.List
             aria-label="偏好设置"
             data-testid="preferences-dialog-nav"
-            className="border-r border-border/40 bg-background px-3 py-4 flex flex-col gap-0.5"
+            className="border-r border-border/40 bg-muted/20 px-3 py-4 flex flex-col gap-1"
           >
-            <DialogTitle className="px-1 mb-3 text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70">
-              偏好设置
-            </DialogTitle>
+            {/* Brand lockup — `>_` terminal glyph (the only brand
+                mark per DESIGN.md) + `sau@main` mono wordmark + a
+                secondary 偏好设置 eyebrow. Replaces the prior
+                floating uppercase label so the dialog carries the
+                same identity as the sidebar / login card. */}
+            <div className="px-3 pb-4 mb-2 border-b border-border/40">
+              <div className="flex items-center gap-2.5 px-2 pt-1">
+                <span
+                  aria-hidden
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[3px] bg-foreground font-mono text-sm font-semibold leading-none text-background"
+                >
+                  {'>_'}
+                </span>
+                <DialogTitle className="flex flex-col leading-tight text-left">
+                  <span className="font-mono text-[13px] font-medium tracking-tight text-foreground">
+                    sau@main
+                  </span>
+                  <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground/70">
+                    偏好设置
+                  </span>
+                </DialogTitle>
+              </div>
+            </div>
 
             {TABS.map(({ id, label, Icon }) => {
               // Per-tab `isActive` drives the indicator's
@@ -165,10 +201,16 @@ export function PreferencesDialog() {
                   value={id}
                   data-testid={`preferences-tab-${id}`}
                   className={cn(
-                    'group relative flex items-center gap-2 rounded-md text-[13px] font-medium transition-all outline-none h-8 px-2.5',
-                    'focus-visible:ring-1 focus-visible:ring-ring',
-                    'data-[state=active]:text-foreground data-[state=active]:font-semibold',
-                    'data-[state=inactive]:text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]',
+                    'group relative flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all duration-200 outline-none h-9 px-3',
+                    'focus-visible:ring-2 focus-visible:ring-ring/40',
+                    // Active row: subtle amber accent wash (NOT a
+                    // foreground block fill — design-system rule) +
+                    // full-ink text. The 2px amber left strip in the
+                    // span below carries the active signal. No
+                    // drop-shadow on the flat surface (DESIGN forbids
+                    // shadows on flat chrome).
+                    'data-[state=active]:text-foreground data-[state=active]:font-semibold data-[state=active]:bg-primary/[0.08]',
+                    'data-[state=inactive]:text-muted-foreground hover:text-foreground hover:bg-primary/[0.04]',
                   )}
                 >
                   {/* Active-row indicator — sidebar-active-row
@@ -186,9 +228,12 @@ export function PreferencesDialog() {
                     aria-hidden
                     hidden={!isActive}
                     data-testid={`preferences-tab-${id}-indicator`}
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r-full bg-primary"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-[2.5px] h-5 rounded-r-full bg-primary"
                   />
-                  <Icon className="h-4 w-4 shrink-0 text-muted-foreground group-data-[state=active]:text-foreground group-hover:text-foreground" />
+                  <Icon className={cn(
+                    'h-4 w-4 shrink-0 transition-colors',
+                    'text-muted-foreground/70 group-data-[state=active]:text-primary group-hover:text-foreground',
+                  )} />
                   <span className="truncate">{label}</span>
                 </Tabs.Trigger>
               )
@@ -197,29 +242,42 @@ export function PreferencesDialog() {
 
           {/* ── Right content (active pane + persistent footer) ── */}
           <div className="flex flex-1 min-w-0 flex-col bg-background h-full min-h-0">
-            {TABS.map(({ id, label, description }) => (
+            {TABS.map(({ id, label, description, Icon }) => (
               <Tabs.Content
                 key={id}
                 value={id}
                 data-tab-body={id}
-                className="flex-1 min-h-0 overflow-y-auto px-6 py-5 outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex-1 min-h-0 overflow-y-auto px-7 py-6 outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 {/* TabMeta header — title + description for the
                     active tab. Mounted BEFORE the body so context
-                    appears first in the scrolling flow. */}
+                    appears first in the scrolling flow. The icon
+                    chip mirrors the OverviewTab / nav-icon pattern
+                    (bg-primary/10 + primary ink) so the selected
+                    tab reads as one cohesive surface across the
+                    rail and the content pane. */}
                 <div
                   data-testid="preferences-dialog-tab-header"
                   data-tab={id}
-                  className="mb-4 pb-3"
+                  className="mb-5 flex items-start gap-3 pb-4 border-b border-border/30"
                 >
-                  <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                    {label}
-                  </h2>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {description}
-                  </p>
+                  <span
+                    aria-hidden
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                  >
+                    <Icon className="h-[18px] w-[18px]" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold tracking-tight text-foreground">
+                      {label}
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground/80">
+                      {description}
+                    </p>
+                  </div>
                 </div>
 
+                {id === 'overview' && <OverviewTab />}
                 {id === 'account' && <AccountTab />}
                 {id === 'settings' && <SettingsTab />}
                 {id === 'personalization' && <PersonalizationTab />}
@@ -229,7 +287,7 @@ export function PreferencesDialog() {
 
             {/* Footer band — 退出 button bottom-right persists
                 across tab swaps. */}
-            <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border/40 bg-background">
+            <div className="flex items-center justify-end gap-2 px-7 py-3.5 border-t border-border/40 bg-muted/20">
               <Button
                 variant="outline"
                 size="sm"

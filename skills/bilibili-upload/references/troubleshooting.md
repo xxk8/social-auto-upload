@@ -46,7 +46,7 @@ sau bilibili login --account <account>
 sau bilibili login --account <account>
 ```
 
-- 如果终端里的二维码显示不完整，直接打开当前目录下的 `qrcode.png` 扫码
+- 如果终端里的二维码显示不完整，**不要**打开 `qrcode.png`（已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`），或在本地终端去掉 `--headless` 让浏览器里直接展示平台自己的二维码
 
 ## 5. 上传失败
 

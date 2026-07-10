@@ -2,6 +2,8 @@
  * 共享 API 类型 — 从 client.ts 抽取，供各领域模块使用。
  */
 
+import type { TimelineItemData } from '@/Components/ui/timeline'
+
 export type ApiResponse<T> = {
   success: boolean
   data: T
@@ -102,7 +104,67 @@ export type TaskItem = {
   publish_detail?: string | null
 }
 
+/**
+ * Calendar-cell payload returned by `GET /api/calendar/tasks`.
+ *
+ * `effective_date` is the calendar pin (coincides with EITHER `scheduled_at`
+ * or `created` — whichever is non-null — auto-flattened to a
+ * `YYYY-MM-DD` string by the server). The Calendar grid keys off
+ * this field so a row's date placement matches the UI semantic for
+ * "when this event happens" regardless of whether it's planned or
+ * already-past.
+ *
+ * Both `scheduled_at` (ISO string OR null) and `created` (ISO
+ * string) are returned so the cell can render the secondary
+ * metadata strip ("10:00 · work1 · 已发布") without re-fetching.
+ */
+export type CalendarTaskItem = {
+  task_id: string
+  platform: string
+  account: string
+  action: string | null
+  status: string
+  title: string
+  scheduled_at: string | null
+  created: string
+  effective_date: string
+}
+
+/**
+ * Server-side aggregation payload sent alongside the task list. Used
+ * by the calendar summary footer (Phase 3 of
+ * `docs/DESIGN-content-calendar.md`). The keys of `by_platform` /
+ * `by_status` are dynamic — the backend encodes a `"(none)"` literal
+ * for any NULL `platform` / `status` so the dashboard always renders
+ * non-empty buckets.
+ */
+export type CalendarSummary = {
+  total: number
+  by_platform: Record<string, number>
+  by_status: Record<string, number>
+}
+
 export type LogEntry = {
   ts: string
   message: string
 }
+
+/**
+ * Operator-facing publish event row consumed by the AboutTab 发布历史
+ * timeline (sau_web/frontend/src/Components/ui/timeline.tsx :: TimelineItemData).
+ *
+ * Sourced from `/api/publish/history` — see web_runner/routes/tasks.py ::
+ * list_publish_history for the server-side mapping.
+ *
+ * Aliased to `TimelineItemData` (NOT redeclared) so the React `<Timeline>`
+ * compound component consumes the fetched array with zero per-row cast
+ * boilerplate, AND so the union literal `'success' | 'failed' | 'pending'`
+ * lives in only one place. Single source of truth:
+ * `Components/ui/timeline.tsx::TimelineItemData`.
+ *
+ * Server returns `url: null` (NOT omitted) when no upstream published URL
+ * is available; `TimelineItemData.url?: string` accepts that because
+ * Timeline treats `null` and `undefined` identically at render time
+ * (no <ExternalLink /> is rendered when either is present).
+ */
+export type PublishHistoryItem = TimelineItemData

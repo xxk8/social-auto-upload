@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import { useTasks } from '../hooks/useTasks'
 import { useTaskTableState } from '../hooks/useTaskTableState'
 import { useTaskMutations } from '../hooks/useTaskMutations'
@@ -33,9 +35,10 @@ import { TaskBatchActions } from '../features/tasks/TaskBatchActions'
 import { AddTaskDialog } from '../features/tasks/AddTaskDialog'
 import type { StatusType } from '../features/tasks/shared'
 import { TaskProgressBar } from '../features/tasks/TaskProgressBar'
+import { Pagination } from '@/Components/ui/pagination'
 
 /**
- * TasksPage — `/app/tasks` route.
+ * TasksPage — `/dashboard/tasks` route.
  *
  * Composes three custom hooks that split the page's state machine
  * along its natural seams:
@@ -58,6 +61,7 @@ import { TaskProgressBar } from '../features/tasks/TaskProgressBar'
  * just renders chrome.
  */
 export default function TasksPage() {
+  const { t } = useTranslation()
   const { data: tasks = [], isLoading, refetch } = useTasks()
 
   // ── read-model ──
@@ -65,7 +69,7 @@ export default function TasksPage() {
 
   // ── write-model ──
   const m = useTaskMutations({
-    filtered: table.filtered,
+    filtered: table.pagedFiltered,
     selectedIds: table.selectedIds,
     drawerTaskId: table.drawerTaskId,
     addForm: table.addForm,
@@ -107,7 +111,12 @@ export default function TasksPage() {
     searchInputRef,
     counts,
     chipOptions,
-    filtered,
+    pagedFiltered,
+    totalFiltered,
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
     setBatchProgress,
     setBatchDetailOpen,
     setStatus,
@@ -116,20 +125,20 @@ export default function TasksPage() {
   return (
     <div className="space-y-6 p-6 max-w-[1600px] mx-auto w-full">
       <PageHeader
-        title="任务列表"
-        description="查看和管理所有上传任务"
+        title={t('tasks.page.title', '任务列表')}
+        description={t('tasks.page.description', '查看和管理所有上传任务')}
         icon={<BarChart3 className="h-5 w-5 text-muted-foreground" />}
         actions={
           <Button variant="outline" size="sm" onClick={m.handleOpenAddModal}>
             <Plus className="h-4 w-4 mr-1" />
-            新建任务
+            {t('tasks.page.new_task_button', '新建任务')}
           </Button>
         }
       />
       <StatusTabs
-        options={chipOptions.map(({ value, label, icon, count, variant }) => ({
+        options={chipOptions.map(({ value, labelKey, labelFallback, icon, count, variant }) => ({
           value,
-          label,
+          label: t(labelKey, labelFallback),
           icon,
           count,
           variant,
@@ -168,7 +177,7 @@ export default function TasksPage() {
               id="tasks-search-keyword"
               name="search"
               ref={searchInputRef}
-              placeholder="搜索任务 ID、平台、账号（按 / 聚焦）"
+              placeholder={t('tasks.page.search_placeholder', '搜索任务 ID、平台、账号（按 / 聚焦）')}
               value={keyword}
               onChange={(e) => table.setKeyword(e.target.value)}
               autoComplete="off"
@@ -181,7 +190,7 @@ export default function TasksPage() {
           <div className="flex items-center gap-2 ml-auto">
             <Badge variant="secondary" className="text-xs gap-1">
               <Loader2 className="h-3 w-3 animate-spin" />
-              轮询中
+              {t('tasks.page.polling_chip', '轮询中')}
             </Badge>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -192,13 +201,13 @@ export default function TasksPage() {
               <TooltipContent>
                 <div className="space-y-1 text-xs">
                   <div>
-                    <kbd className="px-1 py-0.5 rounded bg-muted border">R</kbd> 刷新列表
+                    <kbd className="px-1 py-0.5 rounded bg-muted border">R</kbd> {t('tasks.page.shortcuts.r', '刷新列表')}
                   </div>
                   <div>
-                    <kbd className="px-1 py-0.5 rounded bg-muted border">N</kbd> 新建任务
+                    <kbd className="px-1 py-0.5 rounded bg-muted border">N</kbd> {t('tasks.page.shortcuts.n', '新建任务')}
                   </div>
                   <div>
-                    <kbd className="px-1 py-0.5 rounded bg-muted border">/</kbd> 聚焦搜索
+                    <kbd className="px-1 py-0.5 rounded bg-muted border">/</kbd> {t('tasks.page.shortcuts.slash', '聚焦搜索')}
                   </div>
                 </div>
               </TooltipContent>
@@ -209,26 +218,26 @@ export default function TasksPage() {
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <Button onClick={m.handleOpenAddModal} size="sm">
             <Plus className="h-4 w-4 mr-1" />
-            新建任务
+            {t('tasks.page.new_task_button', '新建任务')}
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={m.refresh}
-            aria-label="Refresh tasks"
+            aria-label={t('tasks.page.refresh_aria', '刷新任务列表')}
           >
             {manualRefreshing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
-            刷新
+            {t('tasks.page.refresh_button', '刷新')}
           </Button>
           <ClearTasksButton onConfirm={m.handleClear} />
         </div>
         <TaskTable
           isLoading={isLoading}
-          filtered={filtered}
+          filtered={pagedFiltered}
           selectedIds={selectedIds}
           onToggle={m.handleToggleSelect}
           onToggleAll={m.handleToggleAll}
@@ -241,6 +250,18 @@ export default function TasksPage() {
           onRefresh={m.refresh}
           onAddTask={m.handleOpenAddModal}
         />
+        {!isLoading && totalFiltered > pageSize && (
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={totalFiltered}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => {
+              setPageSize(s)
+              setPage(1)
+            }}
+          />
+        )}
       </TaskTableCard>
       <TaskDrawer
         taskId={drawerTaskId}
@@ -259,23 +280,32 @@ export default function TasksPage() {
   )
 }
 
-const ClearTasksButton = ({ onConfirm }: { onConfirm: () => void }) => (
-  <AlertDialog>
-    <AlertDialogTrigger asChild>
-      <Button variant="outline" size="sm">
-        <Trash2 className="h-4 w-4 mr-1" />
-        清理
-      </Button>
-    </AlertDialogTrigger>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>确认清理</AlertDialogTitle>
-        <AlertDialogDescription>清理所有已完成、失败、异常的任务？</AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>取消</AlertDialogCancel>
-        <AlertDialogAction onClick={onConfirm}>清理</AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-)
+// ClearTasksButton — inline sub-component. Calls useTranslation()
+// directly (not prop-drilled) to match the AppShell pattern where
+// every localized component owns its own t() binding. Keeping the
+// hook here (vs. passing t as a prop) means a future refactor that
+// extracts ClearTasksButton to a separate file won't have to thread
+// t through a new import boundary.
+const ClearTasksButton = ({ onConfirm }: { onConfirm: () => void }) => {
+  const { t } = useTranslation()
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Trash2 className="h-4 w-4 mr-1" />
+          {t('tasks.page.clear_button', '清理')}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('tasks.page.clear_dialog.title', '确认清理')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('tasks.page.clear_dialog.description', '清理所有已完成、失败、异常的任务?')}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('tasks.page.clear_dialog.cancel', '取消')}</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>{t('tasks.page.clear_dialog.confirm', '清理')}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}

@@ -37,8 +37,8 @@ test.describe('OPT-3G · chip → controlled Accordion + per-platform ring', () 
   })
 
   test('click chip ⇒ opens accordion + highlights first pending platform', async ({ page }) => {
-    // Navigate directly to /app/publish (the canonical route).
-    await page.goto('/app/publish')
+    // Navigate directly to /dashboard/publish (the canonical route).
+    await page.goto('/dashboard/publish')
 
     // Pick the bilibili group from the dropdown. GroupPublishSelector's
     // `handleGroupChange` auto-checks every platform the group holds —

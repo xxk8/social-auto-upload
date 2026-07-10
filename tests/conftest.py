@@ -1,148 +1,84 @@
-"""Pytest conftest — PR2 Database abstraction + tmp-file SQLite.
+"""Pytest conftest — PostgreSQL-only test infrastructure (post-SQLite-removal).
 
-High-level:
-  * At conftest import time, force ``SAU_DB_DIALECT=sqlite`` so the new
-    ``web_runner.db.get_database()`` factory resolves to ``SqliteDatabase``
-    (the dev-fallback path). Any test that wants the Postgres backend can
-    ``monkeypatch.setenv("SAU_DB_DIALECT", "postgres")``.
-  * Session-scoped autouse fixture opens a real (temporary) SQLite file
-    under ``tmp_path_factory`` and routes any ``sqlite3.connect(...)``
-    call that targets the legacy ``DB_PATH`` (or the tmp file itself)
-    through to that file. ``init_db()`` runs against the same file so
-    production code's reads/writes round-trip normally.
-  * Every connection opened via the route — including the anchor and
-    any ``SqliteDatabase._connect()`` call from production code — gets
-    ``PRAGMA journal_mode=WAL`` + ``PRAGMA busy_timeout=5000`` applied,
-    matching the production SqliteDatabase knob setup. This is the
-    safety net for the concurrent-write regression in
-    ``tests/test_concurrent_writes.py``.
+High-level (post-SQLite removal):
+  * The conftest no longer forces an SQLite dialect default. Tests that
+    need a real database must provide a ``DATABASE_URL`` via
+    ``monkeypatch.setenv`` (or the host env) and gate on
+    ``pytest.importorskip("psycopg")`` + ``DATABASE_URL`` presence.
+  * The legacy ``real_test_sqlite_db`` tmp-file anchor + sqlite3
+    ``connect``-routing are GONE. PostgresDatabase is the only backend;
+    tests that previously mutated the tmp SQLite file now exercise
+    the production psycopg ConnectionPool through ``get_database()`` +
+    ``monkeypatch.setenv("DATABASE_URL", ...)`` + ``reset_default_database()``.
   * ``tests/test_db_wrapper.py`` covers the new abstraction directly
-    (placeholder translation, json_dump/json_load, factory dialect
-    selection, postgres backend ImportError surface).
+    (placeholder translation, PostgresDatabase hygiene, pool tuning,
+    transaction handle). The PostgresDatabase-specific tests were
+    removed alongside the PostgresDatabase class.
 
-Why tmp-file instead of ``file::memory:?cache=shared``?
--------------------------------------------------------
-The earlier conftest used the shared-memory URI for cross-connection
-persistence within the session. That works fine for readers/writers
-that don't fan out concurrently — but under real concurrent-write
-fan-out (8 worker-thread inserts landing near-simultaneously), the
-shared-cache mode raised ``sqlalchemy.exc.OperationalError:
-database table is locked`` (Python's text for SQLite's
-``SQLITE_LOCKED``). ``PRAGMA busy_timeout`` only protects against
-``SQLITE_BUSY`` (retryable); it does **not** protect against
-``SQLITE_LOCKED`` (raised immediately on table-level contention in
-shared-cache mode). Switching to a real tmp file restores standard
-file-mode SQLite locking + WAL semantics, which are rock-solid for
-the same fan-out: ``busy_timeout=5000`` lets contending writers wait
-5 s, ``journal_mode=WAL`` allows concurrent readers with one writer,
-and ``check_same_thread=False`` lets connections move between threads.
-The full behavior is pinned by ``tests/test_concurrent_writes.py``.
-
-The tmp file is created by pytest's ``tmp_path_factory`` so it is
-auto-cleaned at session end; ``_ANCHOR_CONN`` is kept alive for the
-session to make sure the file isn't vacuumed mid-test.
+  For tests that need a working DB:
+    * Set ``DATABASE_URL`` (via host env or ``monkeypatch.setenv``)
+      pointing at a test PG database (e.g. ``postgres://user:pass@
+      localhost:5432/sau_test``).
+    * Call ``wr_db.reset_default_database()`` so the factory re-reads
+      the env, then ``wr_db.get_database()`` to get the backend.
+    * Tests that don't need a real DB (e.g. the placeholder translator
+      tests) run without any DATABASE_URL setup.
 """
 
 from __future__ import annotations
 
 import os
 
-# Force the PR2 dialect-selection default for the entire test session.
-# Production code still defaults to "postgres"; tests skip the Postgres
-# branch by setting this explicitly (since psycopg may not be installed
-# in the test env).
-os.environ.setdefault("SAU_DB_DIALECT", "sqlite")
-
-import sqlite3
-from unittest.mock import patch
+# Note: we no longer force ``SAU_DB_DIALECT=sqlite`` here. The factory
+# now requires ``DATABASE_URL`` to be set; tests that need a real DB
+# must inject one (via host env or ``monkeypatch.setenv``). Tests that
+# don't touch the DB (e.g. ``TestPlaceholderTranslator``) run without
+# any DB setup.
+#
+# Production code defaults to PG via ``get_database()``; tests skip
+# the PG path with ``pytest.importorskip("psycopg")`` when psycopg
+# isn't installed in the test env.
 
 import numpy as np
 import pytest
 
-from web_runner import db as wr_db
-
-# Hold a strong reference to the anchor connection. The tmp file may be
-# reclaimed by the FS layer if no connection has it open; the anchor
-# keeps it alive for the whole session and prevents that teardown.
-_ANCHOR_CONN: sqlite3.Connection | None = None
-
-
-@pytest.fixture(scope="session", autouse=True)
-def real_test_sqlite_db(tmp_path_factory):
-    """Session-scoped real tmp-file SQLite.
-
-    Steps:
-      1. Allocate a session-lifetime tmp directory + tmp DB file via
-         pytest's ``tmp_path_factory`` (auto-cleaned at session end).
-      2. Open the anchor connection on the tmp DB with the production
-         SqliteDatabase PRAGMAs applied.
-      3. Monkeypatch ``sqlite3.connect`` so any call against the
-         default ``DB_PATH`` (or the tmp DB path itself) routes to the
-         same file with ``journal_mode=WAL`` + ``busy_timeout=5000``
-         applied — i.e. every test connection that comes through the
-         route participates in the safety net on equal footing with
-         the anchor.
-      4. Run real ``init_db()`` to populate the schema.
-      5. Yield the anchor connection so individual tests can introspect it.
-    """
-    global _ANCHOR_CONN
-    tmp_dir = tmp_path_factory.mktemp("sau_test_db")
-    tmp_db_path = tmp_dir / "sau_test.db"
-    default_db_str = str(wr_db.DB_DIR / "database.db")
-    tmp_db_str = str(tmp_db_path)
-
-    # 1. Open the anchor connection that holds the tmp-file DB alive
-    #    for the whole session AND applies the same WAL+busy_timeout
-    #    safety net as production SqliteDatabase._connect(). The
-    #    anchor participates in concurrent-write tests on equal
-    #    footing with any routed test connection — otherwise it
-    #    raised SQLITE_BUSY against any writer that routed through
-    #    this fixture (``tests/test_concurrent_writes.py``).
-    _ANCHOR_CONN = sqlite3.connect(tmp_db_str)
-    _ANCHOR_CONN.execute("PRAGMA journal_mode=WAL")
-    _ANCHOR_CONN.execute("PRAGMA busy_timeout=5000")
-    _ANCHOR_CONN.execute("PRAGMA foreign_keys=ON")
-
-    orig_connect = sqlite3.connect
-
-    def _route_connect(database, *args, **kwargs):
-        # Default DB path or our explicit tmp DB → route to the
-        # session tmp file; the route also applies the safety PRAGMAs
-        # so every test connection has the same WAL+busy_timeout
-        # as production SqliteDatabase._connect().
-        db_str = str(database) if database is not None else ""
-        if db_str == default_db_str or db_str == tmp_db_str:
-            conn = orig_connect(tmp_db_str, *args, **kwargs)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=5000")
-            return conn
-        # Anything else (e.g. tmp-path overrides from test fixtures
-        # that deliberately want a *separate* test DB) passes through
-        # with whatever its caller passed.
-        return orig_connect(database, *args, **kwargs)
-
-    with patch("sqlite3.connect", side_effect=_route_connect):
-        # 2-3. Route the init_db() call through our patched connect,
-        # so the schema is created in the same tmp DB the rest of the
-        # tests will read/write. (init_db() in PR2 is a no-op when
-        # SAU_DB_DIALECT=postgres; conftest forces sqlite above, so
-        # the SqliteDatabase branch runs.)
-        wr_db.init_db()
-        yield _ANCHOR_CONN
-        # (no teardown — _ANCHOR_CONN holds the tmp-file alive)
-
+# pg_advisory_lock is intentionally NOT imported here — we want the
+# conftest importable on hosts without psycopg installed (so the test
+# runner can collect a coherent skipped/collected report). Tests that
+# actually open a connection import psycopg lazily inside the test
+# body.
 
 @pytest.fixture
 def db_dialect(request):
     """Per-test opt-in fixture for picking DB backend (per openspec §5.1).
 
-    Currently only ``"sqlite"`` is supported (matches pre-PR2 behavior).
-    Future PRs add ``"pg"`` integration tests; selection via:
+    Post-SQLite-removal: only ``"pg"`` is meaningful. The fixture
+    is preserved as a no-op contract surface so future PRs can add
+    backends without rewriting every call site.
 
-        @pytest.mark.parametrize("db_dialect", ["sqlite", "pg"], indirect=True)
+        @pytest.mark.parametrize("db_dialect", ["pg"], indirect=True)
         def test_x(db_dialect): ...    # noqa: ERA001
     """
-    return getattr(request, "param", "sqlite")
+    return getattr(request, "param", "pg")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _init_pg_schema():
+    """Initialize the PG test schema once per pytest session.
+
+    Calls ``web_runner.db.init_db()`` (which runs ``_init_db_postgres``)
+    so the test DB has the full schema. Idempotent — all CREATE
+    statements use ``IF NOT EXISTS``. Requires ``DATABASE_URL`` to be
+    set; tests that don't need a DB (e.g. the placeholder translator
+    tests) skip this via ``pytest.importorskip("psycopg")`` guards.
+    """
+    pytest.importorskip("psycopg")
+    # Defer the import so the conftest is importable on hosts without
+    # psycopg installed (the skip above guards the actual call).
+    # Call _init_db_postgres directly (not the init_db() wrapper) to
+    # match the plan's "inline the wrapper" simplification.
+    from web_runner.db import _init_db_postgres, get_database
+    _init_db_postgres(get_database())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -176,3 +112,70 @@ def qr_zeros_array():
     Per-test lookup after first invocation is dict-cache-hit (≈ 0 ns).
     """
     return np.zeros((10, 10, 3), dtype=np.uint8)
+
+
+# Canonical _login_as lives at tests/_login_helpers.py — sibling module; see that file for the rationale.
+
+
+# ── Project-wide invariant: tests run with SAU_AUTH_ENABLED=true ─────────
+#
+# Background — the per-fixture `patch.dict("os.environ",
+# {"SAU_AUTH_ENABLED": "true"}, clear=False)` in tests/test_auth.py,
+# tests/test_studio.py, tests/test_admin_oauth.py, and
+# tests/test_auth_session_rotation.py has a subtle SCOPE bug: the
+# `with patch.dict(...)` block EXITS before `yield client`, so by the
+# time the test body actually sends a request, the patched env is gone
+# and `os.environ["SAU_AUTH_ENABLED"]` is back to whatever the shell
+# env had.
+#
+# Without this conftest fix, in any CI shell that sets
+# `SAU_AUTH_ENABLED=false` (e.g. an operator who wants to bypass the
+# login flow for day-to-day dev, then runs pytest against the same
+# shell), tests asserting that unauthenticated requests return 401
+# actually see 200 — the auth-disabled branch returns a synthetic
+# local@sau.dev admin. The 9-failure pattern
+# (`assert 200 == 401`, `assert 86400 == 300`) is the diagnostic
+# surface.
+#
+# This session-scoped autouse fixture forces `SAU_AUTH_ENABLED=true`
+# for the WHOLE pytest run, well past any per-test fixture's local
+# patch-dict exit. Tests that genuinely need `SAU_AUTH_ENABLED=false`
+# (e.g. `tests/test_auth.py::app_no_auth`) still patch within their
+# own `with patch.dict(...)` block which is active at
+# `create_app()` call time — they pick up `false` at construction.
+# The session-level `true` value then asserts itself across their
+# `yield client` window, but those tests are short of `app_no_auth`
+# themselves (and have their own patch-exits-before-yield bug we
+# have NOT fixed in this change). For the user's reported 9-failure
+# corpus (all on the `app` path, NOT `app_no_auth`), the session
+# override is sufficient.
+#
+# Why direct assignment (`os.environ[...] = ...`) and NOT
+# `os.environ.setdefault(...)`: setdefault is a no-op when the key
+# already holds a value, which is exactly the shell-`false` case
+# we're trying to override. Direct assignment is the only path that
+# works against an existing shell value.
+#
+# Save & restore on session teardown so the test process exits with
+# the original shell value (defensive: prevents env leaks into
+# non-test invocations of the same Python process and into any
+# pytest plugins that read env at process exit).
+@pytest.fixture(autouse=True, scope="session")
+def _force_sau_auth_enabled_true_for_test_session():
+    """Project-wide invariant: SAU_AUTH_ENABLED=true during pytest run.
+
+    See comment block above for the full rationale. Saves the
+    pre-session value (if any) and restores on teardown so the
+    shell env post-pytest is unchanged. session scope is required:
+    function / class scope would let per-fixture patches exit before
+    yield, re-introducing the original bug.
+    """
+    saved = os.environ.get("SAU_AUTH_ENABLED")
+    os.environ["SAU_AUTH_ENABLED"] = "true"
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop("SAU_AUTH_ENABLED", None)
+        else:
+            os.environ["SAU_AUTH_ENABLED"] = saved

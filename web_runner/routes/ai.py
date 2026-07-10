@@ -5,11 +5,12 @@ import concurrent.futures
 import json
 import os
 import queue as _queue
-import sqlite3
 import threading
 import time
 from collections import deque
 from collections.abc import Generator
+
+import psycopg.errors
 
 import requests as http_requests
 from flask import Blueprint, Response, jsonify, request
@@ -28,6 +29,77 @@ from web_runner.utils import log
 bp = Blueprint("ai", __name__)
 
 OPENROUTE_BASE_URL = "https://openrouter.ai/api/v1"
+
+# ── Vision-model detection (image-input support) ────────────────────
+# OpenRouter returns a cryptic "Cannot read 'image.png' (this model
+# does not support image input)" when an image is sent to a text-only
+# model. We proactively detect vision capability from the live model
+# list so we can (a) short-circuit with a clear, actionable error and
+# (b) translate the raw OpenRouter error if it still slips through.
+#
+# The cache is populated lazily and refreshed on a TTL. Until it has
+# been populated at least once we treat capability as UNKNOWN (None)
+# so we never false-block a genuinely vision-capable model when the
+# network to OpenRouter's /models endpoint is unavailable.
+_VISION_MODEL_CACHE: dict = {"ids": set(), "ts": 0.0, "ttl": 3600.0}
+
+
+def _refresh_vision_model_ids() -> set:
+    now = time.time()
+    if _VISION_MODEL_CACHE["ids"] and (now - _VISION_MODEL_CACHE["ts"]) < _VISION_MODEL_CACHE["ttl"]:
+        return _VISION_MODEL_CACHE["ids"]
+    try:
+        resp = http_requests.get(
+            f"{OPENROUTE_BASE_URL}/models",
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            ids: set[str] = set()
+            for m in resp.json().get("data", []):
+                mods = m.get("architecture", {}).get("input_modalities", [])
+                if "image" in mods:
+                    ids.add(m["id"])
+            if ids:
+                _VISION_MODEL_CACHE["ids"] = ids
+                _VISION_MODEL_CACHE["ts"] = now
+                return ids
+    except (http_requests.RequestException, OSError, TimeoutError, ValueError, KeyError):
+        pass
+    # Keep the last-known set (possibly empty) so a transient /models
+    # failure doesn't flip a confident "no" into a false negative.
+    return _VISION_MODEL_CACHE["ids"]
+
+
+def _model_supports_images(model_id: str) -> bool | None:
+    """True if vision-capable, False if text-only, None if unknown."""
+    ids = _VISION_MODEL_CACHE["ids"]
+    if not ids:
+        return None  # never fetched → unknown, don't block
+    return model_id in ids
+
+
+def _messages_contain_images(messages: list) -> bool:
+    for m in messages or []:
+        content = m.get("content") if isinstance(m, dict) else None
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return True
+        elif isinstance(content, str) and "image_url" in content:
+            return True
+    return False
+
+
+def _translate_openrouter_error(msg: str) -> str:
+    """Turn OpenRouter's cryptic vision error into a clear, actionable one."""
+    low = (msg or "").lower()
+    if "does not support image input" in low or ("cannot read" in low and "image" in low):
+        return (
+            "当前模型不支持图片/视觉输入。请换用一个带「图片」(Vision) 标签的模型，"
+            "或在发送前移除图片附件后再试。"
+        )
+    return msg
 
 
 def _web_search(query: str, max_results: int = 5) -> list[dict]:
@@ -64,22 +136,35 @@ def _has_image_source() -> bool:
     )
 
 
-def _search_pexels(query: str, count: int) -> list[dict]:
+def _search_pexels(query: str, count: int, orientation: str | None = None) -> list[dict]:
     """Raw Pexels photo search. Returns the upstream `photos` list (or []).
 
     Silent-failure-by-design: 401 / 429 / 5xx / timeout / JSONDecodeError
     all collapse to `[]` so the merge layer can still surface Pixabay
     results. Rationale: aggregator should not cascade one source's
     transient failure onto the other.
+
+    The `orientation` arg is forwarded as a query param so callers
+    that need 9:16 portrait / 16:9 landscape can hint Pexels — by
+    default Pexels returns a mixed set dominated by 1:1 / 4:3 hits
+    which downstream `<Image style="objectFit: cover">` crops
+    against the user's intent. Valid values per Pexels API:
+    `"portrait"` / `"landscape"` / `"square"`. None = no hint, mixed.
+    Studio phase-2 wires `orientation="portrait"` for scene
+    backgrounds; the recommendation grid in `_search_images` keeps
+    the legacy mixed-orientation contract.
     """
     api_key = os.environ.get("PEXELS_API_KEY", "").strip()
     if not api_key:
         return []
+    params: dict = {"query": query, "per_page": max(1, count), "page": 1}
+    if orientation:
+        params["orientation"] = orientation
     try:
         resp = http_requests.get(
             "https://api.pexels.com/v1/search",
             headers={"Authorization": api_key},
-            params={"query": query, "per_page": max(1, count), "page": 1},
+            params=params,
             timeout=(5, 8),
         )
     except (http_requests.RequestException, OSError, TimeoutError) as e:
@@ -510,6 +595,17 @@ def _ai_queue_worker():
                 images = payload.get("images", [])
                 prompt = payload.get("prompt", "")
                 system_prompt = payload.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
+                # Guard: text-only model cannot consume images — short-circuit
+                # with a clear message instead of OpenRouter's cryptic error.
+                if images and _model_supports_images(payload.get("model", "")) is False:
+                    result_holder["success"] = False
+                    result_holder["message"] = (
+                        f"当前模型 {payload.get('model', '')} 不支持图片输入。"
+                        "请选择带「图片」(Vision) 标签的模型后再发送图片。"
+                    )
+                    result_event.set()
+                    _ai_request_queue.task_done()
+                    continue
                 if images:
                     user_content = _build_media_content(images, prompt)
                     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
@@ -541,7 +637,9 @@ def _ai_queue_worker():
                             current_key = _get_next_key()
                             continue
                         else:
-                            result_holder["message"] = resp.json().get("error", {}).get("message", f"API error: {resp.status_code}")
+                            result_holder["message"] = _translate_openrouter_error(
+                                resp.json().get("error", {}).get("message", f"API error: {resp.status_code}")
+                            )
                             break
                     except (json.JSONDecodeError, ValueError):
                         result_holder["message"] = "Failed to parse API response"
@@ -561,6 +659,83 @@ def _ensure_ai_worker():
             t = threading.Thread(target=_ai_queue_worker, daemon=True, name="ai-queue-worker")
             t.start()
             _ai_queue_worker_started = True
+
+
+# ── Founder gate + audit helper (ai-api-keys-founder feature) ─────
+# Centralized so each of the 4 mutation endpoints in this blueprint
+# Centralized so each of the 4 mutation endpoints in this blueprint
+# (POST /api/ai/config, DELETE /api/ai/config, GET /api/ai/keys,
+# POST /api/ai/keys/batch) gets the SAME 401/403 surface — a future
+# PR that loosens or tightens the gate exactly mirrors across all
+# endpoints by editing this one helper.
+
+def _check_founder_gate() -> "Response | None":
+    """Return a Flask response to short-circuit non-founder callers, or None.
+
+    Mirrors the contract of ``web_runner.routes.auth.founder_required``
+    but is invoked inline inside each AI-key route so we can layer in
+    a consistent pre-flight audit-log row before the mutation runs.
+    Importing the decorator and stacking it on top of the existing
+    inline auth checks would require re-wiring the body order; this
+    inline call lets the existing route shapes stay intact.
+
+    Returns:
+      * 401-flask-response when auth is enabled and there is no
+        session user.
+      * 403-flask-response when auth is enabled and the session's
+        user is not the founder.
+      * None when the caller is the founder (or auth is disabled —
+        synthesized admin counts as founder for dev/CI parallelism).
+    """
+    from web_runner.routes.auth import (
+        _current_user_id as _uid_in,
+        _current_user_is_founder as _is_founder_in,
+        _is_auth_enabled as _enabled_in,
+    )
+    if not _enabled_in():
+        return None
+    if _uid_in() is None:
+        return jsonify({"success": False, "message": "未登录"}), 401
+    if not _is_founder_in():
+        return jsonify({"success": False, "message": "仅项目创始人可执行此操作"}), 403
+    return None
+
+
+def _audit_ai_key_action(action: str, detail: dict) -> None:
+    """Append a founder-side audit row for an AI-key mutation.
+
+    Writes into ``admin_audit_log`` so a non-founder admin reviewing
+    the Audit page sees AI-key lifecycle events alongside role-change
+    events. Failure mode mirrors ``web_runner.routes.admin.update_user_role``:
+    an audit write error MUST NOT 500 the caller (the mutation
+    already succeeded). The leading ``_audit_ai_key_action`` is
+    always post-commit so the audit row's existence means the
+    mutation actually landed.
+    """
+    from datetime import datetime
+    import json as _audit_json
+    from web_runner.routes.auth import _current_user_id
+
+    actor = _current_user_id() or 0
+    now = datetime.now().isoformat(timespec="seconds")
+    try:
+        get_database().execute(
+            "INSERT INTO admin_audit_log "
+            "(admin_user_id, target_user_id, action, detail, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (actor, None, action, _audit_json.dumps(detail, ensure_ascii=False), now),
+        )
+    except Exception as _audit_exc:
+        try:
+            from utils.log import logger as _audit_logger
+            _audit_logger.warning(
+                "audit log write failed for ai-key action=%s: %s",
+                action, _audit_exc,
+            )
+        except Exception:
+            # Logger unavailable — silently drop the audit row but
+            # never strangle the upstream mutation response.
+            pass
 
 
 def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000, temperature: float = 0.7, json_mode: bool = False) -> Generator[str, None, None]:
@@ -587,6 +762,7 @@ def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000,
                 continue
             if resp.status_code != 200:
                 error_msg = resp.json().get("error", {}).get("message", f"API error: {resp.status_code}")
+                error_msg = _translate_openrouter_error(error_msg)
                 yield f"event: error\ndata: {json.dumps({'message': error_msg})}\n\n"
                 return
             full_content = ""
@@ -959,17 +1135,46 @@ def ai_config_get():
 
 @bp.get("/api/ai/keys")
 def ai_keys_list():
+    # Founder gate (ai-api-keys-founder feature): only the project
+    # founder can enumerate masked keys. Even the masked list reveals
+    # the prefix + suffix of every key (e.g. ``sk-or-v1-001****5e4f``),
+    # which is enough for an adversary to correlate rate-limit
+    # behaviour with a specific key. Other roles — admin / user —
+    # can only SELECT models at /api/ai/models, never list keys.
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
+    _audit_ai_key_action("ai_key_list", {})
     keys = _get_all_keys_cached()
     return jsonify({"success": True, "data": [{"id": k["id"], "masked": k["masked"], "created": k["created"], "rate_limited": bool(k.get("rate_limited_at"))} for k in keys]})
 
 
 @bp.post("/api/ai/config")
 def ai_config_set():
+    # Founder gate (ai-api-keys-founder feature): only the project
+    # founder can add a new AI key. Replaces the previous unauthenticated
+    # `@login_required`-only surface — that path was the actual leak
+    # point described in this round's design doc; even after the
+    # DELETE path was admin-gated, an attacker with any email-code
+    # log-in could still INSERT a key, then read it back via /api/ai/keys
+    # (which never had a gate). This row-level founder gate closes
+    # both sides of the round-trip.
     from datetime import datetime
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
     data = request.get_json(silent=True) or {}
     key = data.get("api_key", "").strip()
     if not key:
-        return jsonify({"success": False, "message": "API key is required."})
+        # ``400`` on empty / missing ``api_key`` so the response is
+        # unambiguously distinguishable from a successful insert,
+        # rather than relying on callers to branch on the ``success``
+        # flag. Matches the convention in ``ai_keys_batch`` below
+        # which returns 400 on malformed payload, and aligns with
+        # the test contract that has asserted 400 since the original
+        # commit (the route drifted to 200 silently at some point and
+        # this rounding brings the implementation back to the test).
+        return jsonify({"success": False, "message": "API key is required."}), 400
     masked = key[:8] + "****" + key[-4:] if len(key) > 12 else "****"
     now = datetime.now().isoformat(timespec="seconds")
     db = get_database()
@@ -981,49 +1186,62 @@ def ai_config_set():
             "INSERT INTO ai_api_keys (api_key, masked, created) VALUES (?, ?, ?)",
             (key, masked, now),
         )
+        _audit_ai_key_action("ai_key_add", {"key_id": row_id, "masked": masked, "mode": "single"})
         return jsonify({"success": True, "data": {"configured": True, "key_masked": masked, "key_id": row_id}})
-    except sqlite3.IntegrityError:
-        # PR3 (postgres) layer will catch psycopg.errors.UniqueViolation
-        # via Database.duplicate_key contract, so the API response stays
-        # identical under both backends.
+    except psycopg.errors.IntegrityError:
+        # psycopg.IntegrityError is the parent of UniqueViolation,
+        # ForeignKeyViolation, NotNullViolation, CheckViolation, and
+        # RestrictViolation — all PK / UNIQUE / FK / CHECK / NOT NULL
+        # constraints surface as this single Python type, so the catch
+        # collapses to one branch for the API response.
         return jsonify({"success": False, "message": "该 Key 已经添加过了。"}), 409
 
 
 @bp.delete("/api/ai/config")
 def ai_config_delete():
-    from web_runner.routes.auth import _current_user_id, _is_auth_enabled
-    if _is_auth_enabled():
-        uid = _current_user_id()
-        if uid is None:
-            return jsonify({"success": False, "message": "未登录"}), 401
+    # Founder gate (ai-api-keys-founder feature): only the project
+    # founder can delete keys (single or bulk). Replaces the previous
+    # admin-only-on-bulk gate, which left the single-key delete path
+    # exposed to any logged-in user.
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
     data = request.get_json(silent=True) or {}
     key_id = data.get("key_id")
     db = get_database()
     if key_id is not None:
-        db.execute("DELETE FROM ai_api_keys WHERE id = ?", (int(key_id),))
+        target_id = int(key_id)
+        # Capture masked label BEFORE deleting for the audit row.
+        prior = db.fetch_one(
+            "SELECT masked FROM ai_api_keys WHERE id = ?",
+            (target_id,),
+        )
+        db.execute("DELETE FROM ai_api_keys WHERE id = ?", (target_id,))
+        _audit_ai_key_action(
+            "ai_key_delete",
+            {"key_id": target_id, "masked": (prior or {}).get("masked"), "mode": "single"},
+        )
         return jsonify({"success": True, "message": "Key removed."})
-    # Only admin can delete all keys
-    if _is_auth_enabled():
-        from flask import session
-
-        from web_runner.routes.auth import _current_user_id
-        if session.get("role") != "admin":
-            return jsonify({"success": False, "message": "权限不足"}), 403
+    # Bulk delete — no key_id specified.
+    prior_count = db.fetch_one("SELECT COUNT(*) AS cnt FROM ai_api_keys")
+    prior_n = int((prior_count or {}).get("cnt", 0) or 0)
     db.execute("DELETE FROM ai_api_keys")
+    _audit_ai_key_action(
+        "ai_key_delete",
+        {"mode": "all", "count": prior_n},
+    )
     return jsonify({"success": True, "message": "All API keys removed."})
 
 
 @bp.post("/api/ai/keys/batch")
 def ai_keys_batch():
-    from flask import session
-
-    from web_runner.routes.auth import _current_user_id, _is_auth_enabled
-    if _is_auth_enabled():
-        uid = _current_user_id()
-        if uid is None:
-            return jsonify({"success": False, "message": "未登录"}), 401
-        if session.get("role") != "admin":
-            return jsonify({"success": False, "message": "权限不足"}), 403
+    # Founder gate (ai-api-keys-founder feature): tighter than the
+    # prior admin gate. Batch imports are how an operator typically
+    # loads a fresh key pool; a non-founder should not be able to
+    # mutate the pool at all even with a single admin role.
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
     from datetime import datetime
     data = request.get_json(silent=True) or {}
     raw = data.get("keys", [])
@@ -1053,6 +1271,10 @@ def ai_keys_batch():
                 skipped += 1
             else:
                 errors.append(exc_name)
+    _audit_ai_key_action(
+        "ai_key_batch",
+        {"added": added, "skipped": skipped, "errors": errors},
+    )
     return jsonify({"success": True, "data": {"added": added, "skipped": skipped, "errors": errors}})
 
 
@@ -1116,6 +1338,13 @@ def ai_generate_stream():
             def cap_err():
                 yield f"event: error\ndata: {json.dumps({'message': f'Too many messages in conversation (max {MAX_MESSAGES_PER_REQUEST}).'})}\n\n"
             return Response(cap_err(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        # Guard: refuse to send images to a text-only model with a clear
+        # message instead of OpenRouter's cryptic "Cannot read
+        # 'image.png' (this model does not support image input)".
+        if _messages_contain_images(raw_messages) and _model_supports_images(model) is False:
+            def vision_err():
+                yield f"event: error\ndata: {json.dumps({'message': f'当前模型 {model} 不支持图片输入。请选择带「图片」(Vision) 标签的模型后再发送图片。'})}\n\n"
+            return Response(vision_err(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
         return Response(
             _stream_openrouter(model, raw_messages),
             mimetype="text/event-stream",
@@ -1325,3 +1554,254 @@ def ai_images_fetch():
         # after adding an upstream-ETag/Last-Modified revalidate hook.
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+# ── Pexels VIDEOS API helpers (round-Video-Backgrounds-v1) ───────────
+# Round-Video-Backgrounds-v1 swaps the Studio renderer's per-scene
+# background from a static Pexels IMAGE (currently consumed via
+# `<Image src={...}/>` inside `<SceneCard>`) to an actual downloaded
+# Pexels VIDEO clip consumed by Remotion `<OffthreadVideo>`. Edge-TTS
+# synthesizes per-scene voiceover consumed by `<Audio>`. This trio of
+# helpers (search / normalise / download) mirrors the existing image
+# pair (`_search_pexels` + `_normalize_pexels_photo`) so a maintainer
+# can find them by analogy.
+#
+# Two important differences from the image helpers:
+#   * Endpoint: Pexels separates photo+video APIs. Photo lives at
+#     `/v1/search`, Video lives at `/videos/search` — a single
+#     PEXELS_API_KEY serves both surfaces (same `Authorization`
+#     header, NOT Bearer-prefixed). Sharing the env var keeps
+#     operator onboarding to a single key per Pexels account.
+#   * Response shape: each `videos[]` item carries NESTED
+#     `video_files[]` with multiple resolutions (SD / HD / FHD /
+#     4K). `_normalize_pexels_video` picks the smallest MP4 ≥
+#     540px wide AND portrait orientation (height > width) so we
+#     don't burn disk on 4K footage when 540p is plenty for a 4-8
+#     second short-form clip. This mirrors the existing image
+#     `_normalize_pexels_photo` shape so the Studio pipeline can
+#     treat video and image rows identically at the
+#     `studio_assets.ref_image_url` column (the column name is
+#     kept despite carrying video URLs — `kind` discriminates).
+# ─────────────────────────────────────────────────────────────────────
+
+
+_VIDEO_DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024  # 50 MB; Pexels HD ≈ 5-15 MB
+# Duration floor for short-form reels: anything shorter than ~4 s
+# won't survive the cross-fade between two scenes that share a clip
+# (the more typical case is one B-roll clip per scene with no
+# cross-fade). 4 s is the smallest duration that still covers a
+# natural-read-rate body line.
+_VIDEO_MIN_DURATION_SEC = 4
+
+
+def _search_pexels_videos(
+    query: str,
+    count: int,
+    orientation: str | None = None,
+    min_duration: int | None = _VIDEO_MIN_DURATION_SEC,
+) -> list[dict]:
+    """Raw Pexels VIDEO search. Returns the upstream `videos` list (or []).
+
+    Same failure envelope as `_search_pexels`: silent-degrade on
+    401/429/5xx/timeout/JSONDecodeError so the Studio pipeline never
+    cascades a transient upstream failure onto a partial render.
+    Both `_search_pexels` (photos) and `_search_pexels_videos`
+    (videos) are called from `_resolve_scene_*` helpers; if one
+    source fails, the other still ships a result.
+
+    `orientation`: forwarded as a query param (`portrait` / `landscape`
+    / `square`). The Studio pipeline always sets `portrait` so the
+    returned clip fits the 9:16 vertical frame without wide
+    letterboxing.
+
+    `min_duration`: forwarded as a query param so Pexels filters
+    out < N-second clips at the upstream. `None` skips the param
+    entirely (legacy smoke-test callers pass `None` to bypass).
+    The Studio pipeline always sets `min_duration=4` so a 7-second
+    scene never picks a 1-second B-roll that loops 7× on screen.
+    """
+    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        return []
+    params: dict = {"query": query, "per_page": max(1, count), "page": 1}
+    if orientation:
+        params["orientation"] = orientation
+    if min_duration is not None:
+        params["min_duration"] = max(1, int(min_duration))
+    try:
+        resp = http_requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": api_key},
+            params=params,
+            timeout=(5, 8),
+        )
+    except (http_requests.RequestException, OSError, TimeoutError) as e:
+        logger.warning(f"[ai] Pexels Videos connect failed: {type(e).__name__}: {e}")
+        return []
+    if resp.status_code != 200:
+        logger.warning(
+            f"[ai] Pexels Videos search returned {resp.status_code} for query={query!r}"
+        )
+        return []
+    try:
+        return resp.json().get("videos") or []
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"[ai] Pexels Videos search JSON decode failed: {type(e).__name__}: {e}")
+        return []
+
+
+def _normalize_pexels_video(v: dict, min_width: int = 540) -> dict:
+    """Pexels raw video record → uniform `NormalizedVideo` schema.
+
+    Returns a dict with `id`, `source`, `download_url` (chosen
+    `video_files[]` entry's `link`), `preview_url` (Pexels's
+    static thumbnail `image` field — useful as a poster frame),
+    `page_url` (`videos.url`), plus `duration_sec`, `width`,
+    `height`, `user_name`, `user_url`.
+
+    `download_url` may be empty when:
+      * the record has NO `video_files[]` entries,
+      * every entry's `file_type != 'video/mp4'` (Pexels serves
+        WebM for some resolutions — we don't ship a WebM
+        demuxer in the headless Chromium stack),
+      * every MP4 entry is landscape (`height <= width`) so the
+        chosen one wouldn't fit the 9:16 frame without
+        letterboxing,
+      * every MP4 entry has `width < min_width` (480p and below
+        artefacts under letterboxing for short-form reels).
+
+    Empty `download_url` is the deterministic "skip this clip"
+    signal — the Studio pipeline's `_resolve_scene_videos` reads
+    the empty string and moves on to the next candidate (or to
+    the image fallback).
+    """
+    video_id = v.get("id")
+    str_id = f"pexels_video:{video_id}" if video_id is not None else ""
+    duration = v.get("duration") or 0
+    base_width = v.get("width") or 0
+    base_height = v.get("height") or 0
+    user = v.get("user") or {}
+
+    video_files = v.get("video_files") or []
+    # Round-Video-Backgrounds-v1 tightening — use `>=` (was `>`)
+    # so a 1:1 square MP4 (e.g. 1080×1080) is admitted as a
+    # fallback rather than silently rejected. The reviewer's
+    # evidence was niche-topic searches where portrait-only hits
+    # are sparse and a square MP4 cover-cropped onto 9:16
+    # still produces a usable scene (Remotion's
+    # `<OffthreadVideo objectFit="cover">` clips the sides,
+    # losing about 30 % of the frame's content but keeping
+    # the user's text-card overlay in the centre). The
+    # trade-off: 1:1 will letterbox/lose content compared to
+    # a true portrait, but a silent ``None`` on every scene
+    # is a much worse operator UX.
+    portrait_mp4s = [
+        vf
+        for vf in video_files
+        if (vf.get("file_type") == "video/mp4"
+            and (vf.get("height") or 0) >= (vf.get("width") or 0)
+            and (vf.get("width") or 0) >= min_width)
+    ]
+    # Sort by width ASC. Picking the smallest quality that still
+    # meets `min_width` keeps the per-clip file size low (a 540p
+    # portrait MP4 is typically 3-6 MB vs a 720p equivalent at
+    # 8-12 MB) without sacrificing the visual floor. If a future
+    # operator wants HD-only, raise `min_width` on the
+    # `_resolve_scene_videos` call site — this helper stays
+    # parameter-driven.
+    portrait_mp4s.sort(key=lambda vf: (vf.get("width") or 0))
+
+    chosen = portrait_mp4s[0] if portrait_mp4s else None
+    return {
+        "id": str_id,
+        "source": "pexels_videos",
+        "download_url": (chosen.get("link") if chosen else "") or "",
+        "preview_url": v.get("image") or "",
+        "page_url": v.get("url") or "",
+        "duration_sec": int(duration) if duration else 0,
+        "width": int(chosen.get("width") if chosen else base_width) or 0,
+        "height": int(chosen.get("height") if chosen else base_height) or 0,
+        "user_name": user.get("name") or "",
+        "user_url": user.get("url") or "",
+    }
+
+
+def _download_video_to_disk(
+    url: str,
+    out_path: str,
+    max_bytes: int = _VIDEO_DOWNLOAD_MAX_BYTES,
+) -> tuple[bool, str]:
+    """Stream a remote video URL to ``out_path`` with a hard size cap.
+
+    Returns ``(success, error_message)``. On success the file is
+    fully written; on cap-exceeded the partial file is destroyed
+    BEFORE returning so a future inspect never finds a half-baked
+    MP4 the way `_resolve_scene_videos` would re-pick it via its
+    cache table.
+
+    The 50 MB cap is the round-Video-Backgrounds chosen budget:
+      * Pexels HD portrait MP4 ≈ 5-15 MB (540p-720p)
+      * A 60-second 1080p portrait could exceed 50 MB; we don't
+        render any scene longer than ``MAX_SCENE_SEC = 8`` so a
+        50 MB ceiling is wide enough for one B-roll clip per scene
+        with margin.
+      * Edge case: a malicious or mistakenly huge download
+        (Content-Length header present). The cap is enforced
+        BEYOND the header check, on the streaming side, because
+        upstream CDNs sometimes lie about Content-Length.
+
+    Caller is responsible for `os.makedirs(os.path.dirname(out_path))`
+    — this function does NOT create the directory because the
+    Studio pipeline already does it once per render call (avoids
+    per-scene mkdir stat syscalls). Tested with both an existing
+    parent dir and a fresh one (`os.makedirs` lives at the call
+    site so the test exercises both halves).
+    """
+    if not url:
+        return False, "no url"
+    try:
+        resp = http_requests.get(url, stream=True, timeout=(5, 30))
+    except (http_requests.RequestException, OSError, TimeoutError) as e:
+        return False, f"connect failed: {type(e).__name__}: {e}"
+    if resp.status_code != 200:
+        try:
+            resp.close()
+        except Exception:
+            pass
+        return False, f"upstream returned {resp.status_code}"
+
+    cl_header = resp.headers.get("Content-Length", "")
+    if cl_header and cl_header.isdigit() and int(cl_header) > max_bytes:
+        try:
+            resp.close()
+        except Exception:
+            pass
+        return False, f"size {cl_header}B > cap {max_bytes}B"
+
+    bytes_yielded = 0
+    try:
+        with open(out_path, "wb") as out_file:
+            for chunk in resp.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                bytes_yielded += len(chunk)
+                if bytes_yielded > max_bytes:
+                    # Destroy partial file BEFORE returning so the
+                    # UPSERT path (which would call this helper's
+                    # output media-staging caller) never sees a
+                    # half-baked MP4 in the cache. Failure mode is
+                    # loud (server log) but not user-blocking —
+                    # SceneCard falls through to the image fallback.
+                    try:
+                        out_file.close()
+                        _os.unlink(out_path)
+                    except OSError:
+                        pass
+                    return False, f"streamed > {max_bytes}B cap, partial destroyed"
+                out_file.write(chunk)
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
+    return True, ""

@@ -117,7 +117,7 @@ function setAuth({
 
 function mountAccountsPage() {
   return render(
-    <TestProviders client={makeQueryClient()} initialEntries={['/app']}>
+    <TestProviders client={makeQueryClient()} initialEntries={['/dashboard']}>
       <AuthGuard>
         <AccountsPage />
       </AuthGuard>

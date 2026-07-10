@@ -57,6 +57,13 @@ export function useTaskTableState(tasks: TaskItem[]) {
     title: '',
   })
 
+  // ── pagination ─────────────────────────────────────────────────────
+  // Client-side paging over `filtered`. Resetting to page 1 whenever
+  // the keyword / status filter changes keeps the user on the first
+  // slice of the new result set (rather than a now-empty later page).
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // ── URL `?focus=` deep-link effect ──────────────────────────────────
@@ -104,9 +111,28 @@ export function useTaskTableState(tasks: TaskItem[]) {
     return map
   }, [tasks])
 
+  // RESOLVE LABELS VIA t() BEFORE PASSING TO <StatusTabs> —
+  // `chipOptions` exposes `labelKey + labelFallback` from the
+  // module-level STATUS_CHIPS manifest (no React coupling). The
+  // consumer (TasksPage) calls `.map(c => ({ ...c, label: t(c.labelKey,
+  // c.labelFallback) }))` to resolve labels at render time. Do NOT
+  // add `label: string` here — that would re-introduce a hardcoded
+  // label and break the i18n contract (see docs/dev/adr-i18n-invariant
+  // .md §2).
   const chipOptions = useMemo(
     () => STATUS_CHIPS.map((c) => ({ ...c, count: counts[c.value] ?? 0 })),
     [counts],
+  )
+
+  // ── paged read-model ──────────────────────────────────────────────
+  // Slice `filtered` to the active page. `totalPages` is clamped to ≥1
+  // so an empty result still renders a single (inactive) page.
+  const totalFiltered = filtered.length
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize))
+  const safePage = Math.min(Math.max(1, page), totalPages)
+  const pagedFiltered = useMemo(
+    () => filtered.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filtered, safePage, pageSize],
   )
 
   // ── Selection cleanup on filter change ────────────────────────────
@@ -134,6 +160,11 @@ export function useTaskTableState(tasks: TaskItem[]) {
       })
     })
     return () => cancelAnimationFrame(raf)
+  }, [debouncedKeyword, status])
+
+  // ── reset to first page when the result set changes ───────────────
+  useEffect(() => {
+    setPage(1)
   }, [debouncedKeyword, status])
 
   return {
@@ -165,5 +196,13 @@ export function useTaskTableState(tasks: TaskItem[]) {
     filtered,
     counts,
     chipOptions,
+    // pagination
+    pagedFiltered,
+    totalFiltered,
+    totalPages,
+    page: safePage,
+    pageSize,
+    setPage,
+    setPageSize,
   }
 }

@@ -10,12 +10,25 @@ import pytest
 
 from web_runner import create_app
 
+# Canonical _login_as helper lives at tests/_login_helpers.py (sibling-module
+# import avoids pytest conftest double-import foot-gun).
+from tests._login_helpers import _login_as  # noqa: E402
+
 
 @pytest.fixture
 def app():
-    """Flask test client with isolated temp dir and test SECRET_KEY."""
-    with patch("web_runner.utils._sync_cookie_files_to_db"):
-        application = create_app()
+    """Flask test client with isolated temp dir and test SECRET_KEY.
+
+    Mirrors ``tests/test_studio.py::app`` + ``tests/test_admin_oauth.py::app``
+    line-by-line so the testing convention is uniform. Forces
+    ``SAU_AUTH_ENABLED=true`` so the global auth gate is active even
+    when the shell env has it disabled — otherwise tests asserting 401
+    from unauthenticated requests see 200 (the synthetic local-user
+    branch when ``SAU_AUTH_ENABLED=false``).
+    """
+    with patch.dict("os.environ", {"SAU_AUTH_ENABLED": "true"}, clear=False):
+        with patch("web_runner.utils._sync_cookie_files_to_db"):
+            application = create_app()
     application.config["TESTING"] = True
     application.config["SECRET_KEY"] = "test-secret-key-for-testing"
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -54,42 +67,6 @@ def _clean_auth_tables():
     yield
 
 
-def _login_as(client, email="admin@test.com"):
-    """Helper: send code + login, return user dict. Reuses existing user if already created."""
-    from web_runner.db import get_database
-
-    db = get_database()
-
-    # Check if user already exists (from a previous _login_as call in same test)
-    existing = db.fetch_one("SELECT * FROM users WHERE email = ?", (email,))
-    if existing:
-        # Just set the session via login endpoint with a fresh code
-        with patch("web_runner.routes.auth._send_smtp_email", return_value=(True, "ok")):
-            client.post("/api/auth/send-code", json={"email": email})
-        row = db.fetch_one(
-            "SELECT code FROM verification_codes WHERE email = ? AND purpose = 'login' AND used = 0 ORDER BY created_at DESC LIMIT 1",
-            (email,),
-        )
-        if row:
-            resp = client.post("/api/auth/login", json={"email": email, "code": row["code"]})
-            if resp.status_code == 200:
-                return resp.get_json()["data"]["user"]
-        # If rate-limited or code issue, user exists but we can't re-login
-        # Return existing user info
-        return {"id": existing["id"], "email": existing["email"], "role": existing["role"]}
-
-    # New user: send code + login
-    with patch("web_runner.routes.auth._send_smtp_email", return_value=(True, "ok")):
-        resp = client.post("/api/auth/send-code", json={"email": email})
-
-    row = db.fetch_one(
-        "SELECT code FROM verification_codes WHERE email = ? AND purpose = 'login' AND used = 0 ORDER BY created_at DESC LIMIT 1",
-        (email,),
-    )
-    assert row is not None, f"No verification code found for {email}. send-code response: {resp.get_json()}"
-    resp = client.post("/api/auth/login", json={"email": email, "code": row["code"]})
-    assert resp.status_code == 200, f"Login failed: {resp.get_json()}"
-    return resp.get_json()["data"]["user"]
 
 
 class TestHealth:
@@ -120,11 +97,177 @@ class TestSendCode:
             assert resp.status_code == 200
             assert resp.get_json()["success"] is True
 
+    def test_send_code_mock_smtp_bypass(self, app):
+        """SAU_MOCK_SMTP=true bypasses the real SMTP round-trip and
+        writes the rendered email to the backend log instead.
+
+        Useful for E2E testing the login flow without standing up
+        MailHog / a real SMTP server. The verification code is still
+        persisted to `verification_codes` (send_code INSERT runs
+        before the email send), so the test user can read the code
+        from the DB or the log line.
+
+        Verifies:
+          1. /api/auth/send-code returns 200 (NOT 500) when SMTP is
+             not configured AND SAU_MOCK_SMTP=true.
+          2. The verification code IS persisted to the DB (so
+             /api/auth/login can match it on the next call).
+          3. The mock branch does NOT touch SAU_SMTP_HOST (so a
+             missing host config doesn't 500 the form).
+        """
+        import os
+
+        from web_runner.db import get_database
+
+        # Wipe host config so the real-SMTP branch would 500 without
+        # the mock flag — the bypass must short-circuit BEFORE the
+        # `if not all([host, user, password])` check.
+        with patch.dict(
+            "os.environ",
+            {"SAU_SMTP_HOST": "", "SAU_SMTP_USER": "", "SAU_SMTP_PASS": "",
+             "SAU_MOCK_SMTP": "true"},
+            clear=False,
+        ):
+            resp = app.post("/api/auth/send-code", json={"email": "mock-send@test.com"})
+            assert resp.status_code == 200
+            assert resp.get_json()["success"] is True
+            # The success branch in `send_code` returns the hardcoded
+            # message "验证码已发送" (NOT the mock-smtp message); the
+            # mock branch is observable via the backend log and the
+            # persisted DB code below.
+
+        # The code is in the DB (still usable for /api/auth/login).
+        db = get_database()
+        row = db.fetch_one(
+            "SELECT code FROM verification_codes WHERE email = ? "
+            "AND purpose = 'login' AND used = 0 ORDER BY created_at DESC LIMIT 1",
+            ("mock-send@test.com",),
+        )
+        assert row is not None, "code not persisted — login flow can't proceed"
+        assert len(row["code"]) == 6
+        assert row["code"].isdigit()
+
     def test_rate_limit(self, app):
         with patch("web_runner.routes.auth._send_smtp_email", return_value=(True, "ok")):
             app.post("/api/auth/send-code", json={"email": "rate@test.com"})
             resp = app.post("/api/auth/send-code", json={"email": "rate@test.com"})
             assert resp.status_code == 429
+
+    def test_send_code_html_body_multipart_contract(self, app, monkeypatch):
+        """Round-email-html-upgrade: the verification email now sends as
+        ``multipart/alternative`` with both text/plain AND text/html parts
+        that mirror `/login/auth` (LoginAuthPage) visual language.
+
+        Locks these invariants so the next refactor can't silently
+        regress to plain-text-only:
+          * `_render_verification_email` returns both bodies (not None)
+          * html_body contains: the literal code, the project URL,
+            sodium-amber ``#d97706`` accent, brand glyph ``>_``
+          * plain body still contains the code + URL (fallback path)
+          * 420px max-width (lockstep with the React card)
+          * Outlook-mobile guard: brand glyph is single-cell-table
+            (NOT span+inline-block — Word rendering engine flakes
+            on inline-block); code 30px / letter-spacing 0.2em
+            (NOT 36px/0.3em which overflows 320px Gmail viewport)
+          * Inbox preheader present (Gmail/Outlook list preview)
+        """
+        # Pin SAU_PUBLIC_URL to the documented default via the
+        # monkeypatch fixture — direct `os.environ.get()` read was
+        # brittle to leakage from sibling tests' `patch.dict` calls
+        # (none currently set it, but the contract pins the default
+        # path explicitly so this test stays robust under future
+        # test additions).
+        monkeypatch.setenv("SAU_PUBLIC_URL", "http://localhost:5180")
+
+        captured = {}
+        def capture(to_email, subject, body, html_body=None):
+            captured.update({
+                "to": to_email, "subject": subject,
+                "body": body, "html_body": html_body,
+            })
+            return (True, "ok")
+
+        with patch(
+            "web_runner.routes.auth._send_smtp_email",
+            side_effect=capture,
+        ):
+            resp = app.post("/api/auth/send-code", json={"email": "html-test@test.com"})
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+
+        # Both bodies must be populated. Empty text body would
+        # defeat the multipart/alternative RFC 2046 §5.1.4 contract
+        # (the plain part is the legacy-gateway fallback).
+        assert captured["body"], "plain text body required for multipart fallback"
+        assert captured["html_body"], "html_body required after HTML upgrade"
+
+        # Pull the actual code from the DB so we can assert it's
+        # substituted into both bodies (code is random per request).
+        from web_runner.db import get_database
+
+        db = get_database()
+        row = db.fetch_one(
+            "SELECT code FROM verification_codes "
+            "WHERE email = ? AND purpose = 'login' AND used = FALSE "
+            "ORDER BY created_at DESC LIMIT 1",
+            ("html-test@test.com",),
+        )
+        assert row is not None
+        code = row["code"]
+
+        # Hardcoded to mirror the value pinned above via
+        # `monkeypatch.setenv`. Any drift means `_public_url`'s
+        # default or the renderer's URL substitution broke —
+        # grep ``localhost:5180`` across the repo to find both sides.
+        expected_url = "http://localhost:5180"
+
+        html = captured["html_body"]
+        plain = captured["body"]
+
+        for label, body in (("html", html), ("plain", plain)):
+            assert code in body, f"{label}: missing verification code {code!r}"
+            assert expected_url in body, f"{label}: missing project URL {expected_url!r}"
+
+        # HTML must carry the brand-language tokens (locked by DESIGN.md).
+        assert "#d97706" in html, "sodium-amber accent missing in HTML body"
+        assert "&gt;_" in html or ">_" in html, "brand glyph missing from HTML body"
+        # LoginAuthPage font fallback chain — pinned so a future
+        # designer doesn't accidentally drop the mono stack.
+        assert "IBM Plex Mono" in html, "mono font stack missing from HTML body"
+        # Card width lockstep with React card (= 420px max-width).
+        assert "max-width:420px" in html, "card width drifted from React LoginAuthPage"
+        # RFC 2046 plain-body MUST be the text fallback (not HTML)
+        assert "您的登录验证码是" in plain
+        # The hidden inbox preheader must be present so Gmail/Outlook
+        # inbox-list preview surfaces the verify narrative instead
+        # of an empty gap. mso-hide:all is the Outlook-specific
+        # marker; the display:none + max-height:0 combo covers
+        # the rest.
+        assert "mso-hide:all" in html, "inbox preheader (mso-hide:all) missing"
+        assert "max-height:0" in html, "inbox preheader (max-height:0) missing"
+        # Pre-fix 36px + 0.3em overflowed 320px Gmail iOS viewport;
+        # lockstep back to 30px / 0.2em is required for narrow clients.
+        assert "font-size:30px" in html, \
+            "code font-size drifted (was 30px; pre-fix 36px overflowed mobile)"
+        assert "letter-spacing:0.2em" in html, \
+            "code letter-spacing drifted (was 0.2em; pre-fix 0.3em overflowed)"
+        # Brand glyph chip MUST NOT use span+inline-block — Outlook
+        # 2007-2016 (Word rendering engine) renders that combination
+        # inconsistently. Single-cell table is the bullet-proof idiom.
+        # Brand glyph chip MUST NOT use span+inline-block in inline
+        # style — Outlook 2007-2016 (Word rendering engine) renders
+        # that combination inconsistently. We test for the CSS-value
+        # form ``display:inline-block;`` (closed by semicolon) so
+        # explanatory comments mentioning the banned token don't
+        # trip a false-positive.
+        assert 'display:inline-block;' not in html, \
+            "brand glyph chip uses span+inline-block in inline style — Outlook-incompatible"
+        # Outlook preheader padding trick — the trailing invisible
+        # ``&nbsp;&zwnj;`` span prevents the visible <table> below
+        # from being treated as preheader continuation in Word's
+        # renderer (round 2 reviewer finding).
+        assert '&zwnj;' in html, \
+            "Outlook preheader padding (zwnj) markers missing"
 
 
 class TestLogin:

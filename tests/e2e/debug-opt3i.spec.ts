@@ -75,7 +75,7 @@ test('debug opt-3i submit chain', async ({ page }) => {
     (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
   )
 
-  await page.goto('/app/publish')
+  await page.goto('/dashboard/publish')
   console.log('── after goto: url=', page.url())
 
   await page.getByRole('combobox').first().click()

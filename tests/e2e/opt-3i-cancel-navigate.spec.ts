@@ -57,12 +57,12 @@ test.describe('OPT-3I · cancel post-submit 退回避免自动跳转', () => {
   })
 
   test('submit → countdown pill shows → 点击取消 → 不跳转', async ({ page }) => {
-    // Navigate directly to /app/publish (the canonical route).
+    // Navigate directly to /dashboard/publish (the canonical route).
     // PublishWizard defaults to step 0 (Upload), so we walk Upload →
     // Content → Review before submitting — the legacy single-form
     // anchor references (#video-file-input, 「提交视频」) were replaced
     // by the wizard when the 3-step flow landed.
-    await page.goto('/app/publish')
+    await page.goto('/dashboard/publish')
 
     // ── Step 0 (Upload) ────────────────────────────────────────────
     // Pick the bilibili group so the form has a row to submit against.
@@ -121,7 +121,7 @@ test.describe('OPT-3I · cancel post-submit 退回避免自动跳转', () => {
 
     // URL invariant: still on the publish page (no auto-nav).
     await page.waitForTimeout(200) // window for any pending navigate tick
-    expect(new URL(page.url()).pathname).toBe('/app/publish')
+    expect(new URL(page.url()).pathname).toBe('/dashboard/publish')
 
     // The 手动 导航 affordance should still be there — banner is
     // visible because submitSuccess is non-null even after cancel.

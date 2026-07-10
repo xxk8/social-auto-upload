@@ -369,7 +369,7 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at
 ## 9. 安全考量
 
 1. **所有管理员端点必须使用 `@admin_required`** — 后端是权限的唯一真实来源
-2. **前端仅隐藏 UI，不做权限判断** — 非管理员访问 `/app/admin` 会被后端 403 拦截
+2. **前端仅隐藏 UI，不做权限判断** — 非管理员访问 `/dashboard/admin` 会被后端 403 拦截
 3. **审计日志不可删除** — `admin_audit_log` 表不暴露 DELETE 端点
 4. **角色变更需二次确认** — 前端弹窗确认，防止误操作
 5. **自身角色不可降级** — 管理员不能把自己从 admin 降为 user
@@ -1029,7 +1029,7 @@ def google_callback():
         )
         _create_session(user)
         
-        return redirect('/app')
+        return redirect('/dashboard')
     except Exception as exc:
         return redirect('/login?error=google_failed')
 
@@ -1067,7 +1067,7 @@ def github_callback():
         )
         _create_session(user)
         
-        return redirect('/app')
+        return redirect('/dashboard')
     except Exception as exc:
         return redirect('/login?error=github_failed')
 ```
@@ -1265,9 +1265,9 @@ Google 回调到 /api/auth/google/callback
 
 | 用例 | 步骤 | 预期结果 |
 |---|---|---|
-| Google 登录 | 点击 Google 登录 → 授权 → 回调 | 创建用户，跳转到 /app |
-| GitHub 登录 | 点击 GitHub 登录 → 授权 → 回调 | 创建用户，跳转到 /app |
-| 已有用户登录 | 使用已注册邮箱的 Google 账号登录 | 更新 last_login，跳转到 /app |
+| Google 登录 | 点击 Google 登录 → 授权 → 回调 | 创建用户，跳转到 /dashboard |
+| GitHub 登录 | 点击 GitHub 登录 → 授权 → 回调 | 创建用户，跳转到 /dashboard |
+| 已有用户登录 | 使用已注册邮箱的 Google 账号登录 | 更新 last_login，跳转到 /dashboard |
 | 取消授权 | 在 Google/Git舟 页面取消授权 | 返回 /login，显示错误提示 |
 
 ### 21.10 文件变更清单

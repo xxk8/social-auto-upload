@@ -1,13 +1,57 @@
 // ── shared mock prop shapes (see TaskTableRow.test.tsx for rationale) ──
 //
-//  covers HTMLAttributes + children + an open index signature
-//  so data-* / aria-* still flow through .
+// Mocked sub-components (AiPanelToolbar, motion.div via Proxy,
+// lucide-react icons) take handler props from the real impl that are
+// typed as Radix's ToggleEventHandler<HTMLElement> / `() => void` /
+// MotionEvent handlers. HTMLAttributes<HTMLElement> only carries
+// `onClick: MouseEventHandler<HTMLButtonElement>`, so a strict
+// `(props: MockProps) => ...` mock signature TS-rejects handler
+// assignments with TS2322 ("Type '…ToggleEventHandler…' is not
+// assignable to type '…MouseEventHandler…'"). The file already has
+// `/* eslint-disable @typescript-eslint/no-explicit-any */` so we
+// also extend MockProps with an explicit `any`-typed push-down for
+// unknown custom handlers (`onToggle`, `onQuickGenerate`, etc.) so
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// ── shared mock prop shapes (see TaskTableRow.test.tsx for rationale) ──
+//
+// Mocked sub-components (AiPanelToolbar, motion.div via Proxy,
+// lucide-react icons) take handler props from the real impl that are
+// typed as Radix's ToggleEventHandler<HTMLElement> / `() => void` /
+// MotionEvent handlers. HTMLAttributes<HTMLElement> only carries
+// `onClick: MouseEventHandler<HTMLButtonElement>`, so a strict
+// `(props: MockProps) => ...` mock signature TS-rejects handler
+// assignments with TS2322 ("Type '…ToggleEventHandler…' is not
+// assignable to type '…MouseEventHandler…'"). The file ALREADY had
+// `/* eslint-disable @typescript-eslint/no-explicit-any */` so we
+// also extend MockProps with an explicit `any`-typed push-down for
+// unknown custom handlers (`onToggle`, `onQuickGenerate`, etc.) so
+// TS2322 stays silenced without weakening the test surface.
+//
+// The eslint-disable directive lives ABOVE the type declaration
+// because ESLint directives apply FROM their physical location
+// FORWARD in the file (they don't reach backward across tokens).
+// Previously the directive sat below the type MockProps, so the
+// new `(...args: any[])` handler signatures in the type body were
+// flagged as `Unexpected any` even though the file's other
+// `any`-typed consumers (motionCache / motion) were covered. With
+// the directive at the top of the file, both the type-alias
+// signatures AND the in-function `any`s get silenced in lockstep.
 type MockProps = HTMLAttributes<HTMLElement> & {
   children?: ReactNode
+  // Custom handlers from the real AiPanelToolbar.component props.
+  // Typed as `any(...)` mirrors the TS2322 root cause (the real
+  // impl uses Radix's ToggleEventHandler which doesn't fit into
+  // HTMLAttributes' onClick-on-this-element contract). `[key:
+  // string]: unknown` keeps the index signature for data-* /
+  // aria-* passthrough but no longer triggers the strict-handler
+  // mismatch.
+  onToggle?: (...args: any[]) => void
+  onQuickGenerate?: (...args: any[]) => void
+  isExpanded?: boolean
+  isGenerating?: boolean
   [key: string]: unknown
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import type { HTMLAttributes, ReactNode } from 'react'
@@ -42,7 +86,6 @@ vi.mock('motion/react', () => {
       get: (_t, tag: string) => {
         if (!motionCache.has(tag)) {
           motionCache.set(tag, (props: any) => {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { children, animate, initial: _initial, transition: _transition, exit, ...rest } =
               (props ?? {}) as Record<string, unknown> & {
                 children?: ReactNode

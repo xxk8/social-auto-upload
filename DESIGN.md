@@ -9,7 +9,7 @@ description: |
   display + body, IBM Plex Mono for code / IDs / timestamps / brand glyph.
   Two surfaces in the unified `:5180` Vite app: visitor-facing product
   landing at `/` (`LandingPage.tsx`, paying-customer copy only)
-  + operator-facing dashboard at `/app/*` (engineering-tool aesthetic).
+  + operator-facing dashboard at `/dashboard/*` (engineering-tool aesthetic).
   Per-component recipes live in DESIGN-components.md.
 
 scope: |
@@ -171,7 +171,7 @@ boundaries:
       • Visitor-facing pricing surface at `/pricing` (PricingPage) — paid-
         conversion funnel, public, parallel to `/`. No AuthGuard so anonymous
         visitors can compare tiers before sign-in.
-      • Operator-facing dashboard at `/app/*` (AccountGroupsPage / Publish /
+      • Operator-facing dashboard at `/dashboard/*` (AccountGroupsPage / Publish /
         Logs / Tasks / AI panel). No public `/marketing` subtree — the product
         landing IS the unified app's index. The `/login` route also belongs
         to the visitor surface (no AuthGuard).
@@ -324,10 +324,10 @@ migrated-from:
     `CLI / Web / Skill / 自动化` removed), status labels migrated from
     `mainline / beta / wip` → `主线 / 支持中 / 筹备中` for customer
     comprehension, hero stat row rebuilt with `6 / 3h+ / 不上云` value props.
-    The `Web Shell` URL target at `/app/*` is preserved unchanged; only the
+    The `Web Shell` URL target at `/dashboard/*` is preserved unchanged; only the
     Chinese customer-facing label is friendlier (`控制台` not `Web Shell`).
     DESIGN.md `boundaries.marketing-surface` updated to the two-surface
-    topology (visitor landing at "/" + operator dashboard at "/app/*"); a
+    topology (visitor landing at "/" + operator dashboard at "/dashboard/*"); a
     banned list of dev-coded vocabulary on the landing surface is enforced
     alongside. Operator-facing documentation (CLI usage / install / Agent
     Skill install) lives in the operator dashboard help / README `/ CLI.md`
@@ -424,7 +424,7 @@ migrated-from:
 
 ## Overview
 
-This document captures the **current** design system for `sau-web/frontend/` as a tooling product with a paying-customer landing surface. Rounds 1–4 have scrubbed the prior Linear-marketing aesthetic from both code and tokens; if you find yourself reaching for `bg-primary/[0.15] blur-3xl` or a glass morphology panel, you're reading an older guideline. The warm-editorial palette / gradient / glass morphology are gone; the `>` console-prompt brand glyph, hairline borders, single sodium-amber accent, cold-neutral canvas, and IBM Plex Sans/Mono-only type system are what the codebase reads as today across both the visitor landing surface ( `/` ) and the operator dashboard ( `/app/*` ).
+This document captures the **current** design system for `sau-web/frontend/` as a tooling product with a paying-customer landing surface. Rounds 1–4 have scrubbed the prior Linear-marketing aesthetic from both code and tokens; if you find yourself reaching for `bg-primary/[0.15] blur-3xl` or a glass morphology panel, you're reading an older guideline. The warm-editorial palette / gradient / glass morphology are gone; the `>` console-prompt brand glyph, hairline borders, single sodium-amber accent, cold-neutral canvas, and IBM Plex Sans/Mono-only type system are what the codebase reads as today across both the visitor landing surface ( `/` ) and the operator dashboard ( `/dashboard/*` ).
 
 The system reads as **dev-tool documentation**: dense, mono-influenced, hairline-correct, single accent. The sidebar in particular is the canonical example — `>_` glyph, mono labels, 2px amber active strip with no block fill. The dashboard header carries a mono breadcrumb (`sau@main · build a7f3b21 · [●] ws ok · mainline`) that mirrors a Linear issue-pane / vscode-status-bar pattern.
 

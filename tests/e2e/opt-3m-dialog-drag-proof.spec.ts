@@ -161,7 +161,7 @@ test.describe('OPT-3M · 授权对话框三个锁定项', () => {
 
   test('draggable QR image stays inside dialog after drag attempt', async ({ page }) => {
     // ── 1. Navigate to accounts page ──────────────────────────────────
-    await page.goto('/app')
+    await page.goto('/dashboard')
     // Wait for the AppShell sidebar to paint (indicates AuthGuard resolved).
     await expect(page.getByRole('link', { name: '账号管理' })).toBeVisible()
 
@@ -254,7 +254,7 @@ test.describe('OPT-3M · 授权对话框三个锁定项', () => {
 
   test('non-QR platform CLI command text is selectable', async ({ page }) => {
     // ── 1. Navigate to accounts page ────────────────────────────
-    await page.goto('/app')
+    await page.goto('/dashboard')
     await expect(page.getByRole('link', { name: '账号管理' })).toBeVisible()
 
     // ── 2. Open AuthorizeDialog ────────────────────────────────

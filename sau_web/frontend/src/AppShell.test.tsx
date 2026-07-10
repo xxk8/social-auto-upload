@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@/test/user-event-shim'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/Components/ui/tooltip'
 import { AppShell, SIDEBAR_STORAGE_KEY as APP_SHELL_SIDEBAR_KEY } from './AppShell'
 import { mockUseAuth } from '@/test/auth-router-spies'
 import { makeQueryClient } from '@/test/render-harness.helpers'
+import i18n from '@/lib/i18n/config'
+
+// Local jsdom 25 sometimes lazy-mounts window.localStorage AFTER
+// module evaluation but BEFORE beforeEach runs. AppShell.tsx reads
+// `localStorage.getItem(SIDEBAR_STORAGE_KEY)` in its `useState(() =>\n// …)` initializer at first render — and this test's `beforeEach`\n// `localStorage.removeItem(...)` could throw \"Cannot read\n// properties of undefined (reading 'removeItem')\". Pattern from\n// earlier rounds (LocalePicker.test.tsx, LandingPage.test.tsx);\n// documented in docs/vitest-suite.md §4.5 jsdom-lazy-mount\n// workaround. Idempotent guard — no-op when real localStorage\n// exists.\nif (typeof window !== 'undefined' && !window.localStorage) {\n  const store = new Map<string, string>()\n  Object.defineProperty(window, 'localStorage', {\n    value: {\n      getItem: (k: string) => store.get(k) ?? null,\n      setItem: (k: string, v: string) => { store.set(k, v) },\n      removeItem: (k: string) => { store.delete(k) },\n      clear: () => { store.clear() },\n      key: (i: number) => Array.from(store.keys())[i] ?? null,\n      get length() { return store.size },\n    },\n    configurable: true,\n    writable: true,\n  })\n}
 
 // ─────────────────────────────────────────────────────────────────────────
 // AppShell · sidebar contract test (MemoryRouter wrap + layout invariants).
@@ -196,7 +202,7 @@ function setViewportWidth(width: number) {
 }
 
 function mountAppShell({
-  initialPath = '/app',
+  initialPath = '/dashboard',
   sidebarCollapsed = false,
   viewportWidth = 1280,
 }: {
@@ -207,7 +213,7 @@ function mountAppShell({
   setViewportWidth(viewportWidth)
   localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarCollapsed))
   // Three context providers wrap <AppShell /> — mirrors the production
-  // chain that <App /> provides around /app/* at the browser top level.
+  // chain that <App /> provides around /dashboard/* at the browser top level.
   // Catches the same layered provider-context failure pattern that was
   // uncovered in the pre-existing Page-spec failures on `main`:
   //
@@ -264,12 +270,39 @@ function setAuth({
   })
 }
 
+// ── helpers: keyboard events ───────────────────────────────────────────
+
+function fireKey(key: string, opts: { metaKey?: boolean; shiftKey?: boolean; altKey?: boolean; ctrlKey?: boolean; repeat?: boolean } = {}) {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...opts,
+  })
+  // Dispatch on the focused element so typing-suppression tests
+  // are meaningful (e.target must be the input/textarea, not
+  // document). Falls back to document for global shortcuts fired
+  // when nothing is focused.
+  const target = document.activeElement || document
+  target.dispatchEvent(event)
+  return event
+}
+
 // ── tests ───────────────────────────────────────────────────────────────
 
 describe('AppShell · sidebar contract (MemoryRouter wrap + layout invariants)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     mockUseAuth.mockReset()
     localStorage.removeItem(SIDEBAR_STORAGE_KEY)
+    // Insurance vs prior-test locale leakage — if a sibling test
+    // file (currently src/AppShell.i18n.test.tsx) ran the i18n
+    // singleton to en-US in its own beforeEach, the singleton
+    // retains 'en-US' for subsequent test files in the same VM.
+    // Forcing re-init to 'zh-CN' here guarantees the existing
+    // zh-CN string assertions (e.g. `findByText('键盘快捷键')`,
+    // `getByRole('button', { name: /键盘快捷键/i })`) still match
+    // the post-retranslate DOM.
+    await i18n.changeLanguage('zh-CN')
   })
 
   // (a) MemoryRouter contract — AppShell must render under a <Router>
@@ -325,50 +358,270 @@ describe('AppShell · sidebar contract (MemoryRouter wrap + layout invariants)',
     expect(email.className).toMatch(/\btext-\[14px\]/)
   })
 
-  // (d) Collapsed-mode footer contract — uniform `h-7 w-7` button
-  // sizing for both logout AND <ThemeToggle size="compact">. The
-  // previous round paired a 28-px logout button with the default
-  // 32-px <ThemeToggle> inside one container, reading as half-aligned.
-  // Pinning both to `h-7 w-7` cements the compact treatment.
+  // (d) Collapsed-mode footer contract — <ThemeToggle size="compact">
+  // is the only icon button left after round-OPT-marketing-chrome v5
+  // removed the standalone logout button. The `aria-label="登出"`
+  // regression shield is the more important pin in this round:
+  // previously a `<button aria-label="登出">` lived in the collapsed
+  // footer (h-7 w-7, hover-destructive) as a parallel logout
+  // affordance — that button is GONE in v5 because logout is now the
+  // 5th dropdown item inside <UserMenu> (data-testid="user-menu-
+  // logout"). The "no element with aria-label='登出' exists in the
+  // collapsed footer" assertion catches a future regression that
+  // silently re-introduces a parallel logout button — the exact
+  // duplication the v5 round was scoped to eliminate.
   //
   // Avatar (h-8 w-8) is intentionally NOT pinned here — it's the
   // identity marker, deliberately taller than the icon buttons; the
   // hierarchy read is preserved by the avatar's separation, not by
   // mutual exclusion.
   //
-  // Updated for the user-menu follow-up: the avatar is now a
-  // <UserMenu mode="collapsed"> trigger button (h-8 w-8, aria-label
-  // starts with `用户菜单`). The previous `:not([aria-label="登出"])`
-  // selector would silently match that user-menu trigger as the
-  // "first non-logout button" → failing the h-7 w-7 assertion. Tests
-  // below use the ThemeToggle's mode-keyed aria-label prefix
-  // (`切换到`) to disambiguate specifically from the user-menu trigger.
-  it('collapsed-mode footer buttons are uniform h-7 w-7 (logout + ThemeToggle size="compact")', () => {
+  // The ThemeToggle disambiguation (`aria-label^="切换到"`) is the
+  // smaller-footprint fix for the user-menu trigger collision
+  // documented in v4: UserMenu mode="collapsed" trigger is a
+  // <button> with aria-label "用户菜单 · <email>" — a `:not([
+  // aria-label="登出"])` selector would silently match it. Prefix
+  // match is the safer disambiguator.
+  it('collapsed-mode footer (UserMenu + ThemeToggle compact) — no standalone logout button (v5 consolidation)', () => {
     setAuth({ isAuthenticated: true })
     mountAppShell({ sidebarCollapsed: true })
     const footer = screen.getByTestId('app-shell-sidebar-footer-collapsed')
 
-    // Logout button: aria-label="登出" uniquely disambiguates from
-    // <ThemeToggle> (aria-label="切换到浅色模式"|"切换到深色模式")
-    // AND from the user-menu avatar trigger (aria-label prefix
-    // "用户菜单"). The "登出" anchor has been the unambiguous key
-    // since round-OPT-footer v1.
-    const logout = footer.querySelector('button[aria-label="登出"]')
-    expect(logout).not.toBeNull()
-    expect(logout!.className).toMatch(/\bh-7 w-7\b/)
+    // Regression shield: the v5 standalone logout button is gone.
+    // Re-introducing it would re-create the exact chrome duplication
+    // the v5 round was scoped to eliminate (UserMenu's 5th dropdown
+    // item is now the SOLE logout affordance across AppShell
+    // sidebar footer + AppShell mobile AppBar + MarketingTopBar
+    // authed branch).
+    expect(footer.querySelector('button[aria-label="登出"]')).toBeNull()
 
-    // ThemeToggle (compact size = h-7 w-7) — disambiguated from the
-    // user-menu avatar trigger (h-8 w-8) by Radix's mode-keyed
-    // aria-label prefix `切换到`. Both dark- and light-mode labels
-    // share this prefix, so `^="切换到"` covers either branch.
-    // The `:not([aria-label="登出"])` writeup from v1 still works in
-    // principle, but only if the user-menu trigger isn't also a
-    // `<button>` — once it is, the selector collides. Prefix match
-    // is the smaller-footprint fix.
+    // ThemeToggle (compact size = h-7 w-7) — the only icon button
+    // left in the collapsed footer. Same disambiguation as v1:
+    // Radix's mode-keyed aria-label prefix `切换到` covers both
+    // dark- and light-mode labels.
     const themeToggle = footer.querySelector(
       'button[aria-label^="切换到"]',
     )
     expect(themeToggle).not.toBeNull()
     expect(themeToggle!.className).toMatch(/\bh-7 w-7\b/)
+  })
+})
+
+// ── KeyboardShortcutsCheatSheet tests ──────────────────────────────────
+//
+// These tests live in AppShell.test.tsx (not a separate file) because
+// the cheat-sheet is rendered INSIDE AppShell's render tree — its
+// open/close state is owned by AppShell. A separate test file would
+// have to re-create the same provider chain and shortcut handler,
+// duplicating the mount harness.
+
+describe('AppShell · KeyboardShortcutsCheatSheet', () => {
+  beforeEach(async () => {
+    mockUseAuth.mockReset()
+    localStorage.removeItem(SIDEBAR_STORAGE_KEY)
+    // Insurance vs prior-test locale leakage — if a sibling test
+    // file (currently src/AppShell.i18n.test.tsx) ran the i18n
+    // singleton to en-US in its own beforeEach, the singleton
+    // retains 'en-US' for subsequent test files in the same VM.
+    // Forcing re-init to 'zh-CN' here guarantees the existing
+    // zh-CN string assertions (e.g. `findByText('键盘快捷键')`,
+    // `getByRole('button', { name: /键盘快捷键/i })`) still match
+    // the post-retranslate DOM.
+    await i18n.changeLanguage('zh-CN')
+  })
+
+  // (e) The help button renders in the header with correct aria-label.
+  // Without this, a future header redesign that drops the icon button
+  // would silently remove the only mouse-accessible entry point.
+  it('renders the help button in the header', () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell()
+    const helpBtn = screen.getByRole('button', { name: /键盘快捷键/i })
+    expect(helpBtn).toBeInTheDocument()
+  })
+
+  // (f) Clicking the help button opens the cheat-sheet modal.
+  // Mirrors the Cmd+? keyboard path — both entry points must work.
+  it('clicking the help button opens the cheat-sheet', async () => {
+    const user = userEvent.setup()
+    setAuth({ isAuthenticated: true })
+    mountAppShell()
+    await user.click(screen.getByRole('button', { name: /键盘快捷键/i }))
+    expect(await screen.findByText('键盘快捷键')).toBeInTheDocument()
+  })
+
+  // (g) Cmd+Shift+? (macOS) opens the cheat-sheet. The `?` key
+  // requires Shift on most layouts. We suppress while typing (handled
+  // inside the global handler's `isTyping` gate). Uses findByText
+  // because Radix Dialog portals render asynchronously.
+  it('Cmd+Shift+? opens the cheat-sheet on macOS', async () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell()
+    fireKey('?', { metaKey: true, shiftKey: true })
+    expect(await screen.findByText('键盘快捷键')).toBeInTheDocument()
+  })
+
+  // (h) Ctrl+Shift+? (Win/Linux) opens the cheat-sheet. Mirrors (g)
+  // for the non-macOS modifier path.
+  it('Ctrl+Shift+? opens the cheat-sheet on Windows/Linux', async () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell()
+    fireKey('?', { ctrlKey: true, shiftKey: true })
+    expect(await screen.findByText('键盘快捷键')).toBeInTheDocument()
+  })
+
+  // (i) The cheat-sheet renders all shortcut groups. This is a
+  // coarse-grained content test — it asserts the group headings
+  // render so a future regression that drops a group trips red.
+  // We scope queries to <h3> elements specifically because some
+  // group titles (e.g. "任务列表") also appear as shortcut
+  // descriptions inside other groups, causing getByText ambiguity.
+  it('renders all shortcut groups (全局 · 侧边栏导航 · 任务列表 · 管理后台 · 弹窗与对话框)', async () => {
+    const user = userEvent.setup()
+    setAuth({ isAuthenticated: true })
+    mountAppShell()
+    await user.click(screen.getByRole('button', { name: /键盘快捷键/i }))
+    const modal = await screen.findByRole('dialog')
+    const headings = within(modal).getAllByRole('heading', { level: 3 })
+    const titles = headings.map((h) => h.textContent)
+    expect(titles).toContain('全局')
+    expect(titles).toContain('侧边栏导航')
+    expect(titles).toContain('任务列表')
+    expect(titles).toContain('管理后台')
+    expect(titles).toContain('弹窗与对话框')
+  })
+
+  // (j) Esc closes the cheat-sheet. Radix Dialog handles Escape
+  // natively — this test locks the close path.
+  it('Escape closes the cheat-sheet', async () => {
+    const user = userEvent.setup()
+    setAuth({ isAuthenticated: true })
+    mountAppShell()
+    await user.click(screen.getByRole('button', { name: /键盘快捷键/i }))
+    expect(await screen.findByText('键盘快捷键')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => {
+      expect(screen.queryByText('键盘快捷键')).not.toBeInTheDocument()
+    })
+  })
+
+  // (k) Typing in an input while the cheat-sheet is closed does NOT
+  // open it. The `?` key without a modifier is "just typing"; only
+  // Cmd+? / Ctrl+? triggers the modal.
+  it('does NOT open when typing ? in an input', () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+    fireKey('?', { metaKey: true, shiftKey: true })
+    // The shortcut handler checks isTyping and returns early.
+    expect(screen.queryByText('键盘快捷键')).not.toBeInTheDocument()
+    document.body.removeChild(input)
+  })
+})
+
+// ── Main nav keyboard shortcut tests ───────────────────────────────────
+
+describe('AppShell · main nav keyboard shortcuts', () => {
+  beforeEach(async () => {
+    mockUseAuth.mockReset()
+    localStorage.removeItem(SIDEBAR_STORAGE_KEY)
+    // Insurance vs prior-test locale leakage — if a sibling test
+    // file (currently src/AppShell.i18n.test.tsx) ran the i18n
+    // singleton to en-US in its own beforeEach, the singleton
+    // retains 'en-US' for subsequent test files in the same VM.
+    // Forcing re-init to 'zh-CN' here guarantees the existing
+    // zh-CN string assertions (e.g. `findByText('键盘快捷键')`,
+    // `getByRole('button', { name: /键盘快捷键/i })`) still match
+    // the post-retranslate DOM.
+    await i18n.changeLanguage('zh-CN')
+  })
+
+  // (l) Sidebar nav items render kbd hints (⌘1 / Ctrl+1 etc.) when
+  // the sidebar is expanded. The hints are hidden on collapsed rail.
+  // We assert via regex because the modifier label depends on the
+  // test environment's navigator.platform (macOS → ⌘, otherwise Ctrl+).
+  // All 6 navItems have shortcuts, so exactly 6 kbd hints should render.
+  it('renders kbd hints on expanded sidebar nav items', () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell({ sidebarCollapsed: false })
+    const sidebar = screen.getByTestId('app-shell-sidebar')
+    const kbds = within(sidebar).getAllByText(/^(⌘|Ctrl\+)[1-6]$/)
+    expect(kbds.length).toBe(6)
+  })
+
+  // (m) Cmd+1/2/3/4/5/6 fires the shortcut handler on non-admin pages.
+  // We assert via event.defaultPrevented because the MemoryRouter test
+  // harness uses absolute route paths that don't align with the app's
+  // nested /dashboard/* routing — checking rendered page stubs is unreliable.
+  it.each([
+    { key: '1' },
+    { key: '2' },
+    { key: '3' },
+    { key: '4' },
+    { key: '5' },
+    { key: '6' },
+  ])(
+    'Cmd+$key shortcut handler fires on non-admin pages (defaultPrevented)',
+    ({ key }) => {
+      setAuth({ isAuthenticated: true })
+      mountAppShell({ initialPath: '/dashboard' })
+      const event = fireKey(key, { metaKey: true })
+      expect(event.defaultPrevented).toBe(true)
+    },
+  )
+
+  // (n) Main nav shortcuts are IGNORED on admin pages so they don't
+  // collide with sidebar nav shortcuts. Without this guard, pressing
+  // Cmd+1 on /dashboard/admin would navigate to 账号管理 instead of admin
+  // Overview — a major UX regression. We assert via defaultPrevented
+  // because route-based assertions are unreliable in the test harness.
+  it('ignores main nav shortcuts on admin pages', () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell({ initialPath: '/dashboard/admin' })
+    const event = fireKey('1', { metaKey: true })
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  // (o) Typing suppression: pressing Cmd+1 while focused in an input
+  // does NOT navigate. The isTyping gate must block the shortcut.
+  // Assert via defaultPrevented — when suppression works the handler
+  // returns early without calling preventDefault.
+  it('does NOT fire when typing in an input', () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell({ initialPath: '/dashboard' })
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+    const event = fireKey('1', { metaKey: true })
+    expect(event.defaultPrevented).toBe(false)
+    document.body.removeChild(input)
+  })
+
+  // (p) Modal suppression: when a dialog is open, main nav shortcuts
+  // are blocked so the user doesn't accidentally navigate away while
+  // interacting with a modal. Assert via defaultPrevented.
+  it('does NOT fire when a modal dialog is open', () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell({ initialPath: '/dashboard' })
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    document.body.appendChild(dialog)
+    const event = fireKey('2', { metaKey: true })
+    expect(event.defaultPrevented).toBe(false)
+    document.body.removeChild(dialog)
+  })
+
+  // (q) Shift+Cmd+1 is blocked. The handler checks `e.shiftKey` and
+  // returns early — without this test, a future refactor that drops
+  // the shift guard would silently break. Mirrors the admin tab
+  // Shift+Cmd blocker test in AdminDashboard.test.tsx.
+  it('does NOT fire on Shift+Cmd+1', () => {
+    setAuth({ isAuthenticated: true })
+    mountAppShell({ initialPath: '/dashboard' })
+    const event = fireKey('1', { metaKey: true, shiftKey: true })
+    expect(event.defaultPrevented).toBe(false)
   })
 })

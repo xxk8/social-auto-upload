@@ -1,5 +1,3 @@
-"""Byte-equivalence test for the public-inbox kill-criteria schema bootstrap.
-
 Locks the property that the script's verdict is byte-equivalent across the
 pre-PR-A (no public-inbox tables in the DB) and post-PR-A (tables exist
 but empty) boundary. The in-memory schema bootstrap in
@@ -40,7 +38,6 @@ tmp_path.
 from __future__ import annotations
 
 import json
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -100,6 +97,42 @@ def _statuses(metrics_block: dict) -> dict:
 
 
 # ── Fixtures ─────────────────────────────────────────────────────
+
+
+
+
+# ── Test isolation: clean public-inbox tables per-test ──────────────────
+
+
+@pytest.fixture(autouse=True)
+def _clean_kc_tables():
+    """Wipe the public-inbox tables before AND after each test.
+
+    Post-SQLite-removal: replaces the prior in-memory sqlite fixture.
+    Tests use the production PG via ``get_database()`` and rely on
+    per-test cleanup for isolation.
+    """
+    from web_runner.db import get_database
+    db = get_database()
+    for sql in (
+        "DELETE FROM guest_usage_logs",
+        "DELETE FROM reward_events",
+        "DELETE FROM users",
+    ):
+        try:
+            db.execute(sql)
+        except Exception:
+            pass
+    yield
+    for sql in (
+        "DELETE FROM guest_usage_logs",
+        "DELETE FROM reward_events",
+        "DELETE FROM users",
+    ):
+        try:
+            db.execute(sql)
+        except Exception:
+            pass
 
 
 @pytest.fixture

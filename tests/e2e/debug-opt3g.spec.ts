@@ -30,7 +30,7 @@ test('DEBUG: opt-3g step-by-step inspection', async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ success: true, data: [] }) }));
 
-  await page.goto('http://localhost:5180/app/publish', { waitUntil: 'networkidle', timeout: 20000 }).catch(() => {});
+  await page.goto('http://localhost:5180/dashboard/publish', { waitUntil: 'networkidle', timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(4000);
 
   console.log('=== ERRORS:', JSON.stringify([...new Set(errors)]));

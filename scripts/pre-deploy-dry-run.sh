@@ -55,41 +55,59 @@ cd "$REPO_ROOT"
 # Dev DB pre-PR-A state check. Mirrors the .monitor-baseline-2026-06-29.json
 # guard above: FATAL on unexpected state. The Week 0 baseline predates
 # PR-A, so a post-PR-A dev DB would invalidate the baseline. See the
-# runbook docs/dev/public-inbox-ops.md §6 Mode B "WAL gotcha" for
-# related SQLite-mode considerations.
+# runbook docs/dev/public-inbox-ops.md §6 Mode B for related DB-mode
+# considerations.
+#
+# Post-SQLite-removal: this script uses psql against $DATABASE_URL (PG only).
+# If DATABASE_URL is unset, the pre-PR-A check is SKIPPED with a warning —
+# the TBF-018 baseline itself is pre-PG-era, so the Week-0 delta computation
+# is only meaningful when an explicit DATABASE_URL points to the historical
+# dev DB. In a clean PG-only deploy, the operator runs the public-inbox
+# successor script (see below) instead.
 DB_PATH="${REPO_ROOT}/db/database.db"
-.venv/bin/python - "$DB_PATH" <<'PYEOF'
-import os, sqlite3, sys
-db_path = sys.argv[1]
-if not os.path.exists(db_path):
-    print("SKIP: dev DB not present at %s, pre-PR-A state assumed" % db_path)
-    sys.exit(0)
+if [ -z "${DATABASE_URL:-}" ]; then
+    echo "SKIP: DATABASE_URL unset; pre-PR-A schema check requires an explicit DB target."
+    echo "  (This script is the pre-PR-A sibling. For post-PR-A, use"
+    echo "   scripts/public-inbox-monetization-pre-deploy.sh instead.)"
+else
+    if ! command -v psql >/dev/null 2>&1; then
+        echo "FATAL: psql not on PATH; install postgresql-client to run the schema check." >&2
+        exit 2
+    fi
+    .venv/bin/python - "$DATABASE_URL" <<'PYEOF'
+import os, sys
+db_url = sys.argv[1]
+# Use psql to query the schema; PG-only path post-SQLite-removal.
+import subprocess
+sql = (
+    "SELECT table_name FROM information_schema.tables "
+    "WHERE table_schema = 'public' "
+    "AND table_name IN ('guest_usage_logs', 'reward_events');"
+)
 try:
-    c = sqlite3.connect(db_path)
-    rows = c.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND name IN ('guest_usage_logs', 'reward_events')"
-    ).fetchall()
-    if rows:
-        # Post-PR-A: point operators to the public-inbox successor script
-        # instead of the pre-PR-A TBF-018 dry-run. The rot-check marker that
-        # previously lived here was followed when the public-inbox PR landed
-        # (created scripts/public-inbox-monetization-pre-deploy.sh).
-        # Mirror ref: docs/dev/public-inbox-ops.md §7.
-        print("FATAL: dev DB has public-inbox tables (post-PR-A state):", file=sys.stderr)
-        for r in rows:
-            print("  -", r[0], file=sys.stderr)
-        print("  pre-deploy-dry-run is for the pre-PR-A state only", file=sys.stderr)
-        print("  (Week 0 baseline 2026-06-29).", file=sys.stderr)
-        print("  Use scripts/public-inbox-monetization-pre-deploy.sh instead.", file=sys.stderr)
-        sys.exit(2)
-    print("OK: dev DB in pre-PR-A state (no public-inbox tables).")
-except Exception as e:
-    # WARN, not FATAL — let the dry-run proceed if the DB is unreadable
-    # (e.g. file locked by a long-running query). Operator can re-run.
+    out = subprocess.run(
+        ["psql", db_url, "-tA", "-c", sql],
+        capture_output=True, text=True, check=True, timeout=10,
+    ).stdout.strip()
+except subprocess.CalledProcessError as e:
     print("WARN: could not check dev DB pre-PR-A state: %s" % e, file=sys.stderr)
     sys.exit(0)
+except subprocess.TimeoutExpired:
+    print("WARN: psql timed out checking dev DB pre-PR-A state", file=sys.stderr)
+    sys.exit(0)
+rows = [r for r in out.splitlines() if r]
+if rows:
+    # Post-PR-A: point operators to the public-inbox successor script.
+    print("FATAL: dev DB has public-inbox tables (post-PR-A state):", file=sys.stderr)
+    for r in rows:
+        print("  -", r, file=sys.stderr)
+    print("  pre-deploy-dry-run is for the pre-PR-A state only", file=sys.stderr)
+    print("  (Week 0 baseline 2026-06-29).", file=sys.stderr)
+    print("  Use scripts/public-inbox-monetization-pre-deploy.sh instead.", file=sys.stderr)
+    sys.exit(2)
+print("OK: dev DB in pre-PR-A state (no public-inbox tables).")
 PYEOF
+fi
 
 echo "[pre-deploy-dry-run] validation PASSED."
 echo ""

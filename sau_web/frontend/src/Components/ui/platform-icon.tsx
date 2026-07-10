@@ -43,6 +43,16 @@ const ICON_MAP_SRC: Record<string, string> = {
   dailymotion: dailymotionSvg,
   rumble: rumbleSvg,
   vk: vkSvg,
+  // PNG logos (public/logo/)
+  weibo: '/logo/weibo.png',
+  zhihu: '/logo/zhihu.png',
+  baidu: '/logo/baidu.png',
+  toutiao: '/logo/toutiao.png',
+  'douban-movie': '/logo/douban-movie.png',
+  '36kr': '/logo/36kr.png',
+  sspai: '/logo/sspai.png',
+  ithome: '/logo/ithome.png',
+  'qq-news': '/logo/qq-news.png',
 }
 
 const ICON_MAP_SRC_LIGHT: Record<string, string> = {
@@ -61,6 +71,15 @@ const ICON_MAP_SRC_LIGHT: Record<string, string> = {
   rumble: rumbleSvg,
   vk: vkSvg,
   baijiahao: baijiahaoDarkSvg,
+  weibo: '/logo/weibo.png',
+  zhihu: '/logo/zhihu.png',
+  baidu: '/logo/baidu.png',
+  toutiao: '/logo/toutiao.png',
+  'douban-movie': '/logo/douban-movie.png',
+  '36kr': '/logo/36kr.png',
+  sspai: '/logo/sspai.png',
+  ithome: '/logo/ithome.png',
+  'qq-news': '/logo/qq-news.png',
 }
 
 export function PlatformIcon({ platform, className = 'h-5 w-5', variant = 'dark' }: PlatformIconProps) {

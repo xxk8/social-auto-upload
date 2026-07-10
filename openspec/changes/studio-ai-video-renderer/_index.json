@@ -1,0 +1,12 @@
+{
+  "name": "studio-ai-video-renderer",
+  "kind": "feature",
+  "title": "AI Video Generation Backend (Kling primary, Zhipu fallback)",
+  "summary": "Companion PR to studio-visual-presets. Drafts the openspec for plugging in real generative video vendors (Kling primary · Zhipu GLM-Video fallback) with StudioRenderBackend abstraction, per-tier quota, and silent-fallback to Remotion on failure.",
+  "owners": ["@studio", "@ml-ops"],
+  "status": "draft",
+  "depends_on": ["studio-visual-presets"],
+  "supersedes": [],
+  "related": ["studio-visual-presets", "studio-remotion-renderer", "usage-metering"],
+  "specs": ["studio-ai-video-renderer"]
+}

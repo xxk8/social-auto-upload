@@ -6,7 +6,7 @@ The current mainline is the Python CLI/backend implementation under `sau_cli.py`
 
 **Web stack (optional, single React app):**
 
-*  `sau_web/frontend/` — **唯一前端应用**，React + Vite。默认端口 **5180**。同时承载 **官网首页**（公开 `/` 路由，访客无需登录）与 **Web Shell 运营台**（authed `/app/*` 路由，需要邮箱验证码登录）。
+*  `sau_web/frontend/` — **唯一前端应用**，React + Vite。默认端口 **5180**。同时承载 **官网首页**（公开 `/` 路由，访客无需登录）与 **Web Shell 运营台**（authed `/dashboard/*` 路由，需要邮箱验证码登录）。
 *  共享同一个 `run.py` Flask 后端（端口 **6001**，由 Vite dev proxy 调用 `/api/*`）。
 * 一键拉起前端 + 后端：`bash sau_web/start.sh`。之前描述的独立 `sau_web/site/` React app 已合并进同 Vite 产物，不再独立部署。*  Docs: `docs/web-shell.md`
 * Note: prefer the CLI unless you are actively working on the React frontend.
@@ -16,7 +16,8 @@ The current mainline is the Python CLI/backend implementation under `sau_cli.py`
 *  `docs/dev/INDEX.md` — dev-docs hub grouped by audience (**Operators / Contributors / Onboarding**); use as the canonical entrypoint when looking up any in-depth engineering doc from the repo root.
 *  `docs/dev/monitor-cdp-throttling-cron-ops.md` — TBF-018 cron runbook: deploy / verify / idempotent re-run / rollback / threshold-tune. Mirrors `docs/web-shell.md`'s top-level pointer pattern so an on-call operator landing at the repo root reaches it in 1 click.
 *  `docs/dev/public-inbox-ops.md` — public-inbox-monetization daily kill-criteria runbook: deploy / verify (30-day trigger confirmation) / idempotent re-run / rollback / threshold-tune / webhook delivery. Next-business-day SLA (vs TBF-018's 5-min STOP-SHIP). Same operator-side conventions as the TBF-018 runbook.
-*  `docs/ai-material-search.md` — Pexels + Pixabay image-search onboarding for the AI sidebar `/app/publish` 「图片素材」Disclosure: free-tier signup URLs, `.env` 写入 `PEXELS_API_KEY` / `PIXABAY_API_KEY`, rate-limit warnings (Pexels 200/h + 20K/mo · Pixabay 100/60s), curl `POST /api/ai/images/search` verify, T&C compliance (attribution + 不复制主体 + 不 hotlink). 镜像 `web_runner/routes/ai.py` §1 三路由 + 前端 `MaterialSection.tsx` 的运维纪律。
+*  `docs/dev/studio-renderer-ops.md` — **Round-Video-Backgrounds-v1** Remotion is the **only** renderer (moviepy stub + `_render_via_hyperframes` + `SAU_STUDIO_RENDERER` env switch were all deleted): operator runbook covers deploy (minimal Dockerfile patch — `fonts-noto-cjk` + Node ≥20 + `patchright install chromium` instead of `chromium-headless-shell`), verify via `POST /api/studio/projects/{id}/render` + `ffprobe` of the on-disk MP4 (must show `Video: h264` + `Audio: aac` streams — proves real Pexels Videos + Edge-TTS ran end-to-end), resume (per-scene silent-degrade already handles Pexels 429 / edge-tts 503 → silent fallback to image / silent audio, no env flip), re-tune `SAU_STUDIO_RENDER_TIMEOUT` / `SAU_STUDIO_NODE_PATH` / `SAU_STUDIO_TTS_VOICE` / **`SAU_SYNOPSIS_MAX_LEN`** (default `2000`, was `500` — Chinese multi-paragraph storyboards routinely blow past the old cap). Per-request SLA (not hourly like TBF-018, not next-business-day like public-inbox). Same structural pattern (deploy / verify / resume / re-tune / troubleshooting) so the same 1-click discoverability from repo root holds.
+*  `docs/ai-material-search.md` — Pexels + Pixabay image-search onboarding for the AI sidebar `/dashboard/publish` 「图片素材」Disclosure: free-tier signup URLs, `.env` 写入 `PEXELS_API_KEY` / `PIXABAY_API_KEY`, rate-limit warnings (Pexels 200/h + 20K/mo · Pixabay 100/60s), curl `POST /api/ai/images/search` verify, T&C compliance (attribution + 不复制主体 + 不 hotlink). 镜像 `web_runner/routes/ai.py` §1 三路由 + 前端 `MaterialSection.tsx` 的运维纪律。
 *  Note: prefer this pointer to the per-runbook paragraphs scattered across `README.md` so there's a single ON-CALL entry surface.
 
 **Command-line Interface:**
@@ -117,9 +118,9 @@ sau skill install
 ## Development Conventions
 
 *   Current mainline code is in `sau_cli.py` / `cli/`, `uploader/`, `skills/`, and `docs/CLI.md`.
-*   One optional React frontend lives under `sau_web/frontend/` (default port `:5180`); it simultaneously serves the marketing landing page at `/` and the authed Web Shell dashboard at `/app/*`. The previously proposed separate `sau_web/site/` app on `:5174` was merged into the same Vite product and is no longer a separate repo path.
+*   One optional React frontend lives under `sau_web/frontend/` (default port `:5180`); it simultaneously serves the marketing landing page at `/` and the authed Web Shell dashboard at `/dashboard/*`. The previously proposed separate `sau_web/site/` app on `:5174` was merged into the same Vite product and is no longer a separate repo path.
 *   The historical Vue frontend `sau_frontend/` has been removed.
-*   The project uses a SQLite database for data storage. The database file is located at `db/database.db`.
+*   The project uses a PostgreSQL database for data storage. Connect via the `DATABASE_URL` env var (e.g. `postgres://user:pass@localhost:5432/sau`).
 *   The `conf.example.py` file should be copied to `conf.py` and configured with the appropriate settings.
 *   The `requirements.txt` file lists the Python dependencies.
 *   `sau_web/frontend/package.json` lists the React frontend dependencies (now covering both the landing page and the dashboard).

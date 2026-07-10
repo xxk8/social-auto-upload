@@ -7,7 +7,7 @@ import { Sun } from 'lucide-react'
 // ── Round-OPT-prefs-dialog-v4 (slice extraction):
 //    PersonalizationPage is a thin wrapper that re-renders
 //    PreferencesDialog's <PersonalizationTab /> under the
-//    /app/personalization route's PageHeader. See ProfilePage.tsx
+//    /dashboard/personalization route's PageHeader. See ProfilePage.tsx
 //    for the full slice-rationale comment block; this page mirrors
 //    the same `Components/PreferencesContent.tsx` →
 //    `features/preferences/tabs/PersonalizationTab.tsx` migration.

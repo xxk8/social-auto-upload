@@ -23,7 +23,7 @@ function makeQueryClient() {
 function mountSettings() {
   return render(
     <QueryClientProvider client={makeQueryClient()}>
-      <MemoryRouter initialEntries={['/app/settings']}>
+      <MemoryRouter initialEntries={['/dashboard/settings']}>
         <SettingsPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -67,12 +67,17 @@ describe('SettingsPage · round-7 TIER_MAP translation', () => {
   })
 
   // (b) tier='pro' → '专业版' plan card visible. Confirms the
-  // sparkles prop + the price string differ from free.
+  // sparkles prop + the price string differ from free. Also pins
+  // the round-AI-paywall-v1 TIER_MAP.pro.features copy (AI +
+  // 图片素材搜索 bullets) so the free→pro upgrade banner stays in
+  // lockstep with the marketing pricing surface.
   it('renders `专业版` plan when tier=pro', () => {
     setAuth({ tier: 'pro' })
     mountSettings()
     expect(screen.getByText('专业版')).toBeInTheDocument()
     expect(screen.getByText(/¥99 \/ 月/)).toBeInTheDocument()
+    expect(screen.getByText(/图片素材搜索/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 自动生成/)).toBeInTheDocument()
   })
 
   // (c) tier='legacy' → '社区版' plan card visible. Confirms the
@@ -123,6 +128,6 @@ describe('SettingsPage · round-7 TIER_MAP translation', () => {
     setAuth({ tier: 'free' })
     mountSettings()
     const logsLink = screen.getByRole('link', { name: /查看运行日志/ })
-    expect(logsLink.getAttribute('href')).toBe('/app/logs')
+    expect(logsLink.getAttribute('href')).toBe('/dashboard/logs')
   })
 })

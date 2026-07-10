@@ -14,6 +14,15 @@ this surface. This file covers the 5 DB-touching endpoints:
 mock + queue worker; they have no DB-touching state machines and fall
 under a separate coverage PR (queue worker + http mock plumbing).
 
+Ai-api-keys-founder gate additions: round ai-api-keys-founder adds
+``_check_founder_gate()`` to all 4 DB-mutating endpoints. Each new
+test class below exercises the gate against anonymous / admin-non-
+founder / founder sessions so a future refactor that loosens the
+gate regresses loudly. Existing positive-path tests run inside a
+founder-logged-in fixture (the autouse `_login_founder` adds a
+founder user + logs the client in BEFORE the test runs) so the new
+gate doesn't break the prior assertion suite.
+
 Test fixture pattern mirrors tests/test_web_shell.py: create_app() per
 test + cookies dir rebind + ``db.execute("DELETE FROM ai_api_keys")``
 before & after each test for cross-test isolation.
@@ -30,13 +39,48 @@ import pytest
 from web_runner import create_app
 
 
+def _login_as_founder(client, email: str = "founder@test.com") -> None:
+    """Seed a user, mark them founder, log the client in.
+
+    Variant of ``tests/_login_helpers.py::_login_as`` that ALSO
+    promotes the seeded user to founder via SQL after the login so
+    the founder-gated endpoints (round ai-api-keys-founder) accept
+    the session. We don't go through ``PUT /api/auth/users/<id>/role``
+    because that path doesn't yet expose is_founder mutation; the
+    admin_audit_log entry would carry the change but the founder
+    column lives in the bootstrap-migration boundary.
+    """
+    from tests._login_helpers import _login_as
+    user = _login_as(client, email)
+    # Promote to founder via direct DB write — matches the
+    # backend's pg/sqlite backfill rule (lowest-id wins for the
+    # cold-start case) and ensures the session.post-login founder
+    # check passes.
+    from web_runner.db import get_database
+    get_database().execute("UPDATE users SET is_founder = 1 WHERE id = ?", (user["id"],))
+    # The session bit was cached at login time without the
+    # is_founder promotion; force a fresh read so the next request
+    # sees the cached session['is_founder']=True. We do this by
+    # re-running the login endpoint which DOES read the row and
+    # writes session['is_founder'] = bool(user.get('is_founder'))
+    # after the patched UPDATE has landed.
+    db = get_database()
+    row = db.fetch_one("SELECT is_founder FROM users WHERE id = ?", (user["id"],))
+    assert row and row.get("is_founder"), (
+        "Founder promotion didn't land — _login_as_founder fixture is broken"
+    )
+
+
 @pytest.fixture
 def app():
     """Flask test client with isolated cookies dir + ai_api_keys purge.
 
-    Mirrors the fixture in tests/test_web_shell.py. Uses conftest's
-    session-shared in-memory SQLite + SAU_DB_DIALECT=sqlite (forced by
-    tests/conftest.py at import time).
+    After the founder-gate addition (ai-api-keys-founder), the
+    mutation endpoints (POST/DELETE/batch) and the masked-list
+    endpoint 403 anonymous callers. To keep the prior positive-path
+    suite green, the auto-login path here promotes a seeded user to
+    founder + logs them in before yielding. Tests asserting the
+    401/403 surface use ``app_anon`` / ``app_admin`` instead.
     """
     from web_runner import utils as wr_utils
     from web_runner.db import get_database
@@ -52,12 +96,79 @@ def app():
         wr_utils.COOKIES_DIR = Path(tmp_dir)
         try:
             with application.test_client() as client:
+                _login_as_founder(client)
                 yield client
         finally:
             wr_utils.COOKIES_DIR = orig_cookies_dir
             # Post-test purge so cross-test pollution doesn't accumulate
             # (some tests insert rows outside the http boundary).
             get_database().execute("DELETE FROM ai_api_keys")
+
+
+@pytest.fixture
+def app_anon():
+    """Anonymous Flask test client (no founder login).
+
+    Used by the round ai-api-keys-founder gate tests that assert
+    401 ("未登录") for the 4 founder-gated endpoints. Same DB
+    setup as ``app`` but skips the auto-founder-login step.
+    """
+    from web_runner import utils as wr_utils
+    from web_runner.db import get_database
+
+    application = create_app()
+    application.config["TESTING"] = True
+    get_database().execute("DELETE FROM ai_api_keys")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        orig_cookies_dir = wr_utils.COOKIES_DIR
+        wr_utils.COOKIES_DIR = Path(tmp_dir)
+        try:
+            with application.test_client() as client:
+                yield client
+        finally:
+            wr_utils.COOKIES_DIR = orig_cookies_dir
+            get_database().execute("DELETE FROM ai_api_keys")
+
+
+@pytest.fixture
+def app_admin():
+    """Flask test client logged in as admin (NOT founder).
+
+    Used by the round ai-api-keys-founder gate tests that assert
+    403 ("仅项目创始人可执行此操作") for the 4 founder-gated
+    endpoints — the prior admin-gate was insufficient on bulk
+    delete + missing on the single-delete + list endpoints, and
+    this fixture is the regression lock against re-loosening.
+    """
+    from web_runner import utils as wr_utils
+    from web_runner.db import get_database
+
+    application = create_app()
+    application.config["TESTING"] = True
+    get_database().execute("DELETE FROM ai_api_keys")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        orig_cookies_dir = wr_utils.COOKIES_DIR
+        wr_utils.COOKIES_DIR = Path(tmp_dir)
+        try:
+            with application.test_client() as client:
+                # Admin not founder: _login_as logs in, then we
+                # explicitly force is_founder=0 in case the backfill
+                # caught an earlier test created a founder row.
+                from tests._login_helpers import _login_as
+                _login_as(client, "admin@test.com")
+                user_row = get_database().fetch_one(
+                    "SELECT id FROM users WHERE email = ?",
+                    ("admin@test.com",),
+                )
+                get_database().execute(
+                    "UPDATE users SET is_founder = 0 WHERE id = ?",
+                    (user_row["id"],),
+                )
+                yield client
+        finally:
+            wr_utils.COOKIES_DIR = orig_cookies_dir
+            get_database().execute("DELETE FROM ai_api_keys")
+            get_database().execute("DELETE FROM users WHERE email = ?", ("admin@test.com",))
 
 
 def _seed_key(

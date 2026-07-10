@@ -1,9 +1,16 @@
 """Daily cron-friendly kill-criteria verdict for public-inbox-monetization.
 
-Queries `web_runner/db.py` SQLite tables (`guest_usage_logs` + `reward_events`)
+Queries `web_runner/db.py` Postgres tables (`guest_usage_logs` + `reward_events`)
 for 30-day rolling metrics and writes a per-metric verdict JSON to
 `.sau-logs/public-inbox-kill-criteria.json`. When the overall verdict is
 `STOP-SHIP` or `WATCHFUL`, posts to `SAU_KILL_CRITERIA_WEBHOOK` if set.
+
+Post-SQLite-removal: this script uses the production ``get_database()``
+abstraction from ``web_runner/db.py`` (PG-only). The ``--db-path`` CLI
+argument is preserved for backward compat with the deploy scripts
+(``public-inbox-monetization-pre-deploy.sh`` passes it) but is ignored
+at runtime — the actual DB connection comes from ``$DATABASE_URL`` via
+``get_database()``.
 
 Six metrics (per openspec/changes/public-inbox-monetization/design.md §Kill Criteria):
 
@@ -46,7 +53,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import urllib.error
 import urllib.request
@@ -63,9 +69,23 @@ if hasattr(sys.stdout, "reconfigure"):
 # __file__-relative paths keeps the script portable across hosts.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LOGS_DIR = _REPO_ROOT / ".sau-logs"
+# ``--db-path`` is preserved for back-compat with the deploy scripts; ignored
+# at runtime. The actual connection comes from $DATABASE_URL via
+# ``get_database()`` below.
 DEFAULT_DB_PATH = _REPO_ROOT / "db" / "database.db"
 OUT_FILE_NAME = "public-inbox-kill-criteria.json"
 OUT_LOG_NAME = "public-inbox-kill-criteria.log"
+
+# Add repo root to sys.path so the cron-launched script can import the
+# web_runner package. Cron's CWD is arbitrary; we anchor on __file__.
+# The cron entry's `cd <repo> &&` is the canonical way to set this up;
+# the sys.path.insert here is a belt-and-suspenders fallback for hosts
+# that launch the script without `cd` (e.g. CI workers running the file
+# by absolute path).
+sys.path.insert(0, str(_REPO_ROOT))
+from web_runner.db import get_database  # noqa: E402
+
+import psycopg  # narrow exception for the DB-probe fallback path
 
 # min_sample_size floor — kills metrics that would otherwise trigger on noise
 # (e.g. 5 downloads, 1 reward click → 20% CTR, technically above 5% threshold
@@ -129,84 +149,77 @@ THRESHOLDS: dict[str, dict[str, Any]] = {
 # ── DB query layer ─────────────────────────────────────────────────
 
 
-# Schema bootstrap for the in-memory fallback path. Mirrors the columns
-# defined in openspec/changes/public-inbox-monetization/proposal.md and
-# (post-PR-A merge) web_runner/db.py::init_db(). Kept as a module-level
-# constant so the dry-run works on a clean deploy / pre-PR-A database
-# where the public-inbox tables don't yet exist.
-#
-# Three-way lockstep rule (mirrors `docs/dev/public-inbox-ops.md` §7):
-#   openspec/proposal.md ←→ this schema ←→ (post-merge) web_runner/db.py
-# When you change one, change all three.
-_SCHEMA_BOOTSTRAP = """
-    CREATE TABLE IF NOT EXISTS guest_usage_logs (
-        id INTEGER PRIMARY KEY,
-        guest_uuid TEXT NOT NULL,
-        ip TEXT,
-        action TEXT NOT NULL,
-        created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS reward_events (
-        id INTEGER PRIMARY KEY,
-        guest_uuid TEXT NOT NULL,
-        ip TEXT,
-        event TEXT NOT NULL,
-        elapsed_ms INTEGER,
-        created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
-        email TEXT NOT NULL,
-        role TEXT NOT NULL,
-        created_at TEXT NOT NULL
-    );
-"""
+class _EmptyDatabase:
+    """No-op stand-in for the production Database when public-inbox tables
+    are absent from the real PG.
 
-
-def _open_db(db_path: Path) -> sqlite3.Connection:
-    """Open a read-only SQLite connection. Falls back to an in-memory
-    connection with the public-inbox schema bootstrapped if either:
-      (a) the DB file does not exist (clean deploy), OR
-      (b) the file exists but the public-inbox tables are missing
-          (pre-PR-A merge state, where the script is deployed ahead
-          of the public_inbox.py backend blueprint).
-    In both cases the in-memory DB has zero rows → all metrics fall
-    through to STATUS_INSUFFICIENT / STATUS_NOT_IMPLEMENTED → cascade
-    returns INSUFFICIENT_DATA (no alert, banner is yellow/info).
+    Mirrors the legacy in-memory SQLite fallback: every ``fetch_one`` /
+    ``fetch_all`` returns ``None`` / ``[]`` so the downstream metric
+    computation falls through to ``STATUS_INSUFFICIENT`` /
+    ``STATUS_NOT_IMPLEMENTED`` and the cascade returns ``INSUFFICIENT_DATA``
+    (no alert, banner is yellow/info). This preserves the pre-PR-A
+    behavioral contract: a deployment where the public-inbox schema
+    hasn't landed yet must NOT crash the daily cron.
     """
-    uri = f"file:{db_path}?mode=ro"
+
+    def fetch_one(self, sql: str, params: tuple = ()) -> dict | None:
+        return None
+
+    def fetch_all(self, sql: str, params: tuple = ()) -> list:
+        return []
+
+
+def _open_db() -> Any:
+    """Open the production PG connection via ``get_database()``.
+
+    Probes ``information_schema.tables`` for the 3 public-inbox tables
+    (mirrors the legacy ``sqlite_master`` probe). If all 3 are present,
+    returns the production Database. If any are missing OR the DB
+    probe itself fails (e.g. host unreachable, bad $DATABASE_URL),
+    returns an ``_EmptyDatabase`` mock so the query functions fall
+    through to zero/empty results → all-INSUFFICIENT verdict → no alert.
+
+    The DB-probe fallback (try/except psycopg.Error) intentionally
+    matches the legacy semantics: a daily cron that hits a transient
+    DB blip should NOT crash with a 500 / non-zero exit — the
+    INSUFFICIENT_DATA verdict + no alert is the right operator-visible
+    signal. The next-day cron re-tries automatically. A persistent
+    failure surfaces as a stuck INSUFFICIENT_DATA banner in the
+    dashboard, which is the same operational signal a SQLite
+    file-missing state would have produced pre-cutover.
+
+    Three-way lockstep rule (mirrors ``docs/dev/public-inbox-ops.md`` §7):
+      openspec/proposal.md ←→ this script's behavior ←→ (post-merge)
+      web_runner/db.py::init_db(). When you change one, change all three.
+    """
     try:
-        conn = sqlite3.connect(uri, uri=True, timeout=30)
-        conn.row_factory = sqlite3.Row
-        # Probe for the public-inbox tables. If both present, the
-        # read-only file connection is good to use.
-        present = {
-            r["name"]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-        if "guest_usage_logs" in present and "reward_events" in present:
-            return conn
-        # Tables missing — close the read-only handle and fall through
-        # to in-memory bootstrap. We intentionally do NOT attempt CREATE
-        # TABLE on the read-only connection (it would fail and trigger
-        # the wrong error path).
-        conn.close()
-    except sqlite3.OperationalError:
-        # File doesn't exist — fall through to in-memory bootstrap.
-        pass
-
-    mem = sqlite3.connect(":memory:")
-    mem.row_factory = sqlite3.Row
-    mem.executescript(_SCHEMA_BOOTSTRAP)
-    return mem
+        db = get_database()
+        rows = db.fetch_all(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public' "
+            "AND table_name IN ('guest_usage_logs', 'reward_events', 'users')"
+        )
+        present = {r["table_name"] for r in rows}
+        if {"guest_usage_logs", "reward_events", "users"} <= present:
+            return db
+        # Pre-PR-A state: tables missing → INSUFFICIENT_DATA cascade.
+    except psycopg.Error:
+        # DB unreachable / bad $DATABASE_URL / permission error. Same
+        # downstream behavior as missing tables: empty results →
+        # INSUFFICIENT_DATA → no alert. Loud-fail the probe to stderr
+        # so the cron mail spool surfaces the connectivity issue, but
+        # don't crash the script.
+        sys.stderr.write(
+            "[kill-criteria] WARN: could not probe public-inbox tables; "
+            "falling back to INSUFFICIENT_DATA verdict (check $DATABASE_URL)\n"
+        )
+    return _EmptyDatabase()
 
 
-def _query_metric_1_2(db: sqlite3.Connection, cutoff_iso: str) -> dict[str, int]:
+def _query_metric_1_2(db: Any, cutoff_iso: str) -> dict[str, int]:
     """Combined query for reward button CTR + 5s abandon rate (both sample sizes
     come from the same tables — fold into one round-trip)."""
-    row = db.execute(
+    row = db.fetch_one(
         """
         SELECT
             (SELECT COUNT(DISTINCT guest_uuid) FROM guest_usage_logs
@@ -219,20 +232,20 @@ def _query_metric_1_2(db: sqlite3.Connection, cutoff_iso: str) -> dict[str, int]
              WHERE event = 'reward_button_click' AND created_at >= ?) AS clicks
         """,
         (cutoff_iso, cutoff_iso, cutoff_iso, cutoff_iso),
-    ).fetchone()
+    ) or {}
     return {
-        "reward_grants": row["reward_grants"] or 0,
-        "downloaders": row["downloaders"] or 0,
-        "abandons": row["abandons"] or 0,
-        "clicks": row["clicks"] or 0,
+        "reward_grants": row.get("reward_grants") or 0,
+        "downloaders": row.get("downloaders") or 0,
+        "abandons": row.get("abandons") or 0,
+        "clicks": row.get("clicks") or 0,
     }
 
 
-def _query_registration_conversion(db: sqlite3.Connection, cutoff_iso: str) -> dict[str, int]:
+def _query_registration_conversion(db: Any, cutoff_iso: str) -> dict[str, int]:
     """New-user count vs. downloader count. Note: `users` table is created in
     `web_runner/db.py::init_db()` — referenced here for the 30d window.
     """
-    row = db.execute(
+    row = db.fetch_one(
         """
         SELECT
             (SELECT COUNT(*) FROM users
@@ -241,25 +254,25 @@ def _query_registration_conversion(db: sqlite3.Connection, cutoff_iso: str) -> d
              WHERE action = 'download' AND created_at >= ?) AS downloaders
         """,
         (cutoff_iso, cutoff_iso),
-    ).fetchone()
+    ) or {}
     return {
-        "new_users": row["new_users"] or 0,
-        "downloaders": row["downloaders"] or 0,
+        "new_users": row.get("new_users") or 0,
+        "downloaders": row.get("downloaders") or 0,
     }
 
 
-def _query_monthly_uv(db: sqlite3.Connection, cutoff_iso: str) -> int:
+def _query_monthly_uv(db: Any, cutoff_iso: str) -> int:
     """3-month rolling distinct-downloader count. We compute the raw 90d count
     and divide by 3 in metric assembly — the 3-month rolling avg is the
     sample gate (≥ 30 = 1+ download per day avg)."""
-    row = db.execute(
+    row = db.fetch_one(
         """
         SELECT COUNT(DISTINCT guest_uuid) AS uv_3m FROM guest_usage_logs
         WHERE action = 'download' AND created_at >= ?
         """,
         (cutoff_iso,),
-    ).fetchone()
-    return row["uv_3m"] or 0
+    ) or {}
+    return row.get("uv_3m") or 0
 
 
 # ── Verdict computation ────────────────────────────────────────────
@@ -278,7 +291,7 @@ def _evaluate(metric: str, value: float | None, sample_size: int) -> str:
     return STATUS_FAIL if breached else STATUS_PASS
 
 
-def _compute_metrics(db: sqlite3.Connection) -> dict[str, Any]:
+def _compute_metrics(db: Any) -> dict[str, Any]:
     """Compute all 6 kill-criteria metrics. Returns a flat dict ready for JSON."""
     now = datetime.now(timezone.utc)
     cutoff_30d = (now - timedelta(days=30)).isoformat()
@@ -469,7 +482,11 @@ def main() -> int:
     ap.add_argument("--logs-dir", default=str(DEFAULT_LOGS_DIR),
                     help=f"Logs directory (default: {DEFAULT_LOGS_DIR}).")
     ap.add_argument("--db-path", default=str(DEFAULT_DB_PATH),
-                    help=f"SQLite db path (default: {DEFAULT_DB_PATH}).")
+                    help=(
+                        "Ignored at runtime post-SQLite-removal. "
+                        "Preserved for CLI back-compat with the deploy scripts. "
+                        "The actual DB connection comes from $DATABASE_URL."
+                    ))
     ap.add_argument("--dry-run", action="store_true",
                     help="Print verdict without writing JSON or sending webhook.")
     ap.add_argument("--no-webhook", action="store_true",
@@ -477,13 +494,18 @@ def main() -> int:
     args = ap.parse_args()
 
     logs_dir = Path(args.logs_dir)
-    db_path = Path(args.db_path)
+    # ``--db-path`` accepted for back-compat (deploy scripts pass it) but
+    # the value is now ignored — the connection comes from $DATABASE_URL
+    # via get_database() inside _open_db().
+    _ = args.db_path
     if not logs_dir.exists():
         sys.stdout.write(f"[kill-criteria] logs dir missing ({logs_dir}); nothing to do\n")
         return 0
 
-    # DB connection — read-only. Falls back to in-memory on missing file.
-    db = _open_db(db_path)
+    # DB connection — production PG via get_database(). Falls back to
+    # _EmptyDatabase if public-inbox tables are missing (pre-PR-A state)
+    # OR if the DB probe fails (transient connectivity, bad URL).
+    db = _open_db()
 
     metrics_block = _compute_metrics(db)
     overall = _cascade_overall(metrics_block["metrics"])

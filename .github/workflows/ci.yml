@@ -19,14 +19,70 @@ jobs:
 
   python-test:
     runs-on: ubuntu-latest
+    # Live-PG lane: stands up a real PostgreSQL 16 service so the 7
+    # test files rewritten post-SQLite-removal (conftest's
+    # `_init_pg_schema` autouse fixture + `get_database()` calls
+    # inside the test bodies) can connect. The pre-existing
+    # `python-test` job was PG-less, so all 7 tests silently
+    # crashed at `get_database().fetch_one()` time — they were
+    # either module-skipped at import or errored at first DB call.
+    # With the service below + `DATABASE_URL` exported, conftest's
+    # `from web_runner.db import _init_db_postgres, get_database`
+    # session-scoped autouse fixture creates the full schema once
+    # per run, and the 7 files exercise the production psycopg
+    # ConnectionPool end-to-end.
+    #
+    # `POSTGRES_DB: sau_test` creates the target DB on first boot —
+    # no separate `createdb` step needed. `health-cmd pg_isready`
+    # blocks the next step until the server accepts connections,
+    # so no manual `pg_isready` retry loop either.
+    #
+    # `psql` client is installed for the smoke-test step (some
+    # suite-level fixtures do their own bootstrap against the
+    # server).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sau_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Used by `web_runner.db.get_database()` factory (psycopg
+      # connection string). Localhost is correct because the
+      # service port is mapped to the runner's loopback.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sau_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install psql client (for any suite-level DB bootstrap)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
       - run: pip install -e ".[dev]"
+      - name: Verify PG service is reachable + sau_test DB exists
+        run: |
+          set -eu
+          # `health-cmd pg_isready` already blocks step start until pg accepts
+          # connections, so a single probe is enough belt-and-suspenders.
+          # The `psql SELECT 1` is the real check: it verifies the target
+          # `sau_test` DB (created via `POSTGRES_DB`) is reachable, which
+          # pg_isready does NOT.
+          pg_isready -h localhost -p 5432 -U postgres
+          PGPASSWORD=postgres psql -h localhost -U postgres -d sau_test -c "SELECT 1;" || {
+            echo "ERROR: cannot reach sau_test DB on localhost:5432" >&2
+            exit 1
+          }
       - run: playwright install chromium
-      - run: pytest tests/ -x -q
+      - name: Run pytest (with the 7 PG-rewritten files now exercised end-to-end)
+        run: pytest tests/ -x -q
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -41,7 +97,11 @@ jobs:
           cache: npm
           cache-dependency-path: sau_web/frontend/package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit
+      # tsc -b is the canonical command for project-reference-
+      # aware typecheck (tsconfig.json → app + node). The `||`
+      # tolerates tsc's non-zero exit (the 124 pre-existing
+      # errors are enforced by tsc-ratchet-gate below, not here).
+      - run: npx tsc -b || echo "tsc -b reported type errors; see tsc-ratchet-gate for canonical count enforcement"
       - run: npm run build
 
   # ── vitest gate (PR-time invariant lock) ──
@@ -115,4 +175,134 @@ jobs:
         with:
           name: discoverability-audit-violations
           path: artifacts/discoverability-audit.log
+          if-no-files-found: ignore
+
+  # ── OpenSpec stub-ratchet gate ──
+  # Locks the total count of `openspec delta-format stub` markers across
+  # `openspec/changes/*/specs/*/spec.md` to the value in
+  # `docs/openspec-stub-baseline.txt`. New stubs are forbidden (CI fails);
+  # backfill PRs MUST decrement the baseline file by the number of stubs
+  # removed (CI fails otherwise) so the ratchet only goes down. See
+  # `openspec/INDEX.md` §6 for the 57-file backfill list + priority tiers.
+  openspec-stub-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce ratchet on OpenSpec delta-format stubs
+        run: |
+          set -eu
+          # grep returns exit 1 on no match; tolerate that before counting so a 0-stub state
+          # does not abort the script under `set -e`.
+          CURRENT_COUNT=$( (grep -rE 'openspec delta-format stub' openspec/changes/*/specs/ 2>/dev/null || true) | wc -l | tr -d ' ')
+          BASELINE_COUNT=$(tr -d '[:space:]' < docs/openspec-stub-baseline.txt)
+          echo "Current stub count: $CURRENT_COUNT. Baseline: $BASELINE_COUNT"
+          if ! [[ "$BASELINE_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: docs/openspec-stub-baseline.txt is not a non-negative integer (got: '$BASELINE_COUNT')." >&2
+            exit 1
+          fi
+          if [ "$CURRENT_COUNT" -gt "$BASELINE_COUNT" ]; then
+            echo "ERROR: Net-new stub added (count $CURRENT_COUNT exceeds baseline $BASELINE_COUNT). Please write real delta-format specs; do not add new stubs." >&2
+            exit 1
+          fi
+          if [ "$CURRENT_COUNT" -lt "$BASELINE_COUNT" ]; then
+            echo "Backfill detected: stub count dropped from $BASELINE_COUNT to $CURRENT_COUNT." >&2
+            echo "RATCHET REQUIRED: run this exact command to lower the baseline (then commit the updated file in this PR):" >&2
+            echo "    printf '%s\n' "$CURRENT_COUNT" > docs/openspec-stub-baseline.txt" >&2
+            exit 1
+          fi
+          echo "Stub count matches baseline. No drift."
+      - name: Upload stub-list on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openspec-stub-list
+          path: artifacts/openspec-stub-list.txt
+          if-no-files-found: ignore
+
+  # ── tsc error-count ratchet gate ──
+  # Locks the total count of `npx tsc -b` errors in sau_web/frontend to the
+  # value in `docs/tsc-error-baseline.txt`. The ratchet is one-way-down:
+  # any PR that increases the error count fails CI; backfill PRs that fix
+  # existing errors MUST lower the baseline file by the same amount
+  # (CI fails otherwise). Mirrors the OpenSpec stub-ratchet gate above
+  # so the per-area contracts stay in lockstep.
+  #
+  # The 124 baseline is a snapshot of the pre-existing test-file
+  # type-regression errors (MaterialSection.test.tsx, useChatStore,
+  # KeyboardShortcutsCheatSheet, etc.) that have accumulated since the
+  # last `tsc -b` clean run. The frontend-build job above ALSO runs
+  # `npx tsc -b` (with a tolerant `|| echo`) so the build itself stays
+  # green; this ratchet is the canonical count enforcement that lets us
+  # open follow-up PRs to sweep the 124 errors in 2-3 PR-sized chunks
+  # without blocking merges along the way. Both sub-tsconfigs set
+  # `"noEmit": true`, so neither step writes .d.ts files.
+  tsc-ratchet-gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sau_web/frontend
+    env:
+      # Belt-and-suspenders: tsc 5.x may emit ANSI color codes
+      # even in non-TTY CI contexts. `FORCE_COLOR=0` keeps the
+      # output plain text so the regex `^src/.*: error TS[0-9]+:`
+      # counts cleanly and the operator can grep the artifact.
+      FORCE_COLOR: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sau_web/frontend/package-lock.json
+      - run: npm ci
+      - name: Enforce ratchet on `tsc -b` error count
+        run: |
+          set -eu
+          # npx tsc -b emits each error on its own line starting with
+          # `src/...: error TSnnnn: ...`. The trailing summary line
+          # ("Found N errors") is excluded by the regex anchor. We
+          # tolerate the no-match case (count 0) so a fully-clean
+          # future state still passes the ratchet math.
+          set +e
+          npx tsc -b > /tmp/tsc_output.log 2>&1
+          tsc_exit=$?
+          set -e
+          CURRENT_COUNT=$(grep -cE '^src/.*: error TS[0-9]+:' /tmp/tsc_output.log || true)
+          BASELINE_COUNT=$(tr -d '[:space:]' < docs/tsc-error-baseline.txt)
+          echo "Current tsc error count: $CURRENT_COUNT. Baseline: $BASELINE_COUNT"
+          if ! [[ "$BASELINE_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: docs/tsc-error-baseline.txt is not a non-negative integer (got: '$BASELINE_COUNT')." >&2
+            exit 1
+          fi
+          if [ "$CURRENT_COUNT" -gt "$BASELINE_COUNT" ]; then
+            echo "ERROR: Net-new tsc error introduced (count $CURRENT_COUNT exceeds baseline $BASELINE_COUNT). Fix the new error or, if intentional, raise the baseline in this PR." >&2
+            echo "  RATCHET RAISE: printf '%s\n' \"$CURRENT_COUNT\" > docs/tsc-error-baseline.txt" >&2
+            # Emit the last 50 lines of tsc output to the CI log so
+            # the operator can spot the regression without
+            # downloading the tsc-error-log artifact. The artifact
+            # still has the full log for full-diff diagnostics.
+            echo "--- last 50 lines of tsc output ---" >&2
+            tail -n 50 /tmp/tsc_output.log >&2 || true
+            echo "--- (full log: tsc-error-log artifact) ---" >&2
+            exit 1
+          fi
+          if [ "$CURRENT_COUNT" -lt "$BASELINE_COUNT" ]; then
+            echo "Backfill detected: tsc error count dropped from $BASELINE_COUNT to $CURRENT_COUNT." >&2
+            echo "RATCHET REQUIRED: run this exact command to lower the baseline (then commit the updated file in this PR):" >&2
+            echo "    printf '%s\n' \"$CURRENT_COUNT\" > docs/tsc-error-baseline.txt" >&2
+            # Also tail the log on the backfill path — the operator
+            # may want to sanity-check WHICH errors were fixed to
+            # make sure the ratchet lowering is justified.
+            echo "--- last 50 lines of tsc output ---" >&2
+            tail -n 50 /tmp/tsc_output.log >&2 || true
+            echo "--- (full log: tsc-error-log artifact) ---" >&2
+            exit 1
+          fi
+          echo "tsc error count matches baseline. No drift."
+      - name: Upload tsc output log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsc-error-log
+          path: /tmp/tsc_output.log
           if-no-files-found: ignore

@@ -2,14 +2,14 @@
 // features/preferences/tabs/SettingsTab.tsx
 //
 // Round-opt-prefs-dialog v4 (slice extraction): SettingsTab is the
-// 'settings' tab body for the PreferencesDialog. Mirrors /app/settings
+// 'settings' tab body for the PreferencesDialog. Mirrors /dashboard/settings
 // route surface so both stay in lockstep through the same useAuth()
 // hook + TIER_MAP. The free→pro upgrade banner lives as a private
 // helper inside this file (only the 'settings' pane renders it).
 //
 // Mounted by:
 //   • `<PreferencesDialog>`'s `<Tabs.Content value="settings">` pane
-//   • `/app/settings` route → `<SettingsPage>` (thin wrapper)
+//   • `/dashboard/settings` route → `<SettingsPage>` (thin wrapper)
 //
 // data-testid invariants (`settings-upgrade-banner` + `data-tier`)
 // stay on the UpgradeBanner element so PreferencesDialog.test.tsx
@@ -18,11 +18,12 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 import { Link } from 'react-router-dom'
-import { ArrowRight, FileText, Sparkles } from 'lucide-react'
+import { ArrowRight, CreditCard, FileText, LayoutList, Sparkles } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card'
 import { Button } from '@/Components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 
+import { ROUTES } from '@/routes'
 // ── TIER_MAP (SettingsTab-local source-of-truth) ─────────────────────
 // `as const`-style strict typing keeps TierKey exhaustive at compile
 // time — adding a future tier ('team') requires updating this map
@@ -57,6 +58,7 @@ const TIER_MAP: Record<TierKey, TierMeta> = {
     features: [
       '多账号统一管理（≤ 30 个）',
       'AI 自动生成（200 次 / 月）',
+      '图片素材搜索（Pexels + Pixabay）',
       '数据分析窗口延长至 90 天',
     ],
   },
@@ -87,7 +89,12 @@ export function SettingsTab() {
       )}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-[15px]">当前套餐</CardTitle>
+          <CardTitle className="text-[15px] flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <CreditCard className="h-4 w-4" />
+            </span>
+            当前套餐
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
           {/* Plan identity row — bigger plan name + bigger price + 1-line
@@ -118,7 +125,7 @@ export function SettingsTab() {
               size="sm"
               className="gap-1.5 flex-shrink-0"
             >
-              <Link to="/pricing">
+              <Link to={ROUTES.public.pricing}>
                 {tierKey === 'pro' ? '管理订阅' : '升级套餐'}
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
@@ -157,7 +164,12 @@ export function SettingsTab() {
 
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-[15px]">相关页面</CardTitle>
+          <CardTitle className="text-[15px] flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+              <LayoutList className="h-4 w-4" />
+            </span>
+            相关页面
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <Button
@@ -166,7 +178,7 @@ export function SettingsTab() {
             size="sm"
             className="w-full justify-start gap-2"
           >
-            <Link to="/app/logs">
+            <Link to={ROUTES.dashboard.logs}>
               <FileText className="h-4 w-4 text-muted-foreground" />
               查看运行日志
             </Link>

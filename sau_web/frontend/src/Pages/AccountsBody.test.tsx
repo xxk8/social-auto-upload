@@ -40,6 +40,11 @@ vi.mock('@/features/accounts/dialogs', () => ({
   DialogHost: () => <div data-testid="dialog-host">DialogHost</div>,
 }))
 
+vi.mock('@/Components/ui/toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => children,
+  useToast: () => ({ addToast: vi.fn() }),
+}))
+
 // ── helpers ────────────────────────────────────────────────────────────
 //
 // State slice the body actually reads. Kept narrow with `Partial` so

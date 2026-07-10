@@ -5,7 +5,7 @@ import { create } from 'zustand'
 // Module-level Zustand store that survives InboxPage unmount/remount
 // across route changes. The previous design kept all download state in
 // `useState` inside the InboxPage component — when React Router
-// unmounted InboxPage (user navigated to /app/tasks), the in-flight
+// unmounted InboxPage (user navigated to /dashboard/tasks), the in-flight
 // `api.inboxDownload()` promises' `.then()` / `.catch()` / `.finally()`
 // callbacks called `setEntries(...)` / `clearInflight(...)` on dead
 // state setters (no-ops), so:
@@ -15,7 +15,7 @@ import { create } from 'zustand'
 // Moving entries + inflightEntryIds (+ batchBusy + UI selection state)
 // into this store means the async callbacks call store actions
 // (`getState().setEntries(...)` etc.) which work regardless of whether
-// InboxPage is mounted. When the user navigates back to /app/inbox,
+// InboxPage is mounted. When the user navigates back to /dashboard/inbox,
 // the component re-mounts, reads the store, and the in-flight entries
 // are still there — the download continues uninterrupted and the
 // result lands when the promise resolves.
@@ -40,6 +40,7 @@ export interface InboxEntry {
   status: InboxStatus
   error?: string
   transcript?: string
+  startedAt?: number
 }
 
 export type StatusFilter = InboxStatus | 'all'
@@ -54,6 +55,7 @@ interface InboxStore {
   selectedIds: Set<string>
   filterStatus: StatusFilter
   collapsedGroups: Set<InboxStatus>
+  searchQuery: string
 
   // ── Entry mutations ──
   addEntry: (entry: InboxEntry) => void
@@ -80,6 +82,7 @@ interface InboxStore {
   setFilterStatus: (status: StatusFilter) => void
   toggleCollapse: (status: InboxStatus) => void
   setCollapsedGroups: (groups: Set<InboxStatus>) => void
+  setSearchQuery: (query: string) => void
 
   // ── Full reset (test-only) ──
   reset: () => void
@@ -94,6 +97,7 @@ export const useInboxStore = create<InboxStore>((set) => ({
   selectedIds: new Set<string>(),
   filterStatus: 'all' as StatusFilter,
   collapsedGroups: new Set<InboxStatus>(),
+  searchQuery: '',
 
   // ── Entry mutations ──
   addEntry: (entry) =>
@@ -183,6 +187,9 @@ export const useInboxStore = create<InboxStore>((set) => ({
 
   setCollapsedGroups: (groups) => set({ collapsedGroups: groups }),
 
+  // ── Search ──
+  setSearchQuery: (query) => set({ searchQuery: query }),
+
   // ── Full reset ──
   reset: () =>
     set({
@@ -192,6 +199,7 @@ export const useInboxStore = create<InboxStore>((set) => ({
       selectedIds: new Set<string>(),
       filterStatus: 'all',
       collapsedGroups: new Set<InboxStatus>(),
+      searchQuery: '',
     }),
 }))
 

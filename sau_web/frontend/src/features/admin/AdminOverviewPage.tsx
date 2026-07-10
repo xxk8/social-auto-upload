@@ -42,9 +42,9 @@ import { useQuery } from '@tanstack/react-query'
 import { adminApi } from './adminApi'
 import { useTimeRangeFilter, TIME_RANGE_OPTIONS, type PresetRange } from './useTimeRangeFilter'
 import { trendMock } from './trendMock'
-import { AdminNavTabs } from './AdminNavTabs'
 import { PageHeader } from '@/Components/ui/page-header'
-import { Card, CardContent } from '@/Components/ui/card'
+import { AdminNavTabs } from './components/AdminNavTabs'
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/Components/ui/card'
 import { Skeleton } from '@/Components/ui/skeleton'
 import { Button } from '@/Components/ui/button'
 import { Input } from '@/Components/ui/input'
@@ -111,14 +111,15 @@ export default function AdminOverviewPage() {
 
   const filtersActive = timeRange !== 'all'
 
-  // v3-trends days-picker state. Default 14 (v3-mini behavior) is
-  // lifted to a `useState` hook instead of a module-level constant so
-  // the picker can mutate it without re-mounting the page. The state
-  // is read in 3 places: trendsQuery queryKey (so React Query
-  // auto-refetches on change), trendsQuery queryFn (the actual
-  // fan-out to /api/admin/trends), and handleExportTrends (the CSV
-  // download). See §22.10 in docs/DESIGN-admin-dashboard.md.
-  const [days, setDays] = useState<number>(14)
+  // v3-trends days-picker state. Default is `DAYS_OPTIONS[1].value`
+  // (the middle option — currently 14d, matching v3-mini behavior)
+  // so the default is co-located with the options list: adding a
+  // "60d" or "90d" option later doesn't require updating two
+  // places. The state is read in 3 places: trendsQuery queryKey (so
+  // React Query auto-refetches on change), trendsQuery queryFn (the
+  // actual fan-out to /api/admin/trends), and handleExportTrends
+  // (the CSV download). See §22.10 in docs/DESIGN-admin-dashboard.md.
+  const [days, setDays] = useState<number>(DAYS_OPTIONS[1].value)
 
   const overviewQuery = useQuery({
     queryKey: ['admin', 'overview', timeRange, customStart, customEnd],
@@ -322,6 +323,7 @@ export default function AdminOverviewPage() {
 
   return (
     <div className="p-6">
+      <AdminNavTabs />
       <PageHeader
         title="系统概览"
         description="项目使用统计与最近活动"
@@ -413,10 +415,8 @@ export default function AdminOverviewPage() {
         }
       />
 
-      <AdminNavTabs />
-
       {/* Hero stat strip — 4 elevated cards in a responsive grid. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <AdminStat
           label="总用户数"
           value={String(overview?.total_users ?? 0)}
@@ -463,7 +463,7 @@ export default function AdminOverviewPage() {
       {/* Platform distribution strip — sibling to the recent activity
           card. Renders nothing if system data is unavailable so we
           don't degrade the page when the endpoint is missing. */}
-      <Card className="mt-5 border-border/60 bg-card/60 shadow-[0_1px_0_0_color-mix(in_oklab,var(--foreground)_4%,transparent)]">
+      <Card className="mt-5 bg-card/60 ring-1 ring-foreground/10">
         <CardContent className="px-5 py-5 sm:px-6 sm:py-6">
           <PlatformDistribution
             tasksByPlatform={systemQuery.data?.data?.tasks_by_platform}
@@ -475,37 +475,37 @@ export default function AdminOverviewPage() {
       {/* Recent activity — feed-style list with avatar + email + action
           CodePill + relative time. Wrapped in a Card so the rhythm
           matches the platform strip above. */}
-      <Card className="mt-5 border-border/60 bg-card/60 shadow-[0_1px_0_0_color-mix(in_oklab,var(--foreground)_4%,transparent)]">
-        <CardContent className="p-0">
-          <div className="flex flex-col gap-3 border-b border-border/40 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div className="flex items-baseline gap-2">
-              <h2 className="text-[14.5px] font-semibold text-foreground tracking-tight">
-                最近操作
-              </h2>
-              <span className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground/70 uppercase">
-                最近 10 条
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <SegmentedTimeRange
-                value={timeRange}
-                onValueChange={(v) => updateTimeRange(v as PresetRange)}
-                options={TIME_RANGE_TABS}
-                ariaLabel="时间范围筛选"
-              />
-              {filtersActive && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={clearFilters}
-                >
-                  <X className="h-3 w-3" />
-                  清除筛选
-                </Button>
-              )}
-            </div>
+      <Card className="mt-5 bg-card/60 ring-1 ring-foreground/10">
+        <CardHeader className="px-5 py-4 sm:px-6">
+          <div className="flex items-baseline gap-2">
+            <CardTitle className="text-[14.5px] font-semibold text-foreground tracking-tight">
+              最近操作
+            </CardTitle>
+            <span className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground/70 uppercase">
+              最近 10 条
+            </span>
           </div>
+          <CardAction className="flex items-center gap-3">
+            <SegmentedTimeRange
+              value={timeRange}
+              onValueChange={(v) => updateTimeRange(v as PresetRange)}
+              options={TIME_RANGE_TABS}
+              ariaLabel="时间范围筛选"
+            />
+            {filtersActive && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={clearFilters}
+              >
+                <X className="h-3 w-3" />
+                清除筛选
+              </Button>
+            )}
+          </CardAction>
+        </CardHeader>
+        <CardContent className="p-0">
 
           {timeRange === 'custom' && (
             <div className="flex items-center gap-3 border-b border-border/40 px-5 py-3 sm:px-6">

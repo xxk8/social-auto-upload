@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import { TestProviders } from '@/test/render-harness'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 import { mockUseAuth } from '@/test/auth-router-spies'
@@ -36,10 +36,25 @@ vi.mock('@/hooks/useTasks', () => ({
 
 vi.mock('@/hooks/useAccountGroups', () => ({
   useAccountGroups: () => ({
-    data: [],
+    data: accountGroupsMockStateRef.current.data,
+    isLoading: accountGroupsMockStateRef.current.isLoading,
+    isError: accountGroupsMockStateRef.current.isError,
+  }),
+}))
+
+// Module-scope mutable mock state — read by the closure above so each
+// test can swap `data` per-render without violating Vitest's typed
+// `mockReturnValue` contract (UseQueryResult's full field set is more
+// than my partial-shape return claims). Hoisted via vi.hoisted so the
+// mock closure and test bodies share the SAME reference (different
+// `let`/`const` declarations on module vs inside a test would be two
+// unrelated objects).
+const accountGroupsMockStateRef = vi.hoisted(() => ({
+  current: {
+    data: [] as AccountGroup[],
     isLoading: false,
     isError: false,
-  }),
+  },
 }))
 
 // usePublishStore is a Zustand store. PublishPage calls
@@ -129,6 +144,28 @@ vi.mock('@/hooks/useMobileDrawer', () => ({
 // ── imports (post-mock) ────────────────────────────────────────────────
 
 import PublishPage from './PublishPage'
+import { usePublishWizardStore } from '@/stores/publishWizardStore'
+import type { AccountGroup } from '@/api/client'
+
+function makeGroup(
+  id: number,
+  name: string,
+  authorizations: Array<{
+    id: number
+    platform: string
+    valid: boolean
+    stale: boolean
+    cookie_file: string
+    auth_id: number
+  }>,
+): AccountGroup {
+  return {
+    id,
+    name,
+    created: '2024-01-01T00:00:00Z',
+    authorizations,
+  }
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────
 
@@ -158,7 +195,7 @@ function mountPublishPage() {
   // MemoryRouter triggers react-router v6's "Router inside Router" runtime
   // error. Pass initialEntries via TestProviders instead.
   return render(
-    <TestProviders client={makeQueryClient()} initialEntries={['/app/publish']}>
+    <TestProviders client={makeQueryClient()} initialEntries={['/dashboard/publish']}>
       <AuthGuard>
         <PublishPage />
       </AuthGuard>
@@ -314,5 +351,179 @@ describe('PublishPage · AuthGuard + chrome (post-merge routing)', () => {
     expect(
       screen.queryByTestId('publish-ai-sidebar'),
     ).not.toBeInTheDocument()
+  })
+})
+
+// ── ?group_id= deep-link (NT-22: SortableGroup.Send → PublishPage) ──
+// AccountsPage's <SortableGroup>/<GroupListItem> Send icon navigates
+// to `?group_id=<id>` so this page can pre-select the group. These
+// four tests lock the contract so a future refactor can't silently
+// break the deep-link.
+describe('PublishPage · ?group_id= deep-link (NT-22)', () => {
+  function resetWizardStore() {
+    usePublishWizardStore.setState({
+      currentStep: 0,
+      mode: 'video',
+      files: {
+        file: null,
+        images: [],
+        thumbnail: null,
+        thumbnailPortrait: null,
+        thumbnailLandscape: null,
+      },
+      content: { title: '', desc: '', tags: [], note: '', schedule: '', advanced: {} },
+      groupSelection: null,
+    })
+  }
+
+  beforeEach(() => {
+    mockUseAuth.mockReset()
+    setAuth({ isAuthenticated: true })
+    mobileDrawerState = { isMobile: false, isOpen: false }
+    if (typeof window !== 'undefined') {
+      try { window.localStorage.removeItem('sau-publish-ai-collapsed') } catch {}
+    }
+    resetWizardStore()
+    accountGroupsMockStateRef.current = { data: [], isLoading: false, isError: false }
+  })
+
+  it('seeds groupSelection + clears ?group_id= when group exists and has authorizations', async () => {
+    const group42 = makeGroup(42, '菌验', [
+      { id: 1, platform: 'douyin', valid: true, stale: false, cookie_file: '/tmp/c-dy.json', auth_id: 1 },
+      { id: 2, platform: 'bilibili', valid: true, stale: false, cookie_file: '/tmp/c-bi.json', auth_id: 2 },
+    ])
+    accountGroupsMockStateRef.current = {
+      data: [group42],
+      isLoading: false,
+      isError: false,
+    }
+    // NT-22 reviewer fix: pre-seed `currentStep` to a NON-ZERO value
+    // so the post-render assertion below actually catches a regression
+    // of `setStep(0)` in the deep-link effect. Without this seed, the
+    // assertion trivially passes because `beforeEach` always resets
+    // the store to step 0 — making the assertion blank-checker.
+    //
+    // Realistic scenario: power user at the Review step (step 2) on
+    // /dashboard/publish clicks a different group's Send button →
+    // lands on /publish?group_id=N with `currentStep=2` carried
+    // over from the prior wizard use. The deep-link effect must
+    // reset to step 0 so the wizard re-confirms the new group
+    // before submission. This seed mirrors that flow.
+    usePublishWizardStore.setState({ currentStep: 2 })
+
+    render(
+      <TestProviders
+        client={makeQueryClient()}
+        initialEntries={['/dashboard/publish?group_id=42']}
+      >
+        <AuthGuard>
+          <PublishPage />
+        </AuthGuard>
+      </TestProviders>,
+    )
+
+    await waitFor(() => {
+      const sel = usePublishWizardStore.getState().groupSelection
+      expect(sel).not.toBeNull()
+      expect(sel?.groupId).toBe(42)
+      expect(sel?.groupName).toBe('菌验')
+      expect(sel?.platforms).toEqual(['douyin', 'bilibili'])
+      expect(sel?.mappings).toHaveLength(2)
+      expect(sel?.mappings[0]).toEqual({
+        platform: 'douyin',
+        cookieFile: '/tmp/c-dy.json',
+        authId: 1,
+      })
+      // NT-22 contract: the deep-link effect calls `setStep(0)` so
+      // a mid-session user lands back on the Upload step. The seed
+      // above (currentStep=2) is the regression anchor — if the
+      // effect's `setStep(0)` is removed in a future refactor, this
+      // assertion fails because `currentStep` stays at 2.
+      expect(usePublishWizardStore.getState().currentStep).toBe(0)
+    })
+    // The `appliedRef` guard ensures the effect ran EXACTLY once even
+    // though useAccountGroups may have re-rendered with the same data.
+  })
+
+  it('strips ?group_id= without seeding when group does not exist', async () => {
+    accountGroupsMockStateRef.current = { data: [], isLoading: false, isError: false }
+
+    render(
+      <TestProviders
+        client={makeQueryClient()}
+        initialEntries={['/dashboard/publish?group_id=999']}
+      >
+        <AuthGuard>
+          <PublishPage />
+        </AuthGuard>
+      </TestProviders>,
+    )
+
+    // Wizard stays empty — no seed because group 999 doesn't resolve.
+    await waitFor(() => {
+      expect(usePublishWizardStore.getState().groupSelection).toBeNull()
+    })
+  })
+
+  it('strips ?group_id= when group is empty (no authorizations)', async () => {
+    const emptyGroup = makeGroup(7, '7-empty', [])
+    accountGroupsMockStateRef.current = {
+      data: [emptyGroup],
+      isLoading: false,
+      isError: false,
+    }
+
+    render(
+      <TestProviders
+        client={makeQueryClient()}
+        initialEntries={['/dashboard/publish?group_id=7']}
+      >
+        <AuthGuard>
+          <PublishPage />
+        </AuthGuard>
+      </TestProviders>,
+    )
+
+    // An empty group is indistinguishable from "wizard bootstrap"; seeding
+    // it would block step 0 (canProceed gate). Better to bail + clear.
+    await waitFor(() => {
+      expect(usePublishWizardStore.getState().groupSelection).toBeNull()
+    })
+  })
+
+  it('strips invalid (?group_id=abc / negative / 0) deep-links without crashing', async () => {
+    for (const raw of ['abc', '-1', '0']) {
+      resetWizardStore()
+      const { unmount } = render(
+        <TestProviders
+          client={makeQueryClient()}
+          initialEntries={[`/dashboard/publish?group_id=${raw}`]}
+        >
+          <AuthGuard>
+            <PublishPage />
+          </AuthGuard>
+        </TestProviders>,
+      )
+      await waitFor(() => {
+        expect(usePublishWizardStore.getState().groupSelection).toBeNull()
+      })
+      unmount()
+    }
+  })
+
+  it('does NOT touch the wizard when ?group_id= is omitted', () => {
+    render(
+      <TestProviders
+        client={makeQueryClient()}
+        initialEntries={['/dashboard/publish']}
+      >
+        <AuthGuard>
+          <PublishPage />
+        </AuthGuard>
+      </TestProviders>,
+    )
+    // Synchronous: the effect's `raw === null → return early` path
+    // never touches the store, so the assertion is sync (no waitFor).
+    expect(usePublishWizardStore.getState().groupSelection).toBeNull()
   })
 })

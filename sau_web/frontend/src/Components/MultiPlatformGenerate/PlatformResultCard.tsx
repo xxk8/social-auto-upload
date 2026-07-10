@@ -47,7 +47,6 @@ export const PlatformResultCard = memo(function PlatformResultCard({
   const descId = useId()
   const [edited, setEdited] = useState<PlatformResult>({ ...result })
   const [applied, setApplied] = useState(false)
-  const isError = 'error' in result && result.error
 
   const handleApply = useCallback(() => {
     onApply(edited)
@@ -55,7 +54,26 @@ export const PlatformResultCard = memo(function PlatformResultCard({
     setTimeout(() => setApplied(false), 2000)
   }, [edited, onApply])
 
-  if (isError) {
+  // Inlined type guard so TypeScript narrows `result` to
+  // `PlatformError` inside the if-block AND to `PlatformResult`
+  // after the early-return. Using a captured boolean
+  // (`const isError = 'error' in result && result.error`) prior to
+  // this rewrite didn't propagate the narrowing — TS2339 surfaced
+  // at `result.parseError` on line 90 saying it doesn't exist on
+  // 'PlatformResult | PlatformError'. The inlined guard operates
+  // on `result` itself so the discriminated union narrows as
+  // expected. Same root cause and pattern applies in VariantCard.
+  // Type guard: `PlatformResult` lacks an `error` property entirely
+  // while `PlatformError` has `error: string`. The `in` operator
+  // narrows `result` to `PlatformError` inside the if-block AND
+  // to `PlatformResult` after the early-return — IF we DON'T add
+  // a `&& result.error` truthy check (which keeps the union by
+  // ruling out empty-string errors but not non-string fields).
+  // The earlier `const isError = 'error' in result && result.error`
+  // capture worked similarly; the inline form here gives the same
+  // narrowing onto `result` itself so TS resolves parseError after
+  // the early-return as `boolean | undefined`.
+  if ('error' in result) {
     return (
       <Card className="border-destructive/30">
         <CardContent className="p-4 space-y-2">
@@ -72,7 +90,7 @@ export const PlatformResultCard = memo(function PlatformResultCard({
           </div>
           <div className="flex items-center gap-2 text-destructive text-sm">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{(result as PlatformError).error}</span>
+            <span>{result.error}</span>
           </div>
         </CardContent>
       </Card>

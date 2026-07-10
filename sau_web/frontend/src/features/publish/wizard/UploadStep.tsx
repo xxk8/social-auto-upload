@@ -160,12 +160,68 @@ export const UploadStep = memo(function UploadStep({
   }, [mode, videoPreviewUrl, imagePreviewUrls, files.file, files.images.length])
 
   // ── File handlers ────────────────────────────────────────────────────
+
+  /** Max video file size before warning (2 GB). Non-blocking — the toast
+   *  informs but does not prevent upload. */
+  const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024
+  /** Max video duration before warning (1 hour). Non-blocking. */
+  const MAX_VIDEO_DURATION = 3600
+
+  /** Tracks the in-flight duration-check <video> element so a rapid
+   *  second file selection can cancel and clean up the first one. */
+  const durationCheckRef = useRef<HTMLVideoElement | null>(null)
+
   const handleVideoSelect = useCallback(
     (file: File) => {
       if (!file.type.startsWith('video/')) {
         addToast('请选择视频文件', 'warning')
         return
       }
+
+      // ── Cancel any in-flight duration check from a previous file ────
+      if (durationCheckRef.current) {
+        URL.revokeObjectURL(durationCheckRef.current.src)
+        durationCheckRef.current.onloadedmetadata = null
+        durationCheckRef.current.onerror = null
+        durationCheckRef.current = null
+      }
+
+      // ── Size check (non-blocking warning) ──────────────────────────
+      if (file.size > MAX_VIDEO_SIZE) {
+        addToast(
+          `视频文件较大（${formatFileSize(file.size)}），建议压缩后再上传`,
+          'warning',
+        )
+      }
+
+      // ── Duration check (non-blocking warning) ───────────────────────
+      // Uses a temporary <video> element to read metadata. The ref guard
+      // above cancels any previous in-flight check, so rapid swaps
+      // don't leak object URLs.
+      const videoUrl = URL.createObjectURL(file)
+      const video = document.createElement('video')
+      durationCheckRef.current = video
+      video.preload = 'metadata'
+      video.onloadedmetadata = () => {
+        video.onerror = null // mutually exclusive — prevent double-cleanup
+        URL.revokeObjectURL(videoUrl)
+        durationCheckRef.current = null
+        if (video.duration > MAX_VIDEO_DURATION) {
+          const h = Math.floor(video.duration / 3600)
+          const m = Math.floor((video.duration % 3600) / 60)
+          addToast(
+            `视频时长较长（${h}h${m}m），部分平台有 1 小时限制`,
+            'warning',
+          )
+        }
+      }
+      video.onerror = () => {
+        video.onloadedmetadata = null
+        URL.revokeObjectURL(videoUrl)
+        durationCheckRef.current = null
+      }
+      video.src = videoUrl
+
       setFiles({ file, images: [] })
     },
     [setFiles, addToast],
@@ -415,10 +471,10 @@ const VideoDropzone = memo(function VideoDropzone({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.18, ease: 'easeOut' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15, ease: 'easeOut' }}
       className="space-y-3"
     >
       <label
@@ -565,10 +621,10 @@ const NoteDropzone = memo(function NoteDropzone({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.18, ease: 'easeOut' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15, ease: 'easeOut' }}
       className="space-y-3"
     >
       {/* 图片分组标题 — 用 `<span id>` + `aria-labelledby` 而不是 `<Label>`，

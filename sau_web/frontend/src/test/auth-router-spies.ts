@@ -2,7 +2,7 @@ import { vi } from 'vitest'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Auth-router test spies — shared mock instances for tests that need to
-// verify LoginPage's post-merge `navigate('/app/publish', { replace: true })`
+// verify LoginPage's post-merge `navigate('/dashboard/publish', { replace: true })`
 // redirect contract.
 //
 // Why this file exists as a SEPARATE module from `redirect-spy.ts`:
@@ -29,7 +29,7 @@ import { vi } from 'vitest'
 //      resolver on every render. Under happy-dom that resolver
 //      identity change triggers an internal micro-render via
 //      useForm's internal setState, so LoginPage's render-time
-//      `if (isAuthenticated) { navigate('/app/publish', {replace:true}) }`
+//      `if (isAuthenticated) { navigate('/dashboard/publish', {replace:true}) }`
 //      branch fires TWICE per mount (once on the initial render,
 //      once on the RHF re-render). Tests that lock the redirect
 //      **target** should assert with `toHaveBeenCalledWith(...)`,

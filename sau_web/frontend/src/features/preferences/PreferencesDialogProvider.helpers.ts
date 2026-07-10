@@ -34,6 +34,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 export type PreferencesTab =
+  | 'overview'
   | 'account'
   | 'settings'
   | 'personalization'

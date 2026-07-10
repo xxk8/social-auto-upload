@@ -1,39 +1,28 @@
-"""Concurrent-write regression test for openspec §4.3 / PR2 safety net.
+"""Concurrent-write regression test for openspec §4.3 / psycopg ConnectionPool.
 
-Pins the SQLite-side guarantees that replaced the Python-level
-``db_lock`` in PR4.3 and were promoted to first-class
-``get_connection()`` knobs in PR2:
+Post-SQLite-removal: this file exercises the production psycopg
+``ConnectionPool`` concurrent-borrow contract. Each ``_db_insert_*``
+call hits ``self._pool.connection()`` so the safety net is the
+pool's checkout-checkin lifecycle, not a SQLite PRAGMA. Invariants
+pinned:
 
-  * ``PRAGMA journal_mode=WAL``        — readers don't block writers.
-  * ``PRAGMA busy_timeout=5000``       — contended writes wait 5s
-                                         instead of raising SQLITE_BUSY.
-  * ``check_same_thread=False``       — connections from worker threads.
-
-Without any one of these, 8 worker-thread inserts under realistic
-contention either lose rows, raise ``database is locked``, or crash
-with ``SQLite objects created in a thread can only be used in that
-same thread``. This file fires N parallel threads through
-``_db_insert_log`` and ``_db_update_task`` against the shared
-in-memory SQLite (forced by conftest.py) to verify the safety net
-holds.
-
-Invariants pinned
------------------
-  * No ``sqlite3.OperationalError: database is locked`` leaks.
-  * No ``sqlite3 thread mismatch`` errors.
+  * No ``OperationalError`` leaks under 8-thread × 50-op fan-out.
+  * No pool-borrow deadlocks.
   * Row count matches the expected N*M inserts (no lost or dup rows).
-  * Multi-table concurrent updates settle to a consistent final state
-    (no torn-row where code/status are out of sync).
+  * Multi-table concurrent updates settle to a consistent final
+    state (no torn-row where code/status are out of sync).
 
 Run: ``python3 -m pytest tests/test_concurrent_writes.py -v``
+(requires a reachable PG with ``DATABASE_URL`` set; the test will
+skip if psycopg is not installed).
 """
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import psycopg.errors
 import pytest
 
 from web_runner.db import get_database
@@ -229,17 +218,19 @@ class TestConcurrentTaskInserts:
 
     def test_duplicate_task_id_raises_integrity_error(self) -> None:
         """Single-thread sanity check: inserting the same ``task_id``
-        twice in a row must surface ``sqlite3.IntegrityError`` so the
-        narrowed exception contract used by ``web_runner/routes/ai.py``
-        (``except sqlite3.IntegrityError``) actually has something
-        to catch when PK violations occur.
+        twice in a row must surface ``psycopg.errors.IntegrityError``
+        so the narrowed exception contract used by
+        ``web_runner/routes/ai.py`` and
+        ``web_runner/routes/account_groups.py``
+        (``except psycopg.errors.IntegrityError``) actually has
+        something to catch when PK violations occur.
 
         Without this, the concurrent-PK test above would go green even
         if the PK constraint were silently disabled — the duplicate
         INSERT would *succeed* (no error raised), the row count would
         still match, and the regression would stay hidden. This test
         pins that the chain
-        INSERT-#2 → SQLITE_CONSTRAINT → IntegrityError → route handling
+        INSERT-#2 → unique_violation → IntegrityError → route handling
         is real, and that the surviving row stays the original (first
         insert), not overwritten by the second.
         """
@@ -257,7 +248,7 @@ class TestConcurrentTaskInserts:
         # because task_id is the PRIMARY KEY. (We pass a different
         # ``created`` to make sure the duplication aborts rather than
         # silently rewriting the existing row in some weird bypass.)
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(psycopg.errors.IntegrityError):
             _db_insert_task(
                 task_id="dup-test-1",
                 status="pending",

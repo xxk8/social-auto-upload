@@ -11,6 +11,7 @@ from patchright.async_api import Page, Playwright, async_playwright
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS
 from uploader.base_video import BaseVideoUploader
 from uploader.common import _msg
+from uploader.bilibili_uploader.locators import BilibiliLocators as L
 from utils.anti_detect import obfuscate_image
 from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
@@ -18,7 +19,7 @@ from utils.log import bilibili_logger
 
 BILIBILI_NOTE_PUBLISH_STRATEGY_IMMEDIATE = 'immediate'
 BILIBILI_NOTE_PUBLISH_STRATEGY_SCHEDULED = 'scheduled'
-BILIBILI_NOTE_UPLOAD_PAGE = 'https://member.bilibili.com/platform/upload/text/edit'
+BILIBILI_NOTE_UPLOAD_PAGE = L.NOTE_UPLOAD_PAGE
 MAX_IMAGES = 20
 # SUPPORTED_IMAGE_EXTENSIONS intentionally omitted — Phase 4 §8.5 migration
 # consolidated onto BaseVideoUploader.SUPPORTED_IMAGE_EXTENSIONS (the bilibili
@@ -105,11 +106,11 @@ class BilibiliNote(BaseVideoUploader):
         await page.wait_for_load_state('domcontentloaded')
         await asyncio.sleep(2)
         bilibili_logger.info(_msg('📤', '正在上传图片'))
-        file_input = page.locator("input[type='file'][accept*='image']").first
+        file_input = page.locator(L.NOTE_FILE_INPUT).first
         await file_input.set_input_files(self.image_paths)
         await asyncio.sleep(3)
         bilibili_logger.info(_msg('✍️', '正在填写标题'))
-        title_input = page.locator("input[placeholder*='标题'], input[class*='title']").first
+        title_input = page.locator(L.NOTE_TITLE_INPUT).first
         if await title_input.count():
             await title_input.click()
             await title_input.fill(self.title)
@@ -117,14 +118,14 @@ class BilibiliNote(BaseVideoUploader):
             await page.keyboard.type(self.title)
         await asyncio.sleep(0.5)
         bilibili_logger.info(_msg('✍️', '正在填写正文'))
-        content_area = page.locator("div[class*='editor'], div[contenteditable='true']").first
+        content_area = page.locator(L.NOTE_CONTENT_AREA).first
         if await content_area.count():
             await content_area.click()
             await page.keyboard.type(self.note)
         await asyncio.sleep(0.5)
         if self.tags:
             bilibili_logger.info(_msg('🏷️', f'正在添加 {len(self.tags)} 个标签'))
-            tag_input = page.locator("input[placeholder*='标签'], input[placeholder*='tag']").first
+            tag_input = page.locator(L.NOTE_TAG_INPUT).first
             if await tag_input.count():
                 for tag in self.tags:
                     await tag_input.fill(tag)
@@ -134,12 +135,12 @@ class BilibiliNote(BaseVideoUploader):
         await asyncio.sleep(1)
         if self.publish_strategy == BILIBILI_NOTE_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
             bilibili_logger.info(_msg('⏰', '正在设置定时发布'))
-            schedule_button = page.locator("button:has-text('定时'), div:has-text('定时发布')").first
+            schedule_button = page.locator(L.NOTE_SCHEDULE_BUTTON).first
             if await schedule_button.count():
                 await schedule_button.click()
                 await asyncio.sleep(0.5)
         bilibili_logger.info(_msg('🚀', '正在发布图文'))
-        publish_button = page.locator("button:has-text('发布')").first
+        publish_button = page.locator(L.NOTE_PUBLISH_BUTTON).first
         if await publish_button.count():
             await publish_button.click()
             await asyncio.sleep(3)

@@ -49,7 +49,8 @@ single-source-of-truth anchor without breaking existing call sites. 未来
 TBF-019 follow-up 可以增量迁移 status 字面 转 enum。
 
 Why **private** module-prefix (``_status_schema``): 单-package 内部契约;
-未来跨-package (utils/login_qrcode) promotion 取决于 TBF-019 rollout。
+未来跨-package promotion 取决于 TBF-019 rollout (round-OPT-acct-qr cleanup
+2026-07-10 删除了 utils/login_qrcode 模块, 当前仅 uploader 内部使用)。
 """
 from __future__ import annotations
 

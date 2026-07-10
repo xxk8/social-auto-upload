@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/Components/ui/button'
 import { Card, CardContent } from '@/Components/ui/card'
@@ -17,16 +18,19 @@ import {
   Clipboard,
   Copy,
   Download as DownloadIcon,
+  FileText,
   FolderOpen,
   GripVertical,
   Inbox,
   Loader2,
   Mic,
   RefreshCw,
+  Search,
   Sparkles,
   Square,
   Trash2,
   XCircle,
+  X,
 } from 'lucide-react'
 import { api } from '../api/client'
 import { cn } from '@/lib/utils'
@@ -36,6 +40,7 @@ import { arrayMove } from '@dnd-kit/helpers'
 import { useInboxStore, getInboxStore, type InboxEntry, type InboxStatus, type StatusFilter } from '@/stores/inboxStore'
 
 
+import { ROUTES } from '@/routes'
 // Ponytail: status is a flat union — the four-state visual progression
 // (download → transcribe) maps 1:1 onto the four client-visible Badge
 // variants. A `waiting` state isn't needed because the only async step
@@ -61,13 +66,23 @@ function isCookieStalenessError(error: string | undefined): boolean {
 // chip label + engine tag; the chip strip itself takes
 // `activeKey={detectedPlatform}` directly.
 
-const FILTER_OPTIONS: ReadonlyArray<{ key: StatusFilter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'downloading', label: '下载中' },
-  { key: 'downloaded', label: '已下载' },
-  { key: 'failed', label: '失败' },
-  { key: 'transcribing', label: '转写中' },
-  { key: 'transcribed', label: '已转写' },
+// Module-level manifest pattern (AppShell / STATUS_META exemplar):
+// `labelKey + labelFallback` keeps the manifest React-free so a
+// future i18n audit can grep for hardcoded strings without
+// importing the component. The `t(key, fallback)` call at render
+// time is what surfaces the translated label, with the fallback
+// keeping `tsc -b` clean even if the i18n bundle hasn't loaded.
+const FILTER_OPTIONS: ReadonlyArray<{
+  key: StatusFilter
+  labelKey: string
+  labelFallback: string
+}> = [
+  { key: 'all', labelKey: 'inbox.filters.all', labelFallback: '全部' },
+  { key: 'downloading', labelKey: 'inbox.filters.downloading', labelFallback: '下载中' },
+  { key: 'downloaded', labelKey: 'inbox.filters.downloaded', labelFallback: '已下载' },
+  { key: 'failed', labelKey: 'inbox.filters.failed', labelFallback: '失败' },
+  { key: 'transcribing', labelKey: 'inbox.filters.transcribing', labelFallback: '转写中' },
+  { key: 'transcribed', labelKey: 'inbox.filters.transcribed', labelFallback: '已转写' },
 ]
 
 // Status group display order (in-progress → attention → completed)
@@ -79,12 +94,15 @@ const STATUS_ORDER: InboxStatus[] = [
   'transcribed',
 ]
 
-const STATUS_LABELS: Record<InboxStatus, string> = {
-  downloading: '下载中',
-  downloaded: '已下载',
-  failed: '失败',
-  transcribing: '转写中',
-  transcribed: '已转写',
+const STATUS_LABEL_META: Record<
+  InboxStatus,
+  { labelKey: string; labelFallback: string }
+> = {
+  downloading: { labelKey: 'inbox.row.badge.downloading', labelFallback: '下载中' },
+  downloaded: { labelKey: 'inbox.row.badge.downloaded', labelFallback: '已下载' },
+  failed: { labelKey: 'inbox.row.badge.failed', labelFallback: '失败' },
+  transcribing: { labelKey: 'inbox.row.badge.transcribing', labelFallback: '转写中' },
+  transcribed: { labelKey: 'inbox.row.badge.transcribed', labelFallback: '已转写' },
 }
 
 // URL hostname → platform key (mirrors web_runner/routes/inbox.py _URL_HOST_TO_PLATFORM)
@@ -187,11 +205,12 @@ function extractFirstUrl(input: string): string | null {
 export default function InboxPage() {
   const navigate = useNavigate()
   const { addToast } = useToast()
+  const { t } = useTranslation()
   const [url, setUrl] = useState('')
   const [detectedPlatform, setDetectedPlatform] = useState<PlatformKey | null>(null)
 
   const handleCookieReauthorize = useCallback(() => {
-    navigate('/')
+    navigate(ROUTES.public.landing)
     addToast('请在账号管理页面重新授权对应的平台', 'info')
   }, [navigate, addToast])
 
@@ -200,7 +219,7 @@ export default function InboxPage() {
   // All download/selection/filter state lives in the Zustand
   // `inboxStore` (module-level singleton), NOT in useState. This is
   // the fix for the "download lost on page switch" bug: when the user
-  // navigates away from /app/inbox, React Router unmounts this
+  // navigates away from /dashboard/inbox, React Router unmounts this
   // component. If state lived in useState, the in-flight
   // `api.inboxDownload()` promises' `.then()` / `.catch()` / `.finally()`
   // callbacks would call dead state setters (no-ops) → the download
@@ -216,6 +235,7 @@ export default function InboxPage() {
   const selectedIds = useInboxStore((s) => s.selectedIds)
   const filterStatus = useInboxStore((s) => s.filterStatus)
   const collapsedGroups = useInboxStore((s) => s.collapsedGroups)
+  const searchQuery = useInboxStore((s) => s.searchQuery)
 
   // Store actions (stable references — safe in useCallback deps)
   const {
@@ -231,26 +251,41 @@ export default function InboxPage() {
     setFilterStatus: storeSetFilterStatus,
     toggleCollapse,
     setCollapsedGroups,
+    setSearchQuery,
   } = useInboxStore()
 
   const inFlightCount = inflightEntryIds.size
 
-  const filteredEntries = useMemo(
-    () =>
-      filterStatus === 'all'
-        ? entries
-        : entries.filter((e) => e.status === filterStatus),
-    [entries, filterStatus],
-  )
+  const filteredEntries = useMemo(() => {
+    const byStatus = filterStatus === 'all'
+      ? entries
+      : entries.filter((e) => e.status === filterStatus)
+    if (!searchQuery.trim()) return byStatus
+    const q = searchQuery.toLowerCase()
+    return byStatus.filter(
+      (e) =>
+        e.url.toLowerCase().includes(q) ||
+        (e.filename?.toLowerCase().includes(q)) ||
+        (e.engine?.toLowerCase().includes(q)),
+    )
+  }, [entries, filterStatus, searchQuery])
 
-  // Group entries by status for the "全部" view
+  // Group entries by status for the "全部" view (respects search)
   const groupedEntries = useMemo(() => {
+    const base = searchQuery.trim()
+      ? entries.filter(
+          (e) =>
+            e.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (e.filename?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (e.engine?.toLowerCase().includes(searchQuery.toLowerCase())),
+        )
+      : entries
     const groups: Record<string, InboxEntry[]> = {}
     for (const status of STATUS_ORDER) {
-      groups[status] = entries.filter((e) => e.status === status)
+      groups[status] = base.filter((e) => e.status === status)
     }
     return groups as Record<InboxStatus, InboxEntry[]>
-  }, [entries])
+  }, [entries, searchQuery])
 
   // Collapse/expand state (must live AFTER groupedEntries to avoid TDZ)
   const allCollapsed = useMemo(
@@ -348,7 +383,7 @@ export default function InboxPage() {
     // The addEntry + markInflight are synchronous (no await), so they
     // commit to the store immediately even if the component unmounts
     // before the api.inboxDownload promise resolves.
-    addEntry({ id, url: target, status: 'downloading' })
+    addEntry({ id, url: target, status: 'downloading', startedAt: Date.now() })
     setUrl('')
     setDetectedPlatform(null)
     markInflight(id)
@@ -363,7 +398,7 @@ export default function InboxPage() {
       // Use getInboxStore() so this callback works even if the
       // component was unmounted during the await (user navigated to
       // another page). The store action updates the entry regardless
-      // of mount status; when the user returns to /app/inbox, the
+      // of mount status; when the user returns to /dashboard/inbox, the
       // entry is already updated.
       const store = getInboxStore()
       if (res.success && res.filename) {
@@ -373,7 +408,7 @@ export default function InboxPage() {
           dir: res.dir,
           engine: res.engine,
         })
-        addToast(`已下载 ${res.filename}${res.dir ? `\n${res.dir}` : ''}`, 'success')
+        addToast(`已下载 ${res.filename}${res.dir ? `\n${res.dir}` : ''}\n下一步：点击「转写」提取文案`, 'success')
       } else {
         store.updateEntry(id, { status: 'failed', error: res.message ?? '下载失败' })
         addToast(res.message ?? '下载失败', 'error')
@@ -530,7 +565,7 @@ export default function InboxPage() {
         // re-renders as in-progress (Badge switches to 下载中) and
         // any subsequent batch retry filters it out via the
         // !inflightEntryIds.has() check above.
-        getInboxStore().updateEntry(entry.id, { status: 'downloading' as InboxStatus, error: undefined })
+        getInboxStore().updateEntry(entry.id, { status: 'downloading' as InboxStatus, error: undefined, startedAt: Date.now() })
         getInboxStore().markInflight(entry.id)
         try {
           const res = await api.inboxDownload(entry.url)
@@ -559,11 +594,69 @@ export default function InboxPage() {
     }
   }, [addToast, setBatchBusy])
 
+  const handleBatchTranscribe = useCallback(async () => {
+    const store = getInboxStore()
+    const toTranscribe = store.entries.filter(
+      (e) =>
+        store.selectedIds.has(e.id) &&
+        e.status === 'downloaded' &&
+        e.filename,
+    )
+    if (toTranscribe.length === 0) {
+      addToast('选中的条目中没有已下载的视频', 'warning')
+      return
+    }
+    setBatchBusy(true)
+    let successCount = 0
+    try {
+      for (const entry of toTranscribe) {
+        getInboxStore().updateEntry(entry.id, { status: 'transcribing' as InboxStatus, transcript: undefined, error: undefined })
+        try {
+          await api.inboxTranscribeStream(
+            { filename: entry.filename! },
+            (chunk) => getInboxStore().appendTranscript(entry.id, chunk),
+            () => {
+              getInboxStore().updateEntry(entry.id, { status: 'transcribed' as InboxStatus })
+              successCount++
+            },
+            (msg) => {
+              getInboxStore().updateEntry(entry.id, { status: 'failed' as InboxStatus, error: msg })
+            },
+          )
+        } catch {
+          getInboxStore().updateEntry(entry.id, { status: 'failed' as InboxStatus, error: '转写请求失败' })
+        }
+      }
+      addToast(`转写完成：${successCount}/${toTranscribe.length} 成功`, successCount === toTranscribe.length ? 'success' : 'info')
+      getInboxStore().clearSelection()
+    } finally {
+      setBatchBusy(false)
+    }
+  }, [addToast, setBatchBusy])
+
+  const handleExportTranscript = useCallback(
+    (id: string) => {
+      const target = getInboxStore().entries.find((e) => e.id === id)
+      if (!target?.transcript) return
+      const blob = new Blob([target.transcript], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${target.filename?.replace(/\.[^.]+$/, '') ?? 'transcript'}.txt`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      addToast('文案已导出', 'success')
+    },
+    [addToast],
+  )
+
   const handleRetry = useCallback(
     async (id: string) => {
       const target = getInboxStore().entries.find((e) => e.id === id)
       if (!target?.url) return
-      getInboxStore().updateEntry(id, { status: 'downloading' as InboxStatus, error: undefined })
+      getInboxStore().updateEntry(id, { status: 'downloading' as InboxStatus, error: undefined, startedAt: Date.now() })
       // Per-entry in-flight tracking. ONLY this row's 重试 button is
       // disabled while this retry runs (via the InboxRow `inflight`
       // prop, which the parent computes from inflightEntryIds.has()).
@@ -718,7 +811,7 @@ export default function InboxPage() {
                   className="text-xs text-muted-foreground"
                 >
                   <ChevronDown className={cn('h-3 w-3 mr-1 transition-transform', allCollapsed && '-rotate-90')} />
-                  {allCollapsed ? '全部展开' : '全部收起'}
+                  {allCollapsed ? t('inbox.batch.expand_all', '全部展开') : t('inbox.batch.collapse_all', '全部收起')}
                 </Button>
               )}
               {entries.length > 0 && (
@@ -735,9 +828,28 @@ export default function InboxPage() {
             </div>
           </div>
 
-          {/* Status filter bar */}
+          {/* Search + Status filter bar */}
           {entries.length > 0 && (
-            <div className="flex items-center gap-1.5 mb-3 flex-wrap" data-testid="inbox-filter-bar">
+            <>
+              <div className="relative mb-3" data-testid="inbox-search">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+                <Input
+                  placeholder="搜索 URL / 文件名 / 引擎..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8 pl-8 pr-8 text-xs"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mb-3 flex-wrap" data-testid="inbox-filter-bar">
               {FILTER_OPTIONS.map((opt) => {
                 const count = opt.key === 'all'
                   ? entries.length
@@ -753,12 +865,13 @@ export default function InboxPage() {
                         : 'bg-muted/50 text-muted-foreground hover:bg-muted/70'
                     }`}
                   >
-                    {opt.label}
+                    {t(opt.labelKey, opt.labelFallback)}
                     <span className="tabular-nums opacity-70">{count}</span>
                   </button>
                 )
               })}
-            </div>
+              </div>
+            </>
           )}
           {entries.length === 0 ? (
             <div className="flex h-[280px] items-center justify-center rounded-lg bg-muted/40 border border-dashed animate-in fade-in-0 slide-in-from-top-2 duration-300">
@@ -789,10 +902,12 @@ export default function InboxPage() {
                     ) : (
                       <Square className="h-3 w-3 mr-1" />
                     )}
-                    {selectedIds.size === entries.length ? '取消全选' : '全选'}
+                    {selectedIds.size === entries.length
+                      ? t('inbox.batch.unselect_all', '取消全选')
+                      : t('inbox.batch.select_all', '全选')}
                   </Button>
                   <span className="text-xs text-muted-foreground">
-                    已选 {selectedIds.size} 项
+                    {t('inbox.batch.selected_count', '已选 {{count}} 项', { count: selectedIds.size })}
                   </span>
                   <div className="flex-1" />
                   <Button
@@ -802,7 +917,7 @@ export default function InboxPage() {
                     className="text-xs"
                   >
                     <Trash2 className="h-3 w-3 mr-1" />
-                    清除选中
+                    {t('inbox.batch.remove_selected', '清除选中')}
                   </Button>
                   <Button
                     size="sm"
@@ -817,7 +932,22 @@ export default function InboxPage() {
                     className="text-xs"
                   >
                     <RefreshCw className="h-3 w-3 mr-1" />
-                    重试选中
+                    {t('inbox.batch.retry_selected', '重试选中')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleBatchTranscribe()}
+                    disabled={
+                      batchBusy ||
+                      !entries.some(
+                        (e) => selectedIds.has(e.id) && e.status === 'downloaded',
+                      )
+                    }
+                    className="text-xs"
+                  >
+                    <Mic className="h-3 w-3 mr-1" />
+                    {t('inbox.batch.transcribe_selected', '转写选中')}
                   </Button>
                 </div>
               )}
@@ -841,7 +971,7 @@ export default function InboxPage() {
                             )}
                           />
                           <span className="text-xs font-semibold text-foreground/80">
-                            {STATUS_LABELS[status]}
+                            {t(STATUS_LABEL_META[status].labelKey, STATUS_LABEL_META[status].labelFallback)}
                           </span>
                           <span className="text-[11px] tabular-nums text-muted-foreground">
                             {group.length}
@@ -860,6 +990,7 @@ export default function InboxPage() {
                                 onToggleSelect={() => toggleSelect(entry.id)}
                                 onTranscribe={() => void handleTranscribe(entry.id)}
                                 onCopyTranscript={() => void handleCopyTranscript(entry.id)}
+                                onExportTranscript={() => handleExportTranscript(entry.id)}
                                 onRetry={() => void handleRetry(entry.id)}
                                 onRemove={() => handleRemove(entry.id)}
                                 onCookieReauthorize={handleCookieReauthorize}
@@ -879,13 +1010,13 @@ export default function InboxPage() {
                 >
                   <div className="text-center text-sm text-muted-foreground">
                     <Inbox className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
-                    <p>暂无匹配记录</p>
+                    <p>{t('inbox.filter_empty.title', '暂无匹配记录')}</p>
                     <button
                       type="button"
                       onClick={() => storeSetFilterStatus('all')}
                       className="mt-2 text-xs underline underline-offset-4 hover:text-foreground transition-colors"
                     >
-                      清除筛选
+                      {t('inbox.filter_empty.clear', '清除筛选')}
                     </button>
                   </div>
                 </div>
@@ -904,6 +1035,7 @@ export default function InboxPage() {
                         onToggleSelect={() => toggleSelect(e.id)}
                         onTranscribe={() => void handleTranscribe(e.id)}
                         onCopyTranscript={() => void handleCopyTranscript(e.id)}
+                        onExportTranscript={() => handleExportTranscript(e.id)}
                         onRetry={() => void handleRetry(e.id)}
                         onRemove={() => handleRemove(e.id)}
                         onCookieReauthorize={handleCookieReauthorize}
@@ -920,6 +1052,81 @@ export default function InboxPage() {
   )
 }
 
+// ── VideoThumbnail ────────────────────────────────────────────────────────
+// Renders a small thumbnail from the first frame of a downloaded video file.
+// Falls back to a film icon when the video can't be loaded.
+
+function VideoThumbnail({ filename }: { filename: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!filename) return
+    const baseURL =
+      (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
+      (import.meta.env.DEV ? '' : 'http://localhost:6001')
+    const videoEl = document.createElement('video')
+    videoEl.preload = 'metadata'
+    videoEl.muted = true
+    videoEl.playsInline = true
+    videoEl.src = `${baseURL}/api/inbox/file/${encodeURIComponent(filename)}`
+    videoEl.currentTime = 0.5
+    const onLoaded = () => {
+      try {
+        const canvas = canvasRef.current
+        if (!canvas) return
+        canvas.width = videoEl.videoWidth || 160
+        canvas.height = videoEl.videoHeight || 90
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
+          setSrc(canvas.toDataURL('image/jpeg', 0.5))
+        }
+      } catch {
+        // CORS or security error — fall back to icon
+      }
+    }
+    videoEl.addEventListener('loadeddata', onLoaded)
+    return () => {
+      videoEl.removeEventListener('loadeddata', onLoaded)
+      videoEl.src = ''
+    }
+  }, [filename])
+
+  if (!src) {
+    return (
+      <div className="h-12 w-16 rounded bg-muted/60 border border-border/30 flex items-center justify-center flex-shrink-0">
+        <DownloadIcon className="h-4 w-4 text-muted-foreground/30" />
+      </div>
+    )
+  }
+  return (
+    <img
+      src={src}
+      alt="视频缩略图"
+      className="h-12 w-16 rounded object-cover border border-border/30 flex-shrink-0"
+    />
+  )
+}
+
+// ── ElapsedTimer ──────────────────────────────────────────────────────────
+// Shows elapsed time since download started. Auto-updates every second.
+
+function ElapsedTimer({ startedAt }: { startedAt: number }) {
+  const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - startedAt) / 1000))
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  const min = Math.floor(elapsed / 60)
+  const sec = elapsed % 60
+  return (
+    <span className="text-[10px] font-mono text-muted-foreground/60 tabular-nums">
+      {min > 0 ? `${min}m${String(sec).padStart(2, '0')}s` : `${sec}s`}
+    </span>
+  )
+}
+
 // ── SortableGroupEntry wrapper ───────────────────────────────────────────
 // Handles dnd-kit sortable plumbing for within-group drag. Each status
 // group in the grouped view gets its own DragDropProvider + SortableGroupEntry
@@ -932,6 +1139,7 @@ interface SortableGroupEntryProps {
   onToggleSelect: () => void
   onTranscribe: () => void
   onCopyTranscript: () => void
+  onExportTranscript: () => void
   onRetry: () => void
   onRemove: () => void
   onCookieReauthorize?: () => void
@@ -944,6 +1152,7 @@ function SortableGroupEntry({
   onToggleSelect,
   onTranscribe,
   onCopyTranscript,
+  onExportTranscript,
   onRetry,
   onRemove,
   onCookieReauthorize,
@@ -974,6 +1183,7 @@ function SortableGroupEntry({
           onToggleSelect={onToggleSelect}
           onTranscribe={onTranscribe}
           onCopyTranscript={onCopyTranscript}
+          onExportTranscript={onExportTranscript}
           onRetry={onRetry}
           onRemove={onRemove}
           onCookieReauthorize={onCookieReauthorize}
@@ -995,6 +1205,7 @@ interface InboxRowProps {
   onToggleSelect: () => void
   onTranscribe: () => void
   onCopyTranscript: () => void
+  onExportTranscript: () => void
   onRetry: () => void
   onRemove: () => void
   onCookieReauthorize?: () => void
@@ -1008,11 +1219,13 @@ function InboxRow({
   onToggleSelect,
   onTranscribe,
   onCopyTranscript,
+  onExportTranscript,
   onRetry,
   onRemove,
   onCookieReauthorize,
 }: InboxRowProps) {
   const { status } = entry
+  const { t } = useTranslation()
 
   const badge = (() => {
     switch (status) {
@@ -1020,35 +1233,35 @@ function InboxRow({
         return (
           <Badge variant="secondary">
             <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-            下载中
+            {t('inbox.row.badge.downloading', '下载中')}
           </Badge>
         )
       case 'downloaded':
         return (
           <Badge>
             <Check className="h-3 w-3 mr-1" />
-            已下载
+            {t('inbox.row.badge.downloaded', '已下载')}
           </Badge>
         )
       case 'failed':
         return (
           <Badge variant="destructive">
             <XCircle className="h-3 w-3 mr-1" />
-            失败
+            {t('inbox.row.badge.failed', '失败')}
           </Badge>
         )
       case 'transcribing':
         return (
           <Badge variant="secondary">
             <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-            转写中
+            {t('inbox.row.badge.transcribing', '转写中')}
           </Badge>
         )
       case 'transcribed':
         return (
           <Badge>
             <Sparkles className="h-3 w-3 mr-1" />
-            已转写
+            {t('inbox.row.badge.transcribed', '已转写')}
           </Badge>
         )
     }
@@ -1070,7 +1283,7 @@ function InboxRow({
           type="button"
           onClick={onToggleSelect}
           className="mt-0.5 flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label={selected ? '取消选择' : '选择'}
+          aria-label={selected ? t('inbox.row.unselect_aria', '取消选择') : t('inbox.row.select_aria', '选择')}
         >
           {selected ? (
             <CheckSquare className="h-4 w-4 text-primary" />
@@ -1086,6 +1299,14 @@ function InboxRow({
          *  dropping the per-row platform logo removes duplicate
          *  emphasis + the rainbow-of-platform-colors reading. */}
         <BrandGlyph className="h-5 w-5 flex-shrink-0 mt-0.5 text-[14px]" />
+        {entry.filename && entry.status !== 'downloading' && (
+          <VideoThumbnail filename={entry.filename} />
+        )}
+        {entry.status === 'downloading' && (
+          <div className="h-12 w-16 rounded bg-muted/60 border border-border/30 flex items-center justify-center flex-shrink-0">
+            <Loader2 className="h-4 w-4 text-muted-foreground/40 animate-spin" />
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <div className="text-xs text-muted-foreground/70 font-mono truncate">
             {entry.url}
@@ -1122,9 +1343,9 @@ function InboxRow({
                   <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
                     <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-warning">平台授权已过期，请重新登录</p>
+                      <p className="text-xs font-medium text-warning">{t('inbox.row.cookie_expired.title', '平台授权已过期，请重新登录')}</p>
                       <p className="mt-0.5 text-[11px] text-warning/70">
-                        Cookie 过期可能导致下载失败，回到账号管理页重新授权即可恢复。
+                        {t('inbox.row.cookie_expired.description', 'Cookie 过期可能导致下载失败，回到账号管理页重新授权即可恢复。')}
                       </p>
                       <Button
                         size="sm"
@@ -1135,7 +1356,7 @@ function InboxRow({
                           onCookieReauthorize()
                         }}
                       >
-                        去账号管理重新授权
+                        {t('inbox.row.cookie_expired.cta', '去账号管理重新授权')}
                       </Button>
                     </div>
                   </div>
@@ -1147,6 +1368,9 @@ function InboxRow({
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {badge}
+          {status === 'downloading' && entry.startedAt && (
+            <ElapsedTimer startedAt={entry.startedAt} />
+          )}
           {status === 'downloaded' && (
             <Button
               size="sm"
@@ -1155,7 +1379,7 @@ function InboxRow({
               data-testid="inbox-transcribe"
             >
               <Mic className="h-3 w-3 mr-1" />
-              转写
+              {t('inbox.row.transcribe', '转写')}
             </Button>
           )}
           {status === 'transcribed' && (
@@ -1167,7 +1391,16 @@ function InboxRow({
                 data-testid="inbox-copy"
               >
                 <Copy className="h-3 w-3 mr-1" />
-                复制
+                {t('inbox.row.copy', '复制')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onExportTranscript}
+                data-testid="inbox-export"
+              >
+                <FileText className="h-3 w-3 mr-1" />
+                {t('inbox.row.export', '导出')}
               </Button>
               <Button
                 size="sm"
@@ -1175,14 +1408,14 @@ function InboxRow({
                 onClick={onTranscribe}
               >
                 <Mic className="h-3 w-3 mr-1" />
-                再转写
+                {t('inbox.row.retranscribe', '再转写')}
               </Button>
             </>
           )}
           {status === 'transcribing' && (
             <Button size="sm" variant="ghost" disabled>
               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              转写中
+              {t('inbox.row.transcribing', '转写中')}
             </Button>
           )}
           {status === 'failed' && !entry.filename && (
@@ -1193,7 +1426,7 @@ function InboxRow({
               data-testid="inbox-download-retry"
             >
               <RefreshCw className="h-3 w-3 mr-1" />
-              重试
+              {t('inbox.row.retry', '重试')}
             </Button>
           )}
           {status === 'failed' && entry.filename && (
@@ -1204,14 +1437,14 @@ function InboxRow({
               data-testid="inbox-transcribe-retry"
             >
               <Mic className="h-3 w-3 mr-1" />
-              再试转写
+              {t('inbox.row.retry_transcribe', '再试转写')}
             </Button>
           )}
           <Button
             size="sm"
             variant="ghost"
             onClick={onRemove}
-            aria-label="移除"
+            aria-label={t('inbox.row.remove_aria', '移除')}
             data-testid="inbox-remove"
           >
             <Trash2 className="h-3 w-3" />
@@ -1221,14 +1454,16 @@ function InboxRow({
       {entry.transcript !== undefined && (
         <div className="border-t pt-2 mt-2">
           <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60 mb-1">
-            文案 · 实时
+            {t('inbox.row.transcript_label', '文案 · 实时')}
           </div>
           <pre
             className="text-xs leading-relaxed whitespace-pre-wrap font-mono max-h-64 overflow-auto bg-muted/40 rounded-md p-2"
             data-testid="inbox-transcript"
           >
             {entry.transcript ||
-              (status === 'transcribing' ? '正在转写…' : '(空)')}
+              (status === 'transcribing'
+                ? t('inbox.row.transcript_streaming', '正在转写…')
+                : t('inbox.row.transcript_empty', '(空)'))}
           </pre>
         </div>
       )}

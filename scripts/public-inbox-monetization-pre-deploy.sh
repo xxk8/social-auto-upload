@@ -66,30 +66,49 @@ cd "$REPO_ROOT"
 # Dev DB post-PR-A state check (inverse of TBF-018 pre-deploy's pre-PR-A check).
 # The public-inbox kill-criteria script requires guest_usage_logs + reward_events
 # + users tables to exist. If any are missing, the dry-run is meaningless.
-.venv/bin/python - "$DB_PATH" <<'PYEOF'
-import os, sqlite3, sys
-db_path = sys.argv[1]
+#
+# Post-SQLite-removal: this script uses psql against $DATABASE_URL (PG only).
+# $DB_PATH is preserved for backward compat (kill-criteria script accepts
+# --db-path) but the schema check itself uses psql.
+if [ -z "${DATABASE_URL:-}" ]; then
+    echo "FATAL: DATABASE_URL unset; this script requires a PG connection string." >&2
+    echo "  Set DATABASE_URL=postgres://user:pass@host:port/dbname before running." >&2
+    exit 2
+fi
+if ! command -v psql >/dev/null 2>&1; then
+    echo "FATAL: psql not on PATH; install postgresql-client to run the schema check." >&2
+    exit 2
+fi
+.venv/bin/python - "$DATABASE_URL" <<'PYEOF'
+import subprocess, sys
+db_url = sys.argv[1]
+sql = (
+    "SELECT table_name FROM information_schema.tables "
+    "WHERE table_schema = 'public' "
+    "AND table_name IN ('guest_usage_logs', 'reward_events', 'users');"
+)
 try:
-    c = sqlite3.connect(db_path)
-    present = {
-        r[0] for r in c.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name IN ('guest_usage_logs', 'reward_events', 'users')"
-        )
-    }
-    missing = {"guest_usage_logs", "reward_events", "users"} - present
-    if missing:
-        print("FATAL: dev DB missing public-inbox tables (pre-PR-A state):", file=sys.stderr)
-        for m in missing:
-            print("  -", m, file=sys.stderr)
-        print("  public-inbox-monetization-pre-deploy requires the post-PR-A schema.", file=sys.stderr)
-        print("  Wait for PR-A to merge, or run scripts/pre-deploy-dry-run.sh", file=sys.stderr)
-        print("  (the pre-PR-A sibling) until PR-A lands.", file=sys.stderr)
-        sys.exit(2)
-    print("OK: dev DB in post-PR-A state (public-inbox tables present).")
-except Exception as e:
+    out = subprocess.run(
+        ["psql", db_url, "-tA", "-c", sql],
+        capture_output=True, text=True, check=True, timeout=10,
+    ).stdout.strip()
+except subprocess.CalledProcessError as e:
     print("FATAL: could not check dev DB post-PR-A state: %s" % e, file=sys.stderr)
     sys.exit(2)
+except subprocess.TimeoutExpired:
+    print("FATAL: psql timed out checking dev DB post-PR-A state", file=sys.stderr)
+    sys.exit(2)
+present = {r for r in out.splitlines() if r}
+missing = {"guest_usage_logs", "reward_events", "users"} - present
+if missing:
+    print("FATAL: dev DB missing public-inbox tables (pre-PR-A state):", file=sys.stderr)
+    for m in missing:
+        print("  -", m, file=sys.stderr)
+    print("  public-inbox-monetization-pre-deploy requires the post-PR-A schema.", file=sys.stderr)
+    print("  Wait for PR-A to merge, or run scripts/pre-deploy-dry-run.sh", file=sys.stderr)
+    print("  (the pre-PR-A sibling) until PR-A lands.", file=sys.stderr)
+    sys.exit(2)
+print("OK: dev DB in post-PR-A state (public-inbox tables present).")
 PYEOF
 
 echo "[public-inbox-predeploy-dry-run] validation PASSED."

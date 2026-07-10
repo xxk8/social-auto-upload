@@ -1,16 +1,20 @@
 import type { ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Button } from '@/Components/ui/button'
 import { BrandMark } from '@/Components/ui/brand-glyph'
-import { ThemeToggle } from '@/Components/ThemeToggle'
+import MarketingFooter from '@/Components/MarketingFooter'
+import MarketingTopBar from '@/Components/MarketingTopBar'
 import { SectionHeading } from '@/Components/ui/section-heading'
 import { PricingTier } from '@/Components/ui/pricing-tier'
 import type { PricingTierProps } from '@/Components/ui/pricing-tier'
 import { PlatformIcon } from '@/Components/ui/platform-icon'
-import { useScrollPast } from '@/lib/use-scroll-past'
+import { PricingComparison } from '@/Components/ui/pricing-comparison'
 import { useRevealStagger } from '@/lib/use-reveal-stagger'
+import { ROUTES } from '@/routes'
 import {
   CheckCircle2,
+  Check,
+  X,
   Send,
   CalendarClock,
   Sparkles,
@@ -29,28 +33,48 @@ import {
 //
 // E2E invariants (landing-pricing-attribution.spec.ts):
 //   • /pricing returns HTTP 200
-//   • 3 tier cards with data-tier-card="personal"|"team"|"enterprise"
+//   • 4 tier cards with data-tier-card="free"|"personal"|"team"|"enterprise"
 //   • Exactly 1 [data-tier-card][data-recommended="true"]
 //   • Exactly 1 .tier-recommended-accent element
 //   • "推荐" badge text visible
 //   • TopBar cross-link from / to /pricing works
-//   • Individual版 text visible (tier mount fingerprint)
+//   • 免费版 text visible (tier mount fingerprint)
 
 const TIERS: ReadonlyArray<PricingTierProps> = [
   {
-    id: 'personal',
-    name: '个人版',
-    tagline: '单兵创作者日常发布',
+    id: 'free',
+    name: '免费版',
+    tagline: '先尝鲜 · 零成本长期可用',
     price: '¥0',
     priceUnit: '永久免费',
     features: [
-      '最多接入 3 个平台账号',
-      '每月 30 条发布额度',
-      'AI 文案生成 (基础模型)',
+      '1 个平台账号',
+      '每月 40 条发布额度',
       '定时发布 + 任务追踪',
       '本地部署 · 数据归属您',
+      '升级专业版解锁 AI 内容生成 + 图片素材搜索',
     ],
-    ctaLabel: '比较套餐 →',
+    ctaLabel: '免费开始 →',
+    ctaTo: '/login/auth?plan=free',
+  },
+  {
+    id: 'personal',
+    name: '个人版',
+    tagline: '单兵创作者效率之选',
+    price: '¥39',
+    priceUnit: '/ 月',
+    priceMeta: '年付 ¥399/年 ≈ ¥33/月',
+    trial: '14 天免费试用',
+    features: [
+      '5 个平台账号',
+      '每月 200 条发布额度',
+      'AI 文案生成 (高级模型)',
+      '账号组管理 + 数据统计面板',
+      '定时发布 + 失败自动重试',
+      '优先客服支持',
+      '本地部署 · 数据归属您',
+    ],
+    ctaLabel: '开始试用 →',
     ctaTo: '/login/auth?plan=personal',
   },
   {
@@ -59,15 +83,18 @@ const TIERS: ReadonlyArray<PricingTierProps> = [
     tagline: 'MCN / 矩阵运营的最佳选择',
     price: '¥199',
     priceUnit: '/ 月',
+    priceMeta: '年付 ¥1999/年 ≈ ¥167/月',
+    trial: '14 天免费试用',
     features: [
-      '最多接入 12 个平台账号',
+      '12 个平台账号',
       '不限发布次数',
       'AI 文案生成 (多模型切换)',
       '账号组管理 + 多人协作',
       '定时发布 + 失败自动重试',
+      '数据看板 + 优先客服',
       '本地部署 · 数据归属您',
     ],
-    ctaLabel: '比较套餐 →',
+    ctaLabel: '立即订阅 →',
     ctaTo: '/login/auth?plan=team',
     highlight: true,
     badgeText: '推荐',
@@ -86,7 +113,7 @@ const TIERS: ReadonlyArray<PricingTierProps> = [
       'SSO / SCIM / 审计日志',
       '支持私有化部署 / 定制开发',
     ],
-    ctaLabel: '比较套餐 →',
+    ctaLabel: '联系销售 →',
     ctaTo: '/login/auth?plan=enterprise',
   },
 ]
@@ -218,10 +245,10 @@ function HeroSection() {
         </p>
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center sm:gap-4">
           <Button asChild size="lg" className="h-11 px-6 text-sm font-medium">
-            <Link to="/app">免费开始 →</Link>
+            <Link to={ROUTES.dashboard.root}>免费开始 →</Link>
           </Button>
           <Button asChild variant="outline" size="lg" className="h-11 px-6 text-sm font-medium">
-            <Link to="/login/auth?intent=contact">联系销售</Link>
+            <Link to={`${ROUTES.public.loginAuth}?intent=contact`}>联系销售</Link>
           </Button>
         </div>
         {/* Platform strip — shows the 6 supported platforms */}
@@ -240,7 +267,7 @@ function HeroSection() {
 function TiersSection() {
   return (
     <section className="border-b border-border/40 px-6 py-16 sm:py-20">
-      <div data-reveal-group className="mx-auto grid max-w-5xl grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
+      <div data-reveal-group className="mx-auto grid max-w-6xl grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2 xl:grid-cols-4">
         {TIERS.map((t) => (
           <div key={t.name} data-reveal-cell>
             <PricingTier {...t} />
@@ -362,31 +389,31 @@ function CtaSection() {
           variant="landing"
           eyebrow="开始使用"
           title="现在就选一个方向"
-          description="我们会陪你把当前工作流梳理一遍,推荐最合适的版本,并提供 14 天试用 (以商务确认为准)。"
+          description="我们会陪你把当前工作流梳理一遍,推荐最合适的版本。付费版均含 14 天免费试用,免费版永久可用。"
         />
         <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
           <Button asChild size="lg" className="h-11 px-6 text-sm font-medium">
             <Link to="/login/auth?intent=contact">联系销售 →</Link>
           </Button>
           <Button asChild variant="outline" size="lg" className="h-11 px-6 text-sm font-medium">
-            <Link to="/app">免费开始</Link>
+            <Link to="/dashboard">免费开始</Link>
           </Button>
           <Button asChild variant="ghost" size="lg" className="h-11 px-6 text-sm font-medium">
-            <Link to="/">回到首页</Link>
+            <Link to={ROUTES.public.landing}>回到首页</Link>
           </Button>
         </div>
         <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 text-[12px] text-muted-foreground/80 sm:grid-cols-3">
           <div className="flex items-center justify-center gap-2">
             <Zap className="h-3.5 w-3.5 text-primary" aria-hidden />
-            <span>14 天试用</span>
+            <span>付费版 14 天免费试用</span>
           </div>
           <div className="flex items-center justify-center gap-2">
             <ShieldCheck className="h-3.5 w-3.5 text-[var(--status-success-fg)]" aria-hidden />
-            <span>数据归属您 · 不上云</span>
+            <span>免费版永久免费</span>
           </div>
           <div className="flex items-center justify-center gap-2">
             <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-            <span>持续维护 · 安全更新</span>
+            <span>数据归属您 · 不上云</span>
           </div>
         </div>
       </div>
@@ -394,134 +421,20 @@ function CtaSection() {
   )
 }
 
-// ── Chrome: TopBar ────────────────────────────────────────────────────────
-
-function TopBar() {
-  const location = useLocation()
-  const isActive = (path: string) => location.pathname === path
-  const past = useScrollPast(80)
-  return (
-    <header
-      className={`sticky top-0 z-50 flex h-14 items-center justify-between bg-background/85 px-6 backdrop-blur-xl transition-colors duration-200 ${
-        past ? 'border-b border-primary/45' : 'border-b border-border/40'
-      }`}
-    >
-      <Link to="/" className="flex items-center gap-2.5">
-        <BrandMark size="sm" />
-        <span className="text-[14px] font-medium tracking-tight text-foreground">
-          social-auto-upload
-        </span>
-      </Link>
-      <div className="flex items-center gap-5 text-[13px] font-medium">
-        <Link
-          to="/"
-          className={`transition-colors hover:text-foreground ${isActive('/') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          首页
-        </Link>
-        <Link
-          to="/pricing"
-          aria-current={isActive('/pricing') ? 'page' : undefined}
-          className={`transition-colors hover:text-foreground ${isActive('/pricing') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          定价
-        </Link>
-        <Link
-          to="/about"
-          aria-current={isActive('/about') ? 'page' : undefined}
-          className={`transition-colors hover:text-foreground ${isActive('/about') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          关于
-        </Link>
-        <Link
-          to="/login"
-          aria-current={isActive('/login') ? 'page' : undefined}
-          className={`transition-colors hover:text-foreground ${isActive('/login') ? 'text-foreground' : 'text-muted-foreground'}`}
-        >
-          登录
-        </Link>
-        <ThemeToggle />
-      </div>
-    </header>
-  )
-}
-
-// ── Dense footer (Raycast pattern: categorized sitemap) ──────────────────
-
-const FOOTER_COLS = [
-  {
-    title: '产品',
-    links: [
-      { label: '功能', to: '/#features' },
-      { label: '平台', to: '/#platforms' },
-      { label: '定价', to: '/pricing' },
-    ],
-  },
-  {
-    title: '资源',
-    links: [
-      { label: '关于', to: '/about' },
-      { label: '登录', to: '/login' },
-    ],
-  },
-  {
-    title: '账户',
-    links: [
-      { label: '控制台', to: '/app' },
-      { label: '定价方案', to: '/pricing' },
-    ],
-  },
-] as const
-
-function PageFooter() {
-  return (
-    <footer className="border-t border-border/40 px-6 py-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-            <BrandMark size="sm" />
-            <span>social-auto-upload</span>
-          </div>
-        </div>
-        <div className="mt-8 grid grid-cols-3 gap-6 sm:max-w-md">
-          {FOOTER_COLS.map((col) => (
-            <div key={col.title}>
-              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                {col.title}
-              </div>
-              <ul className="mt-3 space-y-2">
-                {col.links.map((link) => (
-                  <li key={link.label}>
-                    <Link
-                      to={link.to}
-                      className="text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    </footer>
-  )
-}
-
 export default function PricingPage() {
   const motionRoot = useRevealStagger()
   return (
     <div ref={motionRoot} className="min-h-screen w-full bg-background text-foreground">
-      <TopBar />
+      <MarketingTopBar />
       <main>
         <HeroSection />
         <TiersSection />
+        <PricingComparison tiers={TIERS} />
         <CommonFeaturesSection />
         <HighlightSection />
         <CtaSection />
       </main>
-      <PageFooter />
+      <MarketingFooter />
     </div>
   )
 }

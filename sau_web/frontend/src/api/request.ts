@@ -1,5 +1,7 @@
 import axios, { type AxiosInstance } from 'axios'
 import type { InternalAxiosRequestConfig } from 'axios'
+import { createAuth401ResponseInterceptor } from './_createAuth401ResponseInterceptor'
+import { appendAuthPendingHeader } from './_appendAuthPendingHeader'
 
 const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
@@ -28,28 +30,31 @@ const getRetryDelay = (retryCount: number): number =>
   Math.pow(2, retryCount) * RETRY_DELAY
 
 // ── Request interceptor ──────────────────────────────────────────────
+// Mirrors client.ts line-by-line. Shared via _appendAuthPendingHeader
+// so the two axios instances can't drift on the X-SAU-Auth-Pending
+// protocol — a future refactor drops or moves the header set in ONE
+// file, not two. Same pattern as the 401 response interceptor: see
+// client.ts for the full rationale.
 request.interceptors.request.use(
   (config) => {
     if (config.method === 'get') {
       config.params = { ...config.params, _t: Date.now() }
     }
-    return config
+    return appendAuthPendingHeader(config)
   },
   (error) => Promise.reject(error),
 )
 
 // ── 401 interceptor ──────────────────────────────────────────────────
+// Behavior contract lives in _createAuth401ResponseInterceptor.ts
+// (shared with client.ts). This is the interceptor that actually
+// fires for /api/account-groups (accounts.ts imports from './request',
+// not './client'); client.ts carries a parallel copy as
+// defense-in-depth. See the "consolidate axios instances" followup
+// for the architectural cleanup.
 request.interceptors.response.use(
   (response) => response,
-  (error: import('axios').AxiosError) => {
-    if (error.response?.status === 401 && window.location.pathname !== '/login') {
-      import('../features/auth/authStore').then(({ useAuthStore }) => {
-        useAuthStore.getState().clearAuth()
-        window.location.href = '/login'
-      })
-    }
-    return Promise.reject(error)
-  },
+  createAuth401ResponseInterceptor(),
 )
 
 // ── Retry interceptor ────────────────────────────────────────────────

@@ -1,11 +1,13 @@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/Components/ui/alert-dialog'
 import { Button } from '@/Components/ui/button'
 import type { AccountGroup } from '@/api/client'
-import { CheckSquare, GripVertical, Pencil, Plus, Square, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { CheckSquare, GripVertical, Pencil, Plus, Send, Square, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSortable } from '@dnd-kit/react/sortable'
 import {useAccountsDispatch} from './AccountsProvider.helpers';import { PlatformBadge } from './PlatformBadge'
 import { toneChipClasses, toneFillBgClass, validityTone } from '@/lib/tone'
+import { ROUTES } from '@/routes'
 
 interface GroupListItemProps {
   group: AccountGroup
@@ -39,6 +41,7 @@ function GroupValidityChip({
 
 export function GroupListItem({ group, selected, index }: GroupListItemProps) {
   const dispatch = useAccountsDispatch()
+  const navigate = useNavigate()
   const { ref, handleRef, isDragging } = useSortable({
     id: `group:${group.id}`,
     index,
@@ -108,53 +111,78 @@ export function GroupListItem({ group, selected, index }: GroupListItemProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:hover:opacity-100 transition-opacity">
+      {/*
+        Same primary/secondary cluster split as SortableGroup — list
+        view adds a "去发布此分组" Send button OUTSIDE the hover-gated
+        cluster so the affordance is always discoverable, regardless
+        of view mode (grid vs list). data-testid mirrors SortableGroup's
+        so any future cross-view spec can locate both via the same key.
+      */}
+      <div className="flex items-center gap-0.5">
         <Button
           variant="ghost"
           size="icon"
           className="h-8 w-8 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
-          onClick={() => dispatch.handleStartRename(group.id, group.name)}
-          aria-label="Rename group"
+          onClick={() =>
+            navigate(`${ROUTES.dashboard.publish}?group_id=${group.id}`)
+          }
+          aria-label="去发布中心 · 预选此分组"
+          data-testid="go-to-publish-from-group-list"
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <Send className="h-3.5 w-3.5" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
-          onClick={() => dispatch.handleStartAuthorize(group.id)}
-          aria-label="Add authorization"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10"
-              aria-label="Delete group"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认删除</AlertDialogTitle>
-              <AlertDialogDescription>
-                删除分组 "{group.name}" 将同时删除所有平台授权，确认继续？
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => void dispatch.handleDeleteGroup(group.id, group.name)}
+        {/* Single 2px between Send and the secondary wrapper comes from
+            the outer `gap-0.5`. `border-l border-border/60` (vs /40) keeps
+            the hairline crisp on retina. `md:focus-within:opacity-100`
+            mirrors hover-reveal for keyboard-tab users. */}
+        <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:hover:opacity-100 md:focus-within:opacity-100 transition-opacity border-l border-border/60 pl-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+            onClick={() => dispatch.handleStartRename(group.id, group.name)}
+            aria-label="Rename group"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+            onClick={() => dispatch.handleStartAuthorize(group.id)}
+            aria-label="Add authorization"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10"
+                aria-label="Delete group"
               >
-                删除
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>确认删除</AlertDialogTitle>
+                <AlertDialogDescription>
+                  删除分组 "{group.name}" 将同时删除所有平台授权，确认继续？
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => void dispatch.handleDeleteGroup(group.id, group.name)}
+                >
+                  删除
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
     </div>
   )

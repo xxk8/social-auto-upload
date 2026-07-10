@@ -20,6 +20,12 @@ import { cn } from '@/lib/utils'
 import { toneTextClass } from '@/lib/tone'
 import { Drawer } from '@/Components/motion/drawer'
 
+import { PLATFORM_URLS, PLATFORMS } from '@/Components/ui/platform-chip-strip.constants'
+
+const PLATFORM_LABEL_MAP: Record<string, string> = Object.fromEntries(
+  PLATFORMS.map((p) => [p.key, p.name]),
+)
+
 const TASKS_QUERY_KEY = ['tasks'] as const
 
 /**
@@ -148,7 +154,21 @@ const TaskDrawerBody = memo(function TaskDrawerBody({ taskId }: { taskId: string
           </code>
         </Field>
         <Separator />
-        <Field label="平台" value={task.platform} />
+        <Field label="平台">
+          {task.platform && PLATFORM_URLS[task.platform] ? (
+            <a
+              href={PLATFORM_URLS[task.platform]}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline"
+              title={`打开 ${PLATFORM_LABEL_MAP[task.platform] ?? task.platform} 官网`}
+            >
+              {PLATFORM_LABEL_MAP[task.platform] ?? task.platform}
+            </a>
+          ) : (
+            <span className="text-sm">{task.platform}</span>
+          )}
+        </Field>
         <Separator />
         <Field label="动作" value={task.action} />
         <Separator />

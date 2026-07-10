@@ -645,16 +645,16 @@ def _maybe_prefix_cookie_err(cookie_err: str, base_err: str) -> str:
 # when surfacing a cookie-staleness hint to a 502 message. Keyed by
 # platform slug so a single dict lookup answers "how do I refresh this
 # platform's cookies?". A platform without a CLI extractor (e.g. legacy
-# ones that were QR‑scan only) gets the `/app/accounts` flow as
+# ones that were QR‑scan only) gets the `/dashboard` flow as
 # fallback guidance.
 _REFRESH_HINT_BY_PLATFORM: dict[str, str] = {
     "douyin":      "scripts/refresh_douyin_cookies.py (see docs/douyin-cookie-pipeline.md)",
-    "bilibili":    "the QR-scan login flow at /app/accounts",
-    "kuaishou":    "the QR-scan login flow at /app/accounts",
-    "xiaohongshu": "the QR-scan login flow at /app/accounts",
-    "tencent":     "the QR-scan login flow at /app/accounts",
-    "tiktok":      "the QR-scan login flow at /app/accounts",
-    "baijiahao":   "the QR-scan login flow at /app/accounts",
+    "bilibili":    "the QR-scan login flow at /dashboard",
+    "kuaishou":    "the QR-scan login flow at /dashboard",
+    "xiaohongshu": "the QR-scan login flow at /dashboard",
+    "tencent":     "the QR-scan login flow at /dashboard",
+    "tiktok":      "the QR-scan login flow at /dashboard",
+    "baijiahao":   "the QR-scan login flow at /dashboard",
 }
 _COOKIE_STALENESS_THRESHOLD_HOURS = 24
 

@@ -27,6 +27,9 @@ export const tasksApi = {
   reschedule(taskId: string, newScheduledAt: string) {
     return request.post('/api/tasks/reschedule', { task_id: taskId, new_scheduled_at: newScheduledAt }).then((res) => res.data)
   },
+  copy(taskId: string, newScheduledAt: string) {
+    return request.post('/api/tasks/copy', { task_id: taskId, new_scheduled_at: newScheduledAt }).then((res) => res.data)
+  },
   scheduled(params?: { from?: string; to?: string }) {
     return request.get('/api/tasks/scheduled', { params }).then((res) => res.data)
   },

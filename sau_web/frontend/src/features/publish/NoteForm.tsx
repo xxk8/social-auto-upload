@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { FormPreviewData } from './previewTypes'
 import type { GroupSelection } from './GroupPublishSelector'
 import type { FormHandle } from '@/lib/chat/chatFormBridge'
@@ -81,6 +82,7 @@ export const NoteForm = memo(
     ref,
   ) {
     const { addToast } = useToast()
+    const { t } = useTranslation()
 
     const [title, setTitle] = useState('')
     const [content, setContent] = useState('')
@@ -372,15 +374,15 @@ export const NoteForm = memo(
 
     const submit = useCallback(async () => {
       if (!groupSelection?.platforms.length) {
-        addToast('请先在上方选择发布账号组和平台', 'warning')
+        addToast(t('publish.note_form.validation.no_group', '请先在上方选择发布账号组和平台'), 'warning')
         return
       }
       if (imageFiles.length === 0) {
-        addToast('请至少添加一张图片', 'warning')
+        addToast(t('publish.note_form.validation.no_image', '请至少添加一张图片'), 'warning')
         return
       }
       if (!title.trim()) {
-        addToast('请输入标题', 'warning')
+        addToast(t('publish.note_form.validation.no_title', '请输入标题'), 'warning')
         return
       }
 
@@ -429,7 +431,7 @@ export const NoteForm = memo(
       } finally {
         setSubmitting(false)
       }
-    }, [groupSelection, title, content, tags, schedule, headless, imageFiles, addToast, clearFilesAndReset, onSuccess, onError])
+    }, [groupSelection, title, content, tags, schedule, headless, imageFiles, addToast, clearFilesAndReset, onSuccess, onError, t])
 
     return (
       <>
@@ -544,7 +546,7 @@ export const NoteForm = memo(
                   <Input
                     id="note-title"
                     name="title"
-                    placeholder="请输入图文标题"
+                    placeholder={t('publish.note_form.title_placeholder', '请输入图文标题')}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     maxLength={100}
@@ -557,7 +559,7 @@ export const NoteForm = memo(
                     <Textarea
                       id="note-content"
                       className="min-h-[90px]"
-                      placeholder="请输入图文正文，多行内容会自动换行显示"
+                      placeholder={t('publish.note_form.content_placeholder', '请输入图文正文，多行内容会自动换行显示')}
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
                       maxLength={3000}
@@ -572,7 +574,7 @@ export const NoteForm = memo(
                       </span>
                     </div>
                     <TagInput
-                      placeholder="按 Enter 添加标签（# 可省略）"
+                      placeholder={t('publish.note_form.tags_placeholder', '按 Enter 添加标签（# 可省略）')}
                       value={tags}
                       onChange={setTags}
                       maxTags={effectiveMaxTags(activePlatforms)}
@@ -611,7 +613,7 @@ export const NoteForm = memo(
         {/* ── 提交按钮 ─────────────────────────────────────────── */}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={handleClearClick}>
-            清空
+            {t('publish.note_form.button_clear', '清空')}
           </Button>
           <Button
             onClick={submit}
@@ -619,7 +621,7 @@ export const NoteForm = memo(
             className="btn-elegant"
           >
             {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            提交图文
+            {t('publish.note_form.button_submit', '提交图文')}
           </Button>
         </div>
 
@@ -627,20 +629,24 @@ export const NoteForm = memo(
         <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>确认清空表单？</AlertDialogTitle>
+              <AlertDialogTitle>{t('publish.note_form.clear_dialog.title', '确认清空表单？')}</AlertDialogTitle>
               <AlertDialogDescription>
-                当前已填写 {filledFieldCount} 项字段。清空后会同时删除本地草稿，操作不可撤销。
+                {t(
+                  'publish.note_form.clear_dialog.description',
+                  '当前已填写 {{count}} 项字段。清空后会同时删除本地草稿，操作不可撤销。',
+                  { count: filledFieldCount },
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogCancel>{t('publish.note_form.clear_dialog.cancel', '取消')}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   setConfirmClearOpen(false)
                   clearEverything()
                 }}
               >
-                清空
+                {t('publish.note_form.clear_dialog.confirm', '清空')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

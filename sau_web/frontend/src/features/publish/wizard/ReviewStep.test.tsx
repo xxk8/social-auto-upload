@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { TestProviders } from '@/test/render-harness'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 import { usePublishWizardStore } from '@/stores/publishWizardStore'
+import { ROUTES } from '@/routes'
 import { ReviewStep } from './ReviewStep'
 import type { GroupSelection } from '../GroupPublishSelector'
 
@@ -70,7 +71,7 @@ function mountReviewStep(
   props: Partial<React.ComponentProps<typeof ReviewStep>> = {},
 ) {
   return render(
-    <TestProviders client={makeQueryClient()} initialEntries={['/app/publish']}>
+    <TestProviders client={makeQueryClient()} initialEntries={[ROUTES.dashboard.publish]}>
       <ReviewStep
         groupSelection={null}
         previewUrls={[]}

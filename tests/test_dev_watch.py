@@ -280,17 +280,20 @@ def test_spawn_writes_banner_to_log_with_timestamp(fresh_log) -> None:
 
 
 def test_spawn_merges_baked_env_into_popen_env(fresh_log) -> None:
-    """The BAKED_ENV overrides (SAU_DB_DIALECT, DATABASE_URL,
-    SAU_CORS_ALLOWED_ORIGINS) reach Popen via the ``env=`` kwarg so the
-    dev backend talks to the same Postgres + CORS allowances the
-    operator uses in production.
+    """The BAKED_ENV overrides (DATABASE_URL, SAU_CORS_ALLOWED_ORIGINS)
+    reach Popen via the ``env=`` kwarg so the dev backend talks to the
+    same Postgres + CORS allowances the operator uses in production.
+    ``SAU_DB_DIALECT`` was dropped in the SQLite→PG cutover.
     """
     fake_proc = FakeProc(pid=1)
     with patch.object(dw.subprocess, "Popen", return_value=fake_proc) as popen_mock:
         dw.BackendLauncher(python_bin="/fake/python").start()
 
     env = popen_mock.call_args.kwargs["env"]
-    assert env["SAU_DB_DIALECT"] == "postgres"
+    assert "SAU_DB_DIALECT" not in env, (
+        "SAU_DB_DIALECT is removed post-SQLite-cutover; the watcher should "
+        "NOT inject it into the backend's env"
+    )
     assert env["DATABASE_URL"] == "postgres:///sau"
     assert env["SAU_CORS_ALLOWED_ORIGINS"] == "http://localhost:5173,http://localhost:5180"
 

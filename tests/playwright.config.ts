@@ -63,12 +63,13 @@ export default defineConfig({
         // SAU_MOCK_AUTHORIZE=true makes the backend generate synthetic
         // QR codes so the opt-3m drag-proof test can exercise the full
         // SSE authorize flow without real platform credentials.
-        // SAU_DB_DIALECT=sqlite avoids the need for a Postgres service
-        // in CI/local — the backend boots against a zero-config SQLite
-        // file, which is sufficient for mocked API tests.
+        // DATABASE_URL points at a local Postgres test database; tests
+        // that don't actually exercise the DB route can ignore it.
+        // Post-SQLite-removal: the prior SAU_DB_DIALECT=sqlite override
+        // is gone — PG is the only backend now.
         env: {
           SAU_MOCK_AUTHORIZE: 'true',
-          SAU_DB_DIALECT: 'sqlite',
+          DATABASE_URL: process.env['DATABASE_URL'] || 'postgres://sau:sau@localhost:5432/sau_test',
         },
       }
     : undefined,

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { I18nextProvider } from 'react-i18next'
+import i18n from '@/lib/i18n/config'
 import { TestProviders } from '@/test/render-harness'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 import { mockUseAuth } from '@/test/auth-router-spies'
@@ -138,24 +140,35 @@ function mountInboxPage() {
   // this wrap because those pages never call useToast directly; adding
   // it here is the minimum-scope solution (don't modify TestProviders
   // for one test's needs).
+  //
+  // I18nextProvider is wrapped explicitly here because InboxPage's
+  // round-2 i18n refactor converted the selected-count chrome from
+  // hardcoded JSX to t('inbox.batch.selected_count', ..., { count: N }).
+  // Without an I18nextProvider, useTranslation() returns a t() that
+  // emits the key string instead of the interpolated resource value,
+  // breaking the 4 `getByText(/已选 N 项/)` regression assertions. We
+  // don't modify TestProviders for this because 90% of tests don't
+  // exercise the i18n path and shouldn't pay the wrap cost.
   return render(
-    <TestProviders
-      client={makeQueryClient()}
-      initialEntries={['/app/inbox']}
-    >
-      <ToastProvider>
-        <AuthGuard>
-          <InboxPage />
-        </AuthGuard>
-      </ToastProvider>
-    </TestProviders>,
+    <I18nextProvider i18n={i18n}>
+      <TestProviders
+        client={makeQueryClient()}
+        initialEntries={['/dashboard/inbox']}
+      >
+        <ToastProvider>
+          <AuthGuard>
+            <InboxPage />
+          </AuthGuard>
+        </ToastProvider>
+      </TestProviders>
+    </I18nextProvider>,
   )
 }
 
 // Default mock shape: download succeeds, transcribe immediately fires
 // onDone (no chunks). Per-test overrides come in `beforeEach` for
 // the streaming / failure branches.
-beforeEach(() => {
+beforeEach(async () => {
   mockUseAuth.mockReset()
   inboxDownload.mockReset()
   inboxTranscribeStream.mockReset()
@@ -183,6 +196,25 @@ beforeEach(() => {
   // reset, a test that adds entries would leave them in the store for
   // the next test's mountInboxPage(), causing false positives.
   useInboxStore.getState().reset()
+  // Wait for i18n init — the InboxPage's round-2 i18n refactor uses
+  // t('inbox.row.badge.downloaded', '已下载') etc. Without this wait,
+  // the t() call runs before the static resources are loaded and
+  // returns the key string ('inbox.row.badge.downloaded') instead of
+  // the resource value ('已下载'). The I18nextProvider wrap in
+  // mountInboxPage is necessary but not sufficient — the provider
+  // references the i18n instance, but the instance must also be
+  // initialized (i18n.init() is async despite static resource imports
+  // in @/lib/i18n/config).
+  if (!i18n.isInitialized) {
+    await i18n.init()
+  }
+  // Force the language to zh-CN — the test environment's
+  // navigator.language may be 'en-US' (vitest runs in en-US locale
+  // by default), so the i18n config's foldBcp47() returns 'en-US'.
+  // Without this explicit changeLanguage, t() returns the en-US
+  // resource value ('Downloaded') instead of the zh-CN one
+  // ('已下载') that all hardcoded assertions in this file expect.
+  await i18n.changeLanguage('zh-CN')
 })
 
 // ── tests ───────────────────────────────────────────────────────────────

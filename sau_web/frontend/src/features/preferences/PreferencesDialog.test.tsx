@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent from '@/test/user-event-shim'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/Components/ui/tooltip'
@@ -73,7 +73,7 @@ function mountDialogUnderTest({
   return render(
     <TooltipProvider>
       <QueryClientProvider client={makeQueryClient()}>
-        <MemoryRouter initialEntries={['/app']}>
+        <MemoryRouter initialEntries={['/dashboard']}>
           <PreferencesDialogProvider>
             <OpenTrigger />
             <PreferencesDialog />
@@ -125,7 +125,7 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     render(
       <TooltipProvider>
         <QueryClientProvider client={makeQueryClient()}>
-          <MemoryRouter initialEntries={['/app']}>
+          <MemoryRouter initialEntries={['/dashboard']}>
             <PreferencesDialogProvider>
               <PreferencesDialog />
             </PreferencesDialogProvider>
@@ -177,15 +177,21 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     expect(screen.getByText('自由版')).toBeInTheDocument()
   })
 
-  // (d) The 4 tabs (`账户 · 设置 · 个性化 · 关于`) are present in
-  // the left nav regardless of which tab is active. Mirrors the
-  // UserMenu (c) test — the 4-item shape must stay consistent
-  // across both surfaces so a future "remove 个性化" PR trips
-  // BOTH the dropdown test AND the dialog test.
-  it('renders all 4 tab buttons in the left nav', async () => {
+  // (d) Round-OPT-3G+ (Overview nav item) — the 5 tabs (`概览 · 账户
+  // · 设置 · 个性化 · 关于`) are present in the left nav regardless
+  // of which tab is active. Mirrors the UserMenu (c) test — the
+  // 5-item shape must stay consistent across both surfaces so a
+  // future "remove 个性化" PR trips BOTH the dropdown test AND
+  // the dialog test. Overview is now the FIRST item (left-MOST)
+  // because "show me everything at once" is the most common
+  // operator intent; the 4 source tabs (账户 / 设置 / 个性化 /
+  // 关于) remain below for drill-down. TABS array order in
+  // PreferencesDialog.tsx is the source of truth.
+  it('renders all 5 tab buttons in the left nav', async () => {
     const user = userEvent.setup()
     mountDialogUnderTest()
     await user.click(screen.getByTestId('test-open-trigger'))
+    expect(screen.getByTestId('preferences-tab-overview')).toBeInTheDocument()
     expect(screen.getByTestId('preferences-tab-account')).toBeInTheDocument()
     expect(screen.getByTestId('preferences-tab-settings')).toBeInTheDocument()
     expect(screen.getByTestId('preferences-tab-personalization')).toBeInTheDocument()
@@ -245,7 +251,7 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     render(
       <TooltipProvider>
         <QueryClientProvider client={makeQueryClient()}>
-          <MemoryRouter initialEntries={['/app']}>
+          <MemoryRouter initialEntries={['/dashboard']}>
             <PreferencesDialogProvider>
               <OpenTrigger />
               <PreferencesDialog />
@@ -297,14 +303,17 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     })
   })
 
-  // (i) Round-OPT-prefs-dialog v2 — the tab header
+  // (i) Round-OPT-3G+ — the tab header
   // (`data-testid="preferences-dialog-tab-header"`) renders the
   // active tab's title + description, and the `data-tab` attribute
   // swaps when the user clicks between tabs. Without this test, a
   // future regression that detaches the header from the activeTab
   // state (e.g. hard-codes to 'account' on every render) would
   // silently break "reader lands with full context" promise.
+  // Overview is now the FIRST tab (added round-OPT-3G+) so it's
+  // included here.
   it.each([
+    { tab: 'overview', label: '概览', desc: '一键跳转所有偏好设置' },
     { tab: 'account', label: '账户', desc: '查看账号信息与活动记录' },
     { tab: 'settings', label: '设置', desc: '管理订阅套餐与跨页面跳转' },
     {
@@ -452,14 +461,15 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     expect(banner).toHaveAttribute('data-tier', 'legacy')
   })
 
-  // (o) ArrowDown cycles forward through 4 tabs, with circular
-  // wrap from `about` → `account` so the user is never stuck on
-  // one end. WAI-ARIA APG: vertical tablists bind
-  // ArrowDown/ArrowUp ONLY (Left/Right is reserved for
-  // cross-tablist nav on the page). Locks both directions so a
-  // future regression that drops Radix Tabs or rebinds
-  // Left/Right to a non-APG action trips red.
-  it('arrow-down cycles forward through 4 tabs with wrap', async () => {
+  // (o) Round-OPT-3G+ — ArrowDown cycles forward through 5 tabs,
+  // with circular wrap from `about` → `overview` so the user is
+  // never stuck on one end. TABS array order is the source of
+  // truth: `[overview, account, settings, personalization, about]`.
+  // WAI-ARIA APG: vertical tablists bind ArrowDown/ArrowUp ONLY
+  // (Left/Right is reserved for cross-tablist nav on the page).
+  // Locks both directions so a future regression that drops Radix
+  // Tabs or rebinds Left/Right to a non-APG action trips red.
+  it('arrow-down cycles forward through 5 tabs with wrap', async () => {
     const user = userEvent.setup()
     mountDialogUnderTest()
     await user.click(screen.getByTestId('test-open-trigger'))
@@ -483,25 +493,37 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
       screen.getByTestId('preferences-tab-about'),
     ).toHaveAttribute('aria-selected', 'true')
 
-    // Wrap: about ↓ → account (the first tab).
+    // Wrap: about ↓ → overview (the first tab in nav order).
+    await user.keyboard('{ArrowDown}')
+    expect(
+      screen.getByTestId('preferences-tab-overview'),
+    ).toHaveAttribute('aria-selected', 'true')
+
     await user.keyboard('{ArrowDown}')
     expect(
       screen.getByTestId('preferences-tab-account'),
     ).toHaveAttribute('aria-selected', 'true')
   })
 
-  // (p) ArrowUp cycles backward through 4 tabs with wrap.
+  // (p) ArrowUp cycles backward through 5 tabs with wrap.
   // Mirrors (o); locks both directions on the roving tabindex
   // axis. Without this, a future commit that flips the wrap
   // direction (e.g. caps at index 0 instead of wrapping) would
-  // silently break all up-arrow users.
-  it('arrow-up cycles backward through 4 tabs with wrap', async () => {
+  // silently break all up-arrow users. From `account` the
+  // upward chain wraps to `about` (last in nav order).
+  it('arrow-up cycles backward through 5 tabs with wrap', async () => {
     const user = userEvent.setup()
     mountDialogUnderTest()
     await user.click(screen.getByTestId('test-open-trigger'))
     await user.click(screen.getByTestId('preferences-tab-account'))
 
-    // Wrap: account ↑ → about (last tab).
+    // account(idx 1) ↑ → overview(idx 0): direct previous, NOT a wrap.
+    await user.keyboard('{ArrowUp}')
+    expect(
+      screen.getByTestId('preferences-tab-overview'),
+    ).toHaveAttribute('aria-selected', 'true')
+
+    // overview(idx 0) ↑ → about(idx 4): wrap to last.
     await user.keyboard('{ArrowUp}')
     expect(
       screen.getByTestId('preferences-tab-about'),
@@ -523,10 +545,11 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     ).toHaveAttribute('aria-selected', 'true')
   })
 
-  // (q) Home / End jump to first / last tab. APG tabs pattern
-  // — keyboard users have a one-key escape hatch from
-  // "where am I" without having to count ArrowDowns.
-  it('Home and End jump to first and last tab', async () => {
+  // (q) Round-OPT-3G+ — Home / End jump to first / last tab. APG
+  // tabs pattern — keyboard users have a one-key escape hatch
+  // from "where am I" without having to count ArrowDowns. The
+  // first tab is now `overview`, the last is still `about`.
+  it('Home and End jump to first (overview) and last (about) tab', async () => {
     const user = userEvent.setup()
     mountDialogUnderTest()
     await user.click(screen.getByTestId('test-open-trigger'))
@@ -539,8 +562,255 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
 
     await user.keyboard('{Home}')
     expect(
+      screen.getByTestId('preferences-tab-overview'),
+    ).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // (r) Round-OPT-3G+ v2.5 (tile summaries). OverviewTab renders
+  // a 2x2 grid of jump-off tiles; each tile flattens source-tab
+  // settings into InfoRow rows at density="compact" (py-2 +
+  // text-[13px]) so 4 tiles fit the modal viewport without
+  // scrolling. Per-tile row schema:
+  //   • account       → email / role / displayName / lastLogin
+  //   • settings      → tier / price / features / related
+  //   • personalization → theme / more (single stub marker row)
+  //   • about         → appName / version / sha / description
+  //
+  // Round-OPT-3G+ v2.5 design pin: data-testid uses STABLE ROWKEY
+  // (NOT the i18n display label). An i18n migration (邮箱 → E-mail)
+  // does NOT blast the test surface because the test ids are
+  // `preferences-overview-tile-account-row-email` (stable
+  // machine key) — the display label `邮箱` still renders as
+  // the 11px eyebrow text but is asserted via `toHaveTextContent`
+  // rather than via the test id itself.
+  //
+  // Auxiliary: stub rows collapsed to a SINGLE trailing
+  // "更多偏好" row on Personalization tile only (so a row count
+  // assertion pins this — Personalization has exactly 2 rows).
+  it('Overview renders 4 jump tiles; rows use stable rowKey data-testids + Chinese display labels', async () => {
+    const user = userEvent.setup()
+    mountDialogUnderTest({
+      user: {
+        id: 1,
+        email: 'qa@sau.dev',
+        role: 'admin',
+        name: 'qa',
+        avatar: null,
+        tier: 'legacy',
+        last_login: '2025-12-01 08:30',
+      },
+    })
+    await user.click(screen.getByTestId('test-open-trigger'))
+    await user.click(screen.getByTestId('preferences-tab-overview'))
+
+    // ── Account tile: 4 rows with stable rowKey testids ──
+    const accountTile = await screen.findByTestId(
+      'preferences-overview-tile-account',
+    )
+    expect(accountTile).toBeInTheDocument()
+    // email row: rowKey='email' + i18n label '邮箱'
+    const accountEmail = screen.getByTestId(
+      'preferences-overview-tile-account-row-email',
+    )
+    expect(accountEmail).toHaveTextContent('qa@sau.dev')
+    // The display label 邮箱 still appears in the row (eyebrow).
+    expect(accountEmail).toHaveTextContent('邮箱')
+    expect(
+      screen.getByTestId('preferences-overview-tile-account-row-role'),
+    ).toHaveTextContent('管理员')
+    expect(
+      screen.getByTestId('preferences-overview-tile-account-row-displayName'),
+    ).toHaveTextContent('qa')
+    expect(
+      screen.getByTestId('preferences-overview-tile-account-row-lastLogin'),
+    ).toHaveTextContent('2025-12-01 08:30')
+
+    // ── Settings tile: 4 rows; 已包含 = "3 项特色" for tier=legacy ──
+    expect(
+      screen.getByTestId('preferences-overview-tile-settings'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('preferences-overview-tile-settings-row-tier'),
+    ).toHaveTextContent('社区版')
+    expect(
+      screen.getByTestId('preferences-overview-tile-settings-row-features'),
+    ).toHaveTextContent('3 项特色')
+    expect(
+      screen.getByTestId('preferences-overview-tile-settings-row-related'),
+    ).toHaveTextContent('运行日志')
+
+    // ── Personalization tile: 2 rows (主题 + single stub marker) ──
+    // Locks v2.5 design pin — exactly 2 rows, no 紧凑度/语言 stubs.
+    expect(
+      screen.getByTestId('preferences-overview-tile-personalization'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('preferences-overview-tile-personalization-row-theme'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('preferences-overview-tile-personalization-row-more'),
+    ).toHaveTextContent('即将上线')
+
+    // ── About tile: 4 rows including build SHA mono ──
+    expect(
+      screen.getByTestId('preferences-overview-tile-about'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('preferences-overview-tile-about-row-appName'),
+    ).toHaveTextContent('social-auto-upload')
+    expect(
+      screen.getByTestId('preferences-overview-tile-about-row-sha'),
+    ).toHaveTextContent('dev') // VITE_BUILD_SHA defaults to 'dev' in test harness
+    expect(
+      screen.getByTestId('preferences-overview-tile-about-row-version'),
+    ).toBeInTheDocument()
+
+    // ── CTA preserved per tile (jump-off bridge) ──
+    expect(
+      screen.getByTestId('preferences-overview-tile-account-cta'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('preferences-overview-tile-about-cta'),
+    ).toBeInTheDocument()
+
+    // ── Inline theme picker source-of-truth radiogroup ──
+    expect(screen.getByTestId('overview-theme-modes')).toBeInTheDocument()
+  })
+
+  // (r') Round-OPT-3G+ v2.5 (tile rows fall back to em-dash when
+  // auth fields are missing). Lock the "—" graceful-degradation
+  // contract on Account tile: a user with `name === undefined`,
+  // `last_login === undefined` should still see ALL 4 rows with
+  // em-dash values, NOT unmount or crash. Without this test, a
+  // future regression that gates InfoRow rendering on truthy
+  // fields would silently drop rows.
+  it('Overview Account tile falls back to em-dash for missing auth fields', async () => {
+    const user = userEvent.setup()
+    mountDialogUnderTest({
+      user: {
+        id: 1,
+        email: 'qa@sau.dev',
+        role: 'user', // not admin
+        name: undefined, // missing
+        avatar: null,
+        tier: 'legacy',
+        last_login: undefined, // missing
+      },
+    })
+    await user.click(screen.getByTestId('test-open-trigger'))
+    await user.click(screen.getByTestId('preferences-tab-overview'))
+    const accountEmail = await screen.findByTestId(
+      'preferences-overview-tile-account-row-email',
+    )
+    expect(accountEmail).toHaveTextContent('qa@sau.dev')
+    expect(
+      screen.getByTestId('preferences-overview-tile-account-row-role'),
+    ).toHaveTextContent('用户')
+    // displayName + lastLogin → em-dash (NOT undefined / NOT dropped).
+    expect(
+      screen.getByTestId('preferences-overview-tile-account-row-displayName'),
+    ).toHaveTextContent('—')
+    expect(
+      screen.getByTestId('preferences-overview-tile-account-row-lastLogin'),
+    ).toHaveTextContent('—')
+  })
+
+  // (r'') Round-OPT-3G+ v2.5 (Settings 已包含 count per tier).
+  // Locks the per-tier feature count: free / pro / legacy
+  // branch into different 已包含 row contents so a future
+  // TIER_FEATURES edit that drops a bullet on one tier trips.
+  it.each([
+    { tier: 'free' as const, expectedFeaturesCount: 3 },
+    { tier: 'pro' as const, expectedFeaturesCount: 3 },
+    { tier: 'legacy' as const, expectedFeaturesCount: 3 },
+  ])(
+    'Settings tile 已包含 renders "$expectedFeaturesCount 项特色" for tier=$tier',
+    async ({ tier, expectedFeaturesCount }) => {
+      const user = userEvent.setup()
+      mountDialogUnderTest({
+        user: {
+          id: 1,
+          email: 'qa@sau.dev',
+          role: 'admin',
+          name: 'qa',
+          avatar: null,
+          tier,
+        },
+      })
+      await user.click(screen.getByTestId('test-open-trigger'))
+      await user.click(screen.getByTestId('preferences-tab-overview'))
+      expect(
+        await screen.findByTestId(
+          'preferences-overview-tile-settings-row-features',
+        ),
+      ).toHaveTextContent(`${expectedFeaturesCount} 项特色`)
+    },
+  )
+
+  // (s) Round-OPT-3G+ — clicking the overview tile CTA jumps to
+  // the source tab WITHOUT closing + re-opening the modal.
+  // `openPreferences(tab)` is a setter that updates activeTab
+  // while leaving `open=true`, so the body subtree swaps
+  // synchronously. Locks the in-dialog navigation promise:
+  // jumping never unmounts the modal.
+  it('clicking an overview tile CTA swaps to the source tab without closing', async () => {
+    const user = userEvent.setup()
+    mountDialogUnderTest()
+    await user.click(screen.getByTestId('test-open-trigger'))
+    await user.click(screen.getByTestId('preferences-tab-overview'))
+    const accountCta = await screen.findByTestId(
+      'preferences-overview-tile-account-cta',
+    )
+    await user.click(accountCta)
+    // Dialog is still open and the active tab swapped to account.
+    expect(screen.getByTestId('preferences-dialog')).toBeInTheDocument()
+    expect(
       screen.getByTestId('preferences-tab-account'),
     ).toHaveAttribute('aria-selected', 'true')
+    // The account body subtree rendered — 邮箱 row is on AccountTab.
+    expect(screen.getByText('邮箱')).toBeInTheDocument()
+  })
+
+  // (t) Round-OPT-3G+ — the inline theme picker on OverviewTab
+  // shares the same source-of-truth `ThemeModesRadio` as
+  // PersonalizationTab. Clicking `theme-mode-light` from the
+  // Overview surface updates `useTheme()` which the
+  // PersonalizationTab radiogroup ALSO observes. Locks the
+  // cross-surface responsiveness contract: theme changes from
+  // either surface propagate everywhere.
+  it('Overview renders its OWN theme-modes radiogroup distinct from PersonalizationTab', async () => {
+    const user = userEvent.setup()
+    mountDialogUnderTest()
+    await user.click(screen.getByTestId('test-open-trigger'))
+    await user.click(screen.getByTestId('preferences-tab-overview'))
+    // Overview owns its OWN radiogroup (testId override)
+    // — single source of truth at the ThemeModesRadio level,
+    // NOT duplicated surface code.
+    expect(
+      await screen.findByTestId('overview-theme-modes'),
+    ).toBeInTheDocument()
+  })
+
+  // (u) Round-OPT-3G+ (default tab unchanged) — openPreferences()
+  // called with NO argument still resolves to `account` (NOT
+  // `overview`); the default tab is preserved because the
+  // original `账号信息` flow is the most common FIRST visit
+  // and Overview is the SECOND visit (jump-off). Backwards
+  // compatibility for UserMenu / command-palette consumers
+  // that call `openPreferences()` with no arg.
+  it('openPreferences() with no argument opens the account tab (overview NOT default)', async () => {
+    const user = userEvent.setup()
+    mountDialogUnderTest()
+    await user.click(screen.getByTestId('test-open-trigger'))
+    // Default tab is 'account' (not 'overview') so existing
+    // UserMenu / command-palette callers that omit the arg
+    // continue to land on AccountTab.
+    expect(
+      screen.getByTestId('preferences-tab-account'),
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(
+      screen.getByTestId('preferences-tab-overview'),
+    ).toHaveAttribute('aria-selected', 'false')
   })
 
   // NOTE: click-outside-to-close is Radix Dialog's native

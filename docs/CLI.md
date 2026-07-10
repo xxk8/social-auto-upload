@@ -94,7 +94,7 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 - `sau bilibili ...` 会自动准备 `biliup`
 - 如果本地没有 `biliup`，第一次运行会自动下载
 - 如果上游 GitHub Release 有更新，运行时会先自动更新
-- `sau bilibili login --account <name>` 建议由用户自己在本地真实终端里执行；如果终端里的二维码显示不完整，可直接打开当前目录下的 `qrcode.png` 扫码
+- `sau bilibili login --account <name>` 建议由用户自己在本地真实终端里执行；如果终端里的二维码显示不完整，**不要**打开 `qrcode.png`（该文件已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`），或在本地终端去掉 `--headless` 让浏览器里直接展示平台自己的二维码
 
 ## 登录二维码说明
 

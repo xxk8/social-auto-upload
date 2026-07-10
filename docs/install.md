@@ -11,10 +11,9 @@
 
 ## For Humans
 
-### 1. 克隆项目
+### 1. 进入项目目录
 
 ```bash
-git clone https://github.com/dreammis/social-auto-upload.git
 cd social-auto-upload
 ```
 
@@ -155,10 +154,22 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 - 用户不需要手动安装 `biliup`
 - 首次运行 Bilibili 相关命令时，程序会自动下载 `biliup`
 - 后续运行会自动检查上游 release 并自动更新
-- Bilibili 登录建议由用户自己在本地真实终端里执行；如果终端里的二维码显示不完整，可直接打开当前目录下的 `qrcode.png` 扫码
-- 如果国内网络访问 GitHub Release 较慢，可先用 `https://gh-proxy.com/` 或 `https://gh-proxy.org/` 辅助访问对应 release 地址排障
-- 示例：
-  - `https://gh-proxy.org/https://github.com/biliup/biliup/releases/download/v1.1.29/biliupR-v1.1.29-aarch64-linux.tar.xz`
+- Bilibili 登录建议由用户自己在本地真实终端里执行；如果终端里的二维码显示不完整，**不要**打开 `qrcode.png`（该文件已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`），或在本地终端去掉 `--headless` 让浏览器里直接展示平台自己的二维码
+- 如果国内网络访问下载较慢，可先用 `https://gh-proxy.com/` 或 `https://gh-proxy.org/` 辅助访问对应 release 地址排障
+
+### 11. 可选：一键启动（推荐用于 Web Shell / Studio 联调）
+
+如果不想手动 `source .venv/bin/activate`，可以直接跑：
+
+```bash
+bash sau_web/start.sh
+```
+
+`sau_web/start.sh` 自己会把 `$ROOT/.venv/bin` 抢先 prepend 到 `$PATH`，再 `exec` Flask 后端（`python run.py`）。这样 Flask 进程内一切 `subprocess.run([...])` / `shutil.which(...)` 调用（典型场景：Studio 角色的 `edge-tts` 配音合成）会从 venv bin 里命中，不需要单独 venv 激活。`run.py` 内部还一层 idempotent 的 PATH 兜底（`_inject_venv_bin_to_path`），双保险。
+
+如果走的是 `bash export_douyin_cookie.sh --account <account_name>` 之类的独立 Python 便捷 shell，确认自己已经先 `source .venv/bin/activate` 再走 — 那些脚本没有自处理 PATH。
+
+---
 
 ## For AI Agents
 
@@ -236,7 +247,7 @@ sau bilibili upload-video
 - 这类二维码图片本身就是给用户扫码的，agent 应优先直接展示/发送本地图片给用户扫码
 - 如果环境支持查看本地图片，优先用查看图片能力把二维码展示出来；路径只作为补充信息
 - Bilibili 登录当前不建议 agent 在非交互环境里直接代跑
-- 正确做法是让用户自己在本地终端执行 `sau bilibili login --account <name>`；如果二维码显示不完整，再提示用户打开 `qrcode.png`
+- 正确做法是让用户自己在本地终端执行 `sau bilibili login --account <name>`（不要带 `--headless`）；如果二维码显示不完整，**不要**提示打开 `qrcode.png`（该文件已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`）
 - `requirements.txt` 目前是历史兼容文件，不是主安装入口
 - `uploader/` 是核心实现目录
 - `sau_cli.py` 是当前 CLI 主入口
@@ -248,3 +259,10 @@ sau bilibili upload-video
 > 🔧 **运行后当日 on-call / 运营 / 排错入口**：[`docs/dev/INDEX.md`](docs/dev/INDEX.md) · [`docs/dev/monitor-cdp-throttling-cron-ops.md`](docs/dev/monitor-cdp-throttling-cron-ops.md) · [`docs/dev/public-inbox-ops.md`](docs/dev/public-inbox-ops.md)
 >
 > 公开试用 /try 相关的告警 / 30 天滚动 kill criteria：`docs/dev/public-inbox-ops.md`。可选 webhook 接收 STOP-SHIP / WATCHFUL verdict：`SAU_KILL_CRITERIA_WEBHOOK`（见 `.env.example` 告警段）。
+>
+> 🪪 **免费版 & AI 内容生成**（round-AI-paywall 合约起生效）：AI 文案生成 / 图片素材搜索 / 多平台适配 — 全部是 **Pro 套餐专享**。free-tier 用户调用 **user-facing** AI 路由（`_AI_FEATURE_BLOCKED_FOR_FREE` 内 9 个，如 `/api/ai/generate`、`/api/ai/images/search`、`/api/ai/recommend-images`、`/api/ai/enhance-prompt`）时会被 [`web_runner/middleware/usage_metering.py::before_request`](web_runner/middleware/usage_metering.py) 在 daily-quota 检查之前返回一个 HTTP **402 `tier_required`** 拦截，根本不到路由 handler / 配额检查层。所以：
+>
+> - 但 **`/api/ai/*` 下的 utility 类 endpoint**（`/api/ai/models`、 `/api/ai/config`、 `/api/ai/keys` 见 `_AI_UTILITY_PATH_PREFIXES`）不消耗 AI 配额，**所有 tier 都能调用**——这些是 sidebar chrome 渲染、key 列表查看所必需。`_AI_UTILITY_PATH_PREFIXES` 在 `before_request` 中先于 quota 检查被跳过，故设为 allowed。
+> - `.env.example` 中 `SAU_TIER_FREE_AI` 默认值已从 `10` 改为 `0`，表示「daily quota 已被 tier-block 旁路」——不是「free tier 每天可调用 0 次」语义。
+> - 如需给 free tier 恢复每日 AI 限额，**同时调整 `_AI_FEATURE_BLOCKED_FOR_FREE`**（锁定列表）和 **`_AI_UTILITY_PATH_PREFIXES`**（utility 跳过列表），**仅改 `SAU_TIER_FREE_AI` 不起作用**。
+> - 前端的 `<PublishAiSidebar>` 在 free tier 下会屏蔽输入框并展示升级 CTA (`<AiPaywallBanner />`)；该交互的跨层合约细节见 [`sau_web/frontend/src/Components/AiRightPanel/TierBlockGate.tsx`](sau_web/frontend/src/Components/AiRightPanel/TierBlockGate.tsx)。后端 402 envelope 的字段不变量（`success / error / code / required_tier / blocked_action / upgrade_url`）以 `_TIER_BLOCKED_RESPONSE` 为准。

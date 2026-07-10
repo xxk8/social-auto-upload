@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Check, Eye, FileText, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { WizardStep } from '@/stores/publishWizardStore'
@@ -27,10 +28,21 @@ import type { WizardStep } from '@/stores/publishWizardStore'
  *     as dev output against Chinese labels.)
  */
 
-const STEPS = [
-  { step: 0 as WizardStep, label: '上传', icon: Upload, slug: 'upload' },
-  { step: 1 as WizardStep, label: '内容', icon: FileText, slug: 'content' },
-  { step: 2 as WizardStep, label: '确认', icon: Eye, slug: 'review' },
+// STEPS uses labelKey + labelFallback (the AppShell / STATUS_META
+// pattern). The component resolves each label via `t()` at render
+// time so the module-level manifest stays React-free. Slug is the
+// stable identifier used by tests + future telemetry; the visible
+// label flips with locale.
+const STEPS: ReadonlyArray<{
+  step: WizardStep
+  labelKey: string
+  labelFallback: string
+  icon: typeof Upload
+  slug: 'upload' | 'content' | 'review'
+}> = [
+  { step: 0 as WizardStep, labelKey: 'publish.wizard.step_upload', labelFallback: '上传', icon: Upload, slug: 'upload' },
+  { step: 1 as WizardStep, labelKey: 'publish.wizard.step_content', labelFallback: '内容', icon: FileText, slug: 'content' },
+  { step: 2 as WizardStep, labelKey: 'publish.wizard.step_review', labelFallback: '确认', icon: Eye, slug: 'review' },
 ] as const
 
 interface StepIndicatorProps {
@@ -55,11 +67,12 @@ export const StepIndicator = memo(function StepIndicator({
   maxVisitedStep,
   stepReady = false,
 }: StepIndicatorProps) {
+  const { t } = useTranslation()
   return (
     <div
       className="flex flex-wrap items-center justify-center w-full py-1 sm:py-1.5 font-mono tabular-nums"
       role="list"
-      aria-label="发布向导步骤"
+      aria-label={t('publish.wizard.aria_label', '发布向导步骤')}
     >
       {STEPS.map((s, i) => {
         const isCompleted = currentStep > s.step
@@ -67,6 +80,7 @@ export const StepIndicator = memo(function StepIndicator({
         const isClickable = Boolean(onStepClick) && s.step <= maxVisitedStep
         const Icon = s.icon
         const stepLabel = String(s.step + 1).padStart(2, '0')
+        const stepName = t(s.labelKey, s.labelFallback)
 
         return (
           <div key={s.step} className="flex items-center">
@@ -131,7 +145,7 @@ export const StepIndicator = memo(function StepIndicator({
                   !isCurrent && !isCompleted && 'text-muted-foreground/55',
                 )}
               >
-                {s.label}
+                {stepName}
               </span>
             </button>
 

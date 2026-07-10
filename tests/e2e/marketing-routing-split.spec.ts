@@ -8,12 +8,12 @@ import { test, expect } from '@playwright/test'
  *
  *   /              → MarketingLandingPage   (public, anchor scrolling)
  *   /login         → LoginPage               (public, standalone shell)
- *   /app           → AppShell + AccountsPage (AuthGuard, post-merge)
- *   /app/publish   → AppShell + PublishPage  (AuthGuard, post-merge)
+ *   /dashboard           → AppShell + AccountsPage (AuthGuard, post-merge)
+ *   /dashboard/publish   → AppShell + PublishPage  (AuthGuard, post-merge)
  *
  * What this proves (post-round-9 visitor surface):
  *   1. Anonymous visitor lands on the marketing landing page — Hero
- *      CTA "立即开始 →" pointed at /app (the dashboard), the secondary
+ *      CTA "立即开始 →" pointed at /dashboard (the dashboard), the secondary
  *      "了解能力 →" hash-anchor resolves to the real <section id=
  *      "features"> in DOM, and the 3-cell Hero stat row anchors the
  *      round-7 attribution rhythm shape. TopBar nav (`定价` / `登录`)
@@ -33,16 +33,16 @@ import { test, expect } from '@playwright/test'
  *      strict subject · predicate rhythm assertion; this spec owns
  *      the broader shape (CTAs, hash anchors, TopBar nav, footer).
  *
- *   2. Already-authed visitor bypassing /login lands at /app/publish
+ *   2. Already-authed visitor bypassing /login lands at /dashboard/publish
  *      (LoginPage's early-redirect branch) — see LoginPage.tsx
  *      comment for rationale on why not `/`.
- *   3. Visitor running the full email-code flow lands at /app/publish
+ *   3. Visitor running the full email-code flow lands at /dashboard/publish
  *      (LoginPage's success-redirect branch). PublishPage's PageHeader
  *      "发布中心" is the canonical fingerprint for the route mounting.
  *
  *      The /login flow assertions (test 2) are unchanged from the pre-
  *      round-5 spec because the operator-facing copy they anchor
- *      (`邮箱地址` / `验证码` / `发送验证码` / `登录` / `/app/publish` /
+ *      (`邮箱地址` / `验证码` / `发送验证码` / `登录` / `/dashboard/publish` /
  *      `发布中心` / `账号管理`) was not touched by the round-5-9 visitor-
  *      surface polish, so spec 2 still resolves without modification.
  *
@@ -175,7 +175,7 @@ test.describe('Marketing + Shell routing split', () => {
   test('/ renders MarketingLandingPage — Hero CTA + #features anchor + 3-stat shape', async ({ page }) => {
     // Override the blanket authed mock so the visitor is anonymous
     // on first paint — otherwise the authed `useEffect` bounce
-    // redirects to /app/publish before the landing page mounts.
+    // redirects to /dashboard/publish before the landing page mounts.
     await mockAnonymousVisit(page)
 
     const consoleErrors: string[] = []
@@ -202,7 +202,7 @@ test.describe('Marketing + Shell routing split', () => {
     // hero CTA is the marketing copy we actually want to verify.
     const ctaPrimary = page.getByRole('link', { name: /立即开始/ }).first()
     await expect(ctaPrimary).toBeVisible()
-    await expect(ctaPrimary).toHaveAttribute('href', '/app')
+    await expect(ctaPrimary).toHaveAttribute('href', '/dashboard')
 
     // The hash-anchor target is a real <section id="features"> in DOM.
     // We bind to `features` because the Hero secondary CTA is the
@@ -246,7 +246,7 @@ test.describe('Marketing + Shell routing split', () => {
     expect(realErrors, `real errors: ${realErrors.join(' | ')}`).toHaveLength(0)
   })
 
-  test('/login/auth full flow lands on /app/publish with PublishPage mounted', async ({ page }) => {
+  test('/login/auth full flow lands on /dashboard/publish with PublishPage mounted', async ({ page }) => {
     // Round 12: the auth form moved to /login/auth (sub-route). The
     // visitor-facing pitch sits at /login and forwards ?plan= / ?intent=
     // query params through to /login/auth. Mid-funnel visits (like the
@@ -289,10 +289,10 @@ test.describe('Marketing + Shell routing split', () => {
     // after sendCode resolves).
     await page.getByRole('button', { name: '登录' }).click()
 
-    // LoginPage → login success → navigate('/app/publish', {replace: true}).
-    // The shim that maps legacy `/publish` → `/app/publish` is a no-op
-    // here because LoginPage navigates straight to /app/publish.
-    await page.waitForURL('**/app/publish', { timeout: 10000 })
+    // LoginPage → login success → navigate('/dashboard/publish', {replace: true}).
+    // The shim that maps legacy `/publish` → `/dashboard/publish` is a no-op
+    // here because LoginPage navigates straight to /dashboard/publish.
+    await page.waitForURL('**/dashboard/publish', { timeout: 10000 })
     await expect(page).toHaveURL(/\/app\/publish$/)
 
     // PublishPage's PageHeader title is the canonical fingerprint for

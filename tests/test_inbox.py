@@ -1307,7 +1307,7 @@ def test_sweep_stale_yt_cookie_tmp_files_is_noop_when_dir_missing(
                 "fake yt err",
                 "fake pr err",
             ],
-            ["QR-scan", "/app/accounts"],
+            ["QR-scan", "/dashboard"],
             [],
         ),
         (
@@ -1352,7 +1352,7 @@ def test_dl_502_cookie_age_diagnostic_visibility(
                           threshold). Diag MUST surface "X cookies
                           are Nh old (>24h threshold)" + the
                           platform-specific refresh hint (QR-scan
-                          OR /app/accounts route); the engine-err
+                          OR /dashboard route); the engine-err
                           halves still bleed in via combined[:500].
       * fresh          — mtime = now (write_text default). Diag MUST
                           NOT surface; standard engine-err surface

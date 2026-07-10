@@ -1,10 +1,10 @@
 # 图片素材搜索 (Pexels + Pixabay) — Operator Runbook
 
-> **给运维 / 上线者**：把免费 Pexels + Pixabay 图像搜索 token 接入 `/app/publish` 的 AI 助手侧栏。锚定到 `openspec/changes/ai-sidebar-material-search`（实现见 `web_runner/routes/ai.py` §1 三路由 + 前端 `MaterialSection`）。
+> **给运维 / 上线者**：把免费 Pexels + Pixabay 图像搜索 token 接入 `/dashboard/publish` 的 AI 助手侧栏。锚定到 `openspec/changes/ai-sidebar-material-search`（实现见 `web_runner/routes/ai.py` §1 三路由 + 前端 `MaterialSection`）。
 
 ## Why this exists
 
-`/app/publish` 第 0 步的 AI 助手侧栏有一个「图片素材」折叠 panel（`sau_web/frontend/src/Components/AiRightPanel/MaterialSection.tsx`），支持：
+`/dashboard/publish` 第 0 步的 AI 助手侧栏有一个「图片素材」折叠 panel（`sau_web/frontend/src/Components/AiRightPanel/MaterialSection.tsx`），支持：
 
 - **手动搜图**：用户输入关键词 → 后端并发请求 Pexels + Pixabay → 3×3 缩略图网格 → 单击添加到图文附件 / 视频封面。
 - **自动推荐**：用户编辑标题 1.5s 后空闲 → 后端按当前标题推荐 9 张候选（独立 slot，不覆盖手动结果）。每个 panel mount 内最多 3 次。
@@ -17,6 +17,45 @@
 ```
 
 按本文档 5 分钟内可上线至少一个数据源。两者都配 = 双源聚合 + 去重 + 9 张/次的网格。
+
+## Operator key config vs. user tier gate — 这是两层
+
+这一节重要，请仔细区别。
+
+**Operator key config**（本文档主体）决定的是 **服务端接了哪些图源**。`PEXELS_API_KEY` / `PIXABAY_API_KEY` 在 `.env` 中控制 `_has_image_source()` 返回值。两源都没配 → 所有调用者都拿 503。**这一层与用户 tier 完全无关。**
+
+**User tier gate**（round-AI-paywall-v1 起生效，独立于本文档）是 **per-user 路由层拦截**。`web_runner/middleware/usage_metering.py::before_request` 在用户调用以下 3 个 user-facing 图片路由时，先于 key-config 检查返一个 **HTTP 402 + `tier_required` envelope**（详见 `_AI_FEATURE_BLOCKED_FOR_FREE` + `_TIER_BLOCKED_RESPONSE`）：
+
+- `POST /api/ai/images/search`         → `blocked_action: "images-search"`
+- `POST /api/ai/recommend-images`        → `blocked_action: "recommend-images"`
+- `GET  /api/ai/images/fetch`            → `blocked_action: "images-fetch"`
+
+也就是说：free-tier 用户即使能配置了 PEXELS_API_KEY + PIXABAY_API_KEY，他调这三个路由看到的还是 **402 `tier_required`**，不是 503 `IMAGE_SOURCE_NOT_CONFIGURED`，也不是 Pexels / Pixabay 的 200 响应。
+
+### 双层 gate 的响应矩阵
+
+| 调用者 tier | `.env` 中 PEXELS/PIXABAY 是否配 | 实际响应 | 原因 |
+|---|---|---|---|
+| free | 两源都没配 | 402 `tier_required` | middleware 先拦，404 永远到不了 |
+| free | 仅配 Pexels | 402 `tier_required` | middleware 先拦 |
+| free | Pexels + Pixabay 都配 | 402 `tier_required` | middleware 先拦 |
+| pro / legacy | 两源都没配 | 503 `IMAGE_SOURCE_NOT_CONFIGURED` | route handler 返，未调外部 API |
+| pro / legacy | 仅配 Pexels | 200（Pexels 5 张合并的列表） | 合并逻辑 跳过缺源 |
+| pro / legacy | Pexels + Pixabay 都配 | 200（9 张双源合并 / 去重） | happy path |
+| `SAU_AUTH_ENABLED=false`（本地 dev） | 任一配置 | 200（auth bypass 同时旁路 tier-gate） | dev 模式与生产路径分开 |
+
+**重要含义**：
+
+1. **运维配置 PEXELS_API_KEY / PIXABAY_API_KEY 不会开放 free-tier 用户的图片搜索**。这两个设计轴是分开的。
+2. 调试的时候「free-tier 用户看不到图片」 — 几乎总是 *预期的*（他看到的是前端 `<AiPaywallBanner />` 升级 CTA，不是错误状态）。**先看用户的 `users.license_tier` DB 字段**，再看 `.env`。
+3. 调试的时候「pro / legacy 用户看不到图片」 — 是 operator config 问题（查 `.env` key 写没写 + 后端是否重启）或外部源限流（看响应是 200/9 张 vs 429 / 503）。
+4. **要想关掉 tier-gate** — 别改 `.env`，需要编辑 `_AI_FEATURE_BLOCKED_FOR_FREE`（把三个图片路径从锁定列表中移除）+ 同步更新 `_AI_UTILITY_PATH_PREFIXES`（如果原意图是「utility」），然后在 `[TierBlockGate]` 跨层合约里同步放宽。
+
+### 与其他文档的交叉点
+
+- `docs/install.md` 🪪 免费版 & AI 内容生成 段 — free vs Pro 的 cross-doc 入口。
+- `web_runner/middleware/usage_metering.py` 中 `TIER_LIMITS["free"]["ai_generate"]` 默认值 `0` + `SAU_TIER_FREE_AI` env-var 都是这一层的体现，跟 operator key config 不在一个轴上。
+- `sau_web/frontend/src/Components/AiRightPanel/TierBlockGate.tsx` — 前端在 `/dashboard/publish` 侧栏中如何根据 `/api/usage/quota` 读到的 `required_tier: "pro"` 决定渲染 paywall banner 还是 chat composer。
 
 ## Prereqs
 
@@ -59,6 +98,12 @@
 ```bash
 # 假设你已经登录拿到一个能用的 session cookie（先 /login 走邮箱验证码），
 # 或者临时打开 .env 里 SAU_AUTH_ENABLED=false 跳过 auth
+
+# 注意：若该登录用户是 free tier，该 curl 会返 402 tier_required（见上文
+# “双层 gate”），不是 operator key 配错。要么在本地 dev 临时关 auth
+#（SAU_AUTH_ENABLED=false，**dev 专用**），要么用 pro / legacy 账号 / API
+# key 调试，或在 .env 中同步重设 SAU_TIER_FREE_AI=10 以先拿到 200 调试
+# 图像路由（调试完记得改回 0）。
 
 curl -X POST http://localhost:6001/api/ai/images/search \
   -H 'Content-Type: application/json' \
@@ -116,6 +161,7 @@ HTTP status = **429** + `Retry-After: 60` 头。
 
 | 现象 | 真根因 | 修法 |
 |---|---|---|
+| `/api/ai/images/*` 持续 402 `tier_required`（free-tier 用户） | round-AI-paywall-v1 拦截预期行为。**不是** operator config bug | 这是预期行为。free-tier 用户应该在 UI 上看到 `<AiPaywallBanner />`。仅在需要调试图像路由时：临时 `SAU_AUTH_ENABLED=false` 走 dev 路径，或换 pro / legacy 账号调试。**不要**改 `.env` 中的 PEXELS / PIXABAY key。 |
 | `/api/ai/images/search` 持续 503 | `.env` 没写入 或 run.py 没重启 | `grep PEXELS .env` 检查 + `.sau-logs/` 里 `_has_image_source()` 启动日志确认 |
 | 偶发 429 + Retry-After: 60 | 触发了 Pexels hourly cap 或 Pixabay 60s cap | 默认 60s 后自动恢复；如果持续，联系 Pexels/Pixabay 申请提额 |
 | 9 张结果全是 Pexels（无 Pixabay） | 只配了 PEXELS_API_KEY | 把 PIXABAY_API_KEY 也加进 `.env` 重启 |
@@ -155,7 +201,7 @@ HTTP status = **429** + `Retry-After: 60` 头。
 
 - [ ] `.env` 里写完 PEXELS_API_KEY 或 PIXABAY_API_KEY
 - [ ] run.py / Flask 后端重启
-- [ ] 浏览器打开 `http://localhost:5180/app/publish?step=0`（Web Shell 已登录）
+- [ ] 浏览器打开 `http://localhost:5180/dashboard/publish?step=0`（Web Shell 已登录）
 - [ ] AI 助手侧栏右下找到「图片素材」Disclosure trigger，点开
 - [ ] 输入 "咖啡" + Enter
 - [ ] 看见 9 张缩略图（Pexels / Pixabay 混合或仅单源，取决于配置数量）

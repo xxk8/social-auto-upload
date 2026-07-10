@@ -16,6 +16,9 @@
  */
 
 import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestConfig } from 'axios'
+import type { PublishHistoryItem } from './types'
+import { createAuth401ResponseInterceptor } from './_createAuth401ResponseInterceptor'
+import { appendAuthPendingHeader } from './_appendAuthPendingHeader'
 
 const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
@@ -52,23 +55,24 @@ request.interceptors.request.use(
     if (config.method === 'get') {
       config.params = { ...config.params, _t: Date.now() }
     }
-    return config
+    // Tag race-window requests so the backend can echo
+    // X-SAU-Race-Window: 1 on 401s, letting DevTools users hide
+    // the noise with `has-response-header:X-SAU-Race-Window`.
+    // See _appendAuthPendingHeader.ts for the rationale (shared
+    // with request.ts to keep the two axios instances in lockstep).
+    return appendAuthPendingHeader(config)
   },
   (error) => Promise.reject(error),
 )
 
 // ── 401 interceptor ──────────────────────────────────────────────────
+// Behavior contract lives in _createAuth401ResponseInterceptor.ts
+// (shared with request.ts so the two axios instances can't drift).
+// Round 9 / OPT-3J follow-up: skip the hard redirect during the
+// initial /api/auth/me window so the AuthLoadingSkeleton can paint.
 request.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401 && window.location.pathname !== '/login') {
-      import('../features/auth/authStore').then(({ useAuthStore }) => {
-        useAuthStore.getState().clearAuth()
-        window.location.href = '/login'
-      })
-    }
-    return Promise.reject(error)
-  },
+  createAuth401ResponseInterceptor(),
 )
 
 // ── Retry interceptor ────────────────────────────────────────────────
@@ -100,7 +104,8 @@ request.interceptors.response.use(
 export { getNoteImageLimit } from './types'
 export type {
   ApiResponse, PlatformOption, AccountItem, AccountGroup,
-  AccountAuthorization, TaskItem, LogEntry,
+  AccountAuthorization, TaskItem, LogEntry, PublishHistoryItem,
+  CalendarTaskItem, CalendarSummary,
 } from './types'
 export {
   PLATFORMS, PLATFORMS_WITH_ICONS, LOGIN_PLATFORMS,
@@ -112,6 +117,7 @@ import { publishApi } from './publish'
 import { tasksApi } from './tasks'
 import { aiApi } from './ai'
 import { inboxApi } from './inbox'
+import { calendarApi } from './calendar'
 
 /**
  * 统一 API 对象 — 所有领域方法聚合在这里。
@@ -215,8 +221,25 @@ export const api = {
   addTask: tasksApi.addTask,
   tasks: {
     reschedule: tasksApi.reschedule,
+    copy: tasksApi.copy,
     scheduled: tasksApi.scheduled,
   },
+
+  // ── Publish history (operator AboutTab Timeline) ──
+  getPublishHistory(limit = 20): Promise<PublishHistoryItem[]> {
+    return request
+      .get('/api/publish/history', { params: { limit } })
+      .then((res) => res.data?.data ?? [])
+  },
+
+  // ── Calendar (content-calendar dashboard view) ──
+  // Delegates to the dedicated calendarApi; the response eagerly
+  // unwraps the inner `data` envelope so a CalendarPage consumer
+  // reads `res.tasks` directly, NOT `res.data.tasks`. The fetch
+  // also coalesces envelope-missing into a stub `{tasks:[], summary}`
+  // so a malformed server response renders an empty calendar (no
+  // crash on render).
+  getCalendarTasks: calendarApi.list,
 
   // ── AI ──
   generateAiContent: aiApi.generateAiContent,

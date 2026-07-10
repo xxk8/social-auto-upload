@@ -69,6 +69,17 @@ export function useAuth() {
     },
   })
 
+  const loginByPasswordMutation = useMutation({
+    mutationFn: ({ email, password }: { email: string; password: string }) =>
+      authApi.loginByPassword(email, password),
+    onSuccess: (data) => {
+      if (data.success && data.data?.user) {
+        store.setUser(data.data.user)
+        queryClient.invalidateQueries({ queryKey: ['auth'] })
+      }
+    },
+  })
+
   const sendCode = useCallback(
     (email: string) => sendCodeMutation.mutateAsync(email),
     [sendCodeMutation],
@@ -90,16 +101,24 @@ export function useAuth() {
     [updateMeMutation],
   )
 
+  const loginByPassword = useCallback(
+    (email: string, password: string) =>
+      loginByPasswordMutation.mutateAsync({ email, password }),
+    [loginByPasswordMutation],
+  )
+
   return {
     user: store.user,
     isAuthenticated: store.isAuthenticated,
     isLoading: isLoading || store.isLoading,
     sendCode,
     login,
+    loginByPassword,
     logout,
     updateMe,
     sendCodeStatus: sendCodeMutation.status,
     loginStatus: loginMutation.status,
+    loginByPasswordStatus: loginByPasswordMutation.status,
     updateMeStatus: updateMeMutation.status,
   }
 }

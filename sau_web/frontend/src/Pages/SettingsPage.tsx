@@ -6,7 +6,7 @@ import { Settings as SettingsIcon } from 'lucide-react'
 
 // ── Round-OPT-prefs-dialog-v4 (slice extraction):
 //    SettingsPage is a thin wrapper that re-renders PreferencesDialog's
-//    <SettingsTab /> under the /app/settings route's PageHeader. See
+//    <SettingsTab /> under the /dashboard/settings route's PageHeader. See
 //    ProfilePage.tsx for the full slice-rationale comment block;
 //    this page mirrors the same `Components/PreferencesContent.tsx`
 //    → `features/preferences/tabs/SettingsTab.tsx` migration. Future

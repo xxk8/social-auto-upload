@@ -8,15 +8,15 @@
 //
 // Typical test:
 //
-//   it('redirects already-authed visitors to /app/publish', () => {
+//   it('redirects already-authed visitors to /dashboard/publish', () => {
 //     const { navigateSpy } = mountLoginPage({ isAuthenticated: true })
-//     expect(navigateSpy).toHaveBeenCalledWith('/app/publish', { replace: true })
+//     expect(navigateSpy).toHaveBeenCalledWith('/dashboard/publish', { replace: true })
 //   })
 //
 // ── Hook-order + micro-render caveat (see LoginPage.test for sample) ────
 //
 // LoginPage's render-time redirect lives inside a synchronous
-// `if (isAuthenticated) { navigate('/app/publish', {replace:true}); }`
+// `if (isAuthenticated) { navigate('/dashboard/publish', {replace:true}); }`
 // branch. Because react-hook-form's `useForm({ resolver: zodResolver(...) })`
 // creates a FRESH resolver function every render, useForm's internal
 // subscriber fires a micro-render via its internal setState. Under

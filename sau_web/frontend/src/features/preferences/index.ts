@@ -65,6 +65,7 @@
 // mocks are the canonical escape hatch.
 // ──────────────────────────────────────────────────────────────────────────
 
+export { OverviewTab } from './tabs/OverviewTab'
 export { AccountTab } from './tabs/AccountTab'
 export { SettingsTab } from './tabs/SettingsTab'
 export { PersonalizationTab } from './tabs/PersonalizationTab'

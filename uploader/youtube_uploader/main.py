@@ -17,6 +17,7 @@ from patchright.async_api import Page, Playwright, async_playwright
 
 from conf import DEBUG_MODE
 from uploader.base_video import BaseVideoUploader
+from uploader.youtube_uploader.locators import YtLocators as L
 from utils.anti_detect import obfuscate_video
 from utils.anti_detect.config import get_config
 from utils.base_social_media import set_init_script
@@ -29,8 +30,8 @@ try:
 except Exception:
     YT_PROXY = None
 
-STUDIO_URL = "https://studio.youtube.com"
-UPLOAD_URL = "https://www.youtube.com/upload"
+STUDIO_URL = L.STUDIO_URL
+UPLOAD_URL = L.UPLOAD_URL
 VISIBILITY = {"public": "PUBLIC", "unlisted": "UNLISTED", "private": "PRIVATE"}
 
 
@@ -59,9 +60,9 @@ async def cookie_auth(account_file) -> bool:
             await page.goto(STUDIO_URL, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
             url = page.url
-            if "accounts.google.com" in url or "/signin" in url.lower():
+            if L.LOGIN_REDIRECT_FRAGMENT in url or L.LOGIN_SIGNIN_FRAGMENT in url.lower():
                 return False
-            return "/channel/" in url
+            return L.CHANNEL_URL_FRAGMENT in url
         except Exception:
             return False
         finally:
@@ -80,7 +81,7 @@ async def youtube_cookie_gen(account_file, headless: bool = False):
         youtube_logger.info(_msg("🔐", "请在弹出的浏览器里登录 Google / YouTube 账号，登录后会自动保存"))
         ok = False
         for _ in range(600):  # 最多等 10 分钟
-            if "/channel/" in page.url:
+            if L.CHANNEL_URL_FRAGMENT in page.url:
                 await page.wait_for_timeout(2000)  # 让 cookie 落定
                 ok = True
                 break
@@ -118,7 +119,7 @@ async def _dismiss_autocomplete(page: Page):
     except Exception:
         pass
     try:
-        dropdown = page.locator("tp-yt-iron-dropdown:visible")
+        dropdown = page.locator(L.AUTOCOMPLETE_DROPDOWN)
         if await dropdown.count() > 0:
             await page.keyboard.press("Escape")
             await page.wait_for_timeout(200)
@@ -162,7 +163,7 @@ async def _wait_upload_complete(page: Page, max_polls: int = 360) -> bool:
     last = ""
     for _ in range(max_polls):
         txt = ""
-        for sel in (".progress-label", "span.progress-label", "ytcp-video-upload-progress"):
+        for sel in L.PROGRESS_SELECTORS:
             loc = page.locator(sel).first
             try:
                 if await loc.count():
@@ -276,33 +277,31 @@ class YouTubeVideo(BaseVideoUploader):
         youtube_logger.info(_msg("🎬", f"开始上传: {Path(self.file_path).name}"))
         await page.goto(UPLOAD_URL, wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
-        if "accounts.google.com" in page.url or "signin" in page.url.lower():
+        if L.LOGIN_REDIRECT_FRAGMENT in page.url or L.LOGIN_SIGNIN_FRAGMENT in page.url.lower():
             await browser.close()
             raise RuntimeError("YouTube 登录态失效，请重新执行 login")
 
         # 1) 选择视频文件
-        file_input = page.locator('input[type="file"]').first
+        file_input = page.locator(L.FILE_INPUT).first
         await file_input.wait_for(state="attached", timeout=60000)
         await file_input.set_input_files(self.file_path)
 
         # 2) 等详情对话框
-        await page.locator("#title-textarea").wait_for(state="visible", timeout=120000)
+        await page.locator(L.DETAILS_DIALOG).wait_for(state="visible", timeout=120000)
 
         # 3) 标题
         youtube_logger.info(_msg("✍️", "填写标题"))
-        await _fill_editable(page, "#title-textarea #textbox", self.title[:100])
+        await _fill_editable(page, L.TITLE_EDITOR, self.title[:100])
 
         # 4) 简介
         if self.description.strip():
             youtube_logger.info(_msg("✍️", "填写简介"))
-            await _fill_editable(page, "#description-textarea #textbox", self.description)
+            await _fill_editable(page, L.DESCRIPTION_EDITOR, self.description)
 
         # 5) 封面（处理到一定进度才允许传，失败不致命）
         if self.thumbnail_path and Path(self.thumbnail_path).exists():
             try:
-                thumb_input = page.locator(
-                    "#file-loader input[type='file'], ytcp-thumbnail-uploader input[type='file']"
-                ).first
+                thumb_input = page.locator(L.THUMB_INPUT).first
                 await thumb_input.wait_for(state="attached", timeout=20000)
                 await thumb_input.set_input_files(self.thumbnail_path)
                 await page.wait_for_timeout(2000)
@@ -313,40 +312,37 @@ class YouTubeVideo(BaseVideoUploader):
         # 6) 加入播放列表（连载/系列追更）。弹窗务必关闭，否则挡住后续步骤。
         if self.playlist:
             try:
-                await _click_if_present(
-                    page, "#basics ytcp-text-dropdown-trigger, ytcp-video-metadata-playlists ytcp-dropdown-trigger", 8000)
+                await _click_if_present(page, L.PLAYLIST_DROPDOWN, 8000)
                 await page.wait_for_timeout(1200)
-                existing = page.locator(
-                    f"tp-yt-paper-checkbox:has-text('{self.playlist}'), "
-                    f"ytcp-checkbox-group:has-text('{self.playlist}')").first
+                existing = page.locator(L.PLAYLIST_CHECKBOX.format(playlist=self.playlist)).first
                 if await existing.count():
                     await existing.click()
                 else:
-                    if await _click_if_present(page, "ytcp-button:has-text('New playlist'), ytcp-button:has-text('创建播放列表')", 4000):
+                    if await _click_if_present(page, L.PLAYLIST_NEW_BUTTON, 4000):
                         await page.wait_for_timeout(800)
-                        await _click_if_present(page, "tp-yt-paper-item:has-text('New playlist'), tp-yt-paper-item:has-text('新建播放列表')", 3000)
-                        title_box = page.locator("ytcp-playlist-metadata-editor #textbox, #create-playlist-form #textbox").first
+                        await _click_if_present(page, L.PLAYLIST_NEW_ITEM, 3000)
+                        title_box = page.locator(L.PLAYLIST_TITLE_INPUT).first
                         if await title_box.count():
                             await title_box.click()
                             await title_box.type(self.playlist, delay=6)
-                            await _click_if_present(page, "ytcp-button#create-button, tp-yt-paper-dialog ytcp-button:has-text('Create'), tp-yt-paper-dialog ytcp-button:has-text('创建')", 4000)
+                            await _click_if_present(page, L.PLAYLIST_CREATE_BUTTON, 4000)
             except Exception as exc:
                 youtube_logger.warning(_msg("⚠️", f"播放列表处理跳过（不影响发布）: {exc}"))
             finally:
-                await _click_if_present(page, "ytcp-playlist-dialog #save-button, ytcp-button:has-text('Done'), ytcp-button:has-text('完成')", 3000)
+                await _click_if_present(page, L.PLAYLIST_DIALOG_SAVE, 3000)
                 await page.keyboard.press("Escape")
                 await page.wait_for_timeout(600)
 
         # 7) 受众：非儿童向（必填）
-        if not await _click_if_present(page, "tp-yt-paper-radio-button[name='VIDEO_MADE_FOR_KIDS_NOT_MFK']", 10000):
-            await _click_if_present(page, "tp-yt-paper-radio-button:has-text('not made for kids'), tp-yt-paper-radio-button:has-text('不是面向儿童')", 6000)
+        if not await _click_if_present(page, L.AUDIENCE_NOT_KIDS_RADIO, 10000):
+            await _click_if_present(page, L.AUDIENCE_NOT_KIDS_TEXT, 6000)
 
         # 8) 标签（“显示更多”里）
         if self.tags:
             try:
-                await _click_if_present(page, "#toggle-button", 6000)
+                await _click_if_present(page, L.TAGS_TOGGLE_BUTTON, 6000)
                 await page.wait_for_timeout(800)
-                tag_input = page.locator("#tags-container #text-input, ytcp-form-input-container#tags-container input").first
+                tag_input = page.locator(L.TAGS_INPUT).first
                 await tag_input.click()
                 await tag_input.type(",".join(self.tags)[:500] + ",", delay=4)
             except Exception as exc:
@@ -354,10 +350,10 @@ class YouTubeVideo(BaseVideoUploader):
 
         # 9) 连点 Next 到“可见性”步骤
         for _ in range(5):
-            vis = page.locator("tp-yt-paper-radio-button[name='PUBLIC']")
+            vis = page.locator(L.VISIBILITY_PUBLIC_RADIO)
             if await vis.count() and await vis.first.is_visible():
                 break
-            if not await _click_if_present(page, "#next-button", 6000):
+            if not await _click_if_present(page, L.NEXT_BUTTON, 6000):
                 await page.wait_for_timeout(1200)
             await page.wait_for_timeout(1000)
 
@@ -372,18 +368,18 @@ class YouTubeVideo(BaseVideoUploader):
 
         # 11) 发布
         await page.wait_for_timeout(1200)
-        if not await _click_if_present(page, "#done-button", 15000):
+        if not await _click_if_present(page, L.DONE_BUTTON, 15000):
             youtube_logger.warning(_msg("🤔", "未找到发布按钮，可能上传未到可发布进度；请在窗口里手动发布"))
         else:
             await page.wait_for_timeout(4000)
             video_url = ""
             try:
-                link = page.locator("a[href*='youtu.be'], a[href*='watch?v=']").first
+                link = page.locator(L.VIDEO_LINK).first
                 if await link.count():
                     video_url = await link.get_attribute("href") or ""
             except Exception:
                 pass
-            await _click_if_present(page, "ytcp-button:has-text('Close'), ytcp-button:has-text('关闭'), #close-button", 8000)
+            await _click_if_present(page, L.PLAYLIST_DIALOG_CLOSE, 8000)
             youtube_logger.success(_msg("🥳", f"发布完成（{self.visibility}）{(' ' + video_url) if video_url else ''}"))
 
         # 刷新 cookie
