@@ -153,6 +153,11 @@
     "back": "Back",
     "loading": "Loading…"
   },
+  "accounts": {
+    "actions": {
+      "menu": "Authorization actions"
+    }
+  },
   "tasks": {
     "page": {
       "title": "Tasks",

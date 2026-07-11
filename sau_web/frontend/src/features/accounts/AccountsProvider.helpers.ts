@@ -109,6 +109,8 @@ export type AccountsDispatch = {
   handleDragStart: () => void
   handleDragEnd: (event: DragEndEvent) => void
 
+  hoverTargetGroupId: number | null
+
   handleSelectGroup: (id: number, checked: boolean) => void
   handleSelectAll: () => void
   handleBatchDelete: () => Promise<void>
@@ -117,6 +119,7 @@ export type AccountsDispatch = {
   handleStartRename: (groupId: number, currentName: string) => void
   handleRename: (groupId: number, newName: string) => Promise<void>
   handleStartAuthorize: (groupId: number) => void
+  handleReauthorize: (groupId: number, platform: string) => void
   handleAuthorize: () => void
   handleRemoveAuth: (groupId: number, platform: string) => Promise<void>
   handleClearSearch: () => void

@@ -8,13 +8,16 @@ import {
   type ReactNode,
 } from 'react'
 import { arrayMove } from '@dnd-kit/helpers'
+import { useDragDropMonitor } from '@dnd-kit/react'
 import { useToast } from '@/Components/ui/toast'
+import { resolveSoftPrompt } from '@/lib/softError'
 export { useAccountsState, useAccountsDispatch, validateGroupName } from './AccountsProvider.helpers'
 import { api, PLATFORMS, type AccountGroup } from '@/api/client'
 import {
   useAccountGroups,
   useCreateAccountGroup,
   useDeleteAccountGroup,
+  useMoveAuthorization,
   useRemoveAuthorization,
   useReorderAccountGroups,
   useReorderAuthorizations,
@@ -44,6 +47,10 @@ const AUTH_ID_PREFIX = 'auth:'
 
 const _EMPTY_GROUPS: AccountGroup[] = []
 
+// Minimal structural subset for `checkAllAccounts` — backend populates
+// `quick.{valid,stale,reason,age_hours,file_size}` per test fixture.
+type AccountQuickCheck = { quick?: { valid?: boolean; stale?: boolean } }
+
 export function AccountsProvider({ children }: { children: ReactNode }) {
   const { addToast } = useToast()
 
@@ -55,6 +62,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
   const removeAuth = useRemoveAuthorization()
   const reorderGroups = useReorderAccountGroups()
   const reorderAuths = useReorderAuthorizations()
+  const moveAuth = useMoveAuthorization()
 
   // ── local/dialog UI state ──
   const [newGroupName, setNewGroupName] = useState('')
@@ -72,6 +80,7 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
   const [isCheckingStatus, setIsCheckingStatus] = useState(false)
+  const [hoverTargetGroupId, setHoverTargetGroupId] = useState<number | null>(null)
 
   // ── optimistic local copy of server data; drag guard prevents mid-drag clobbers ──
   const isDraggingRef = useRef(false)
@@ -139,12 +148,39 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     reorderAuthsMutateRef.current = reorderAuths.mutate
   }, [reorderAuths.mutate])
+  const moveAuthMutateAsyncRef = useRef(moveAuth.mutateAsync)
+  useEffect(() => {
+    moveAuthMutateAsyncRef.current = moveAuth.mutateAsync
+  }, [moveAuth.mutateAsync])
   const refetchRef = useRef(refetch)
   useEffect(() => {
     refetchRef.current = refetch
   }, [refetch])
 
-  const isReorderInFlight = reorderGroups.isPending || reorderAuths.isPending
+  const isReorderInFlight = reorderGroups.isPending || reorderAuths.isPending || moveAuth.isPending
+
+  // ── drag-hover tracking for cross-group move visual feedback ──
+  useDragDropMonitor({
+    onDragOver({ operation }) {
+      const { source, target } = operation
+      if (!source || !target) {
+        setHoverTargetGroupId(null)
+        return
+      }
+      const sourceId = String(source.id)
+      const targetId = String(target.id)
+      if (sourceId.startsWith(AUTH_ID_PREFIX) && targetId.startsWith(GROUP_ID_PREFIX)) {
+        const targetGroupId = Number(targetId.slice(GROUP_ID_PREFIX.length))
+        const sourceGroupId = Number(sourceId.split(':')[1])
+        setHoverTargetGroupId(targetGroupId !== sourceGroupId ? targetGroupId : null)
+      } else {
+        setHoverTargetGroupId(null)
+      }
+    },
+    onDragEnd() {
+      setHoverTargetGroupId(null)
+    },
+  })
 
   // ── stable platform-label helper (MUST be defined before filteredGroups
   //     useMemo to avoid Temporal Dead Zone access).
@@ -242,45 +278,83 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       }
 
       // Auth reorder branch: `auth:<groupId>:<authId>` on both sides.
-      // Cross-group drags are silently ignored — auths are tied to a group.
-      if (
-        sourceId.startsWith(AUTH_ID_PREFIX) &&
-        targetId.startsWith(AUTH_ID_PREFIX)
-      ) {
+      // Cross-group move: auth dropped on a group card.
+      if (sourceId.startsWith(AUTH_ID_PREFIX)) {
         const [, srcGroupRaw, srcAuthRaw] = sourceId.split(':')
-        const [, tgtGroupRaw, tgtAuthRaw] = targetId.split(':')
         const sourceGroupId = Number(srcGroupRaw)
-        const targetGroupId = Number(tgtGroupRaw)
-        if (sourceGroupId !== targetGroupId) return
         const sourceAuthId = Number(srcAuthRaw)
-        const targetAuthId = Number(tgtAuthRaw)
-        const groupIdx = snapshot.findIndex((g) => g.id === sourceGroupId)
-        if (groupIdx === -1) return
-        const authList = snapshot[groupIdx].authorizations
-        const sourceIndex = authList.findIndex((a) => a.id === sourceAuthId)
-        const targetIndex = authList.findIndex((a) => a.id === targetAuthId)
-        if (
-          sourceIndex === -1 ||
-          targetIndex === -1 ||
-          sourceIndex === targetIndex
-        ) {
+
+        // Cross-group move: target is a group.
+        if (targetId.startsWith(GROUP_ID_PREFIX)) {
+          const targetGroupId = Number(targetId.slice(GROUP_ID_PREFIX.length))
+          if (sourceGroupId === targetGroupId) return
+          const sourceGroup = snapshot.find((g) => g.id === sourceGroupId)
+          if (!sourceGroup) return
+          const auth = sourceGroup.authorizations.find((a) => a.id === sourceAuthId)
+          if (!auth) return
+          const targetGroup = snapshot.find((g) => g.id === targetGroupId)
+          if (!targetGroup) return
+          if (targetGroup.authorizations.some((a) => a.platform === auth.platform)) {
+            addToast(`目标分组已包含 ${auth.platform}`, 'warning')
+            return
+          }
+          setLocalGroups((prev) =>
+            prev.map((g) => {
+              if (g.id === sourceGroupId) {
+                return { ...g, authorizations: g.authorizations.filter((a) => a.id !== sourceAuthId) }
+              }
+              if (g.id === targetGroupId) {
+                return { ...g, authorizations: [...g.authorizations, auth] }
+              }
+              return g
+            }),
+          )
+          moveAuthMutateAsyncRef.current(
+            { fromGroupId: sourceGroupId, toGroupId: targetGroupId, platform: auth.platform },
+            {
+              onError: () => {
+                addToast('移动授权失败，正在恢复…', 'error')
+                refetchRef.current()
+              },
+            },
+          )
           return
         }
-        const newAuths = arrayMove(authList, sourceIndex, targetIndex)
-        setLocalGroups((prev) =>
-          prev.map((g) =>
-            g.id === sourceGroupId ? { ...g, authorizations: newAuths } : g,
-          ),
-        )
-        reorderAuthsMutateRef.current(
-          { groupId: sourceGroupId, authIds: newAuths.map((a) => a.id) },
-          {
-            onError: () => {
-              addToast('保存顺序失败，正在恢复…', 'error')
-              refetchRef.current()
+
+        // Same-group reorder: target is another auth.
+        if (targetId.startsWith(AUTH_ID_PREFIX)) {
+          const [, tgtGroupRaw, tgtAuthRaw] = targetId.split(':')
+          const targetGroupId = Number(tgtGroupRaw)
+          const targetAuthId = Number(tgtAuthRaw)
+          if (sourceGroupId !== targetGroupId) return
+          const groupIdx = snapshot.findIndex((g) => g.id === sourceGroupId)
+          if (groupIdx === -1) return
+          const authList = snapshot[groupIdx].authorizations
+          const sourceIndex = authList.findIndex((a) => a.id === sourceAuthId)
+          const targetIndex = authList.findIndex((a) => a.id === targetAuthId)
+          if (
+            sourceIndex === -1 ||
+            targetIndex === -1 ||
+            sourceIndex === targetIndex
+          ) {
+            return
+          }
+          const newAuths = arrayMove(authList, sourceIndex, targetIndex)
+          setLocalGroups((prev) =>
+            prev.map((g) =>
+              g.id === sourceGroupId ? { ...g, authorizations: newAuths } : g,
+            ),
+          )
+          reorderAuthsMutateRef.current(
+            { groupId: sourceGroupId, authIds: newAuths.map((a) => a.id) },
+            {
+              onError: () => {
+                addToast('保存顺序失败，正在恢复…', 'error')
+                refetchRef.current()
+              },
             },
-          },
-        )
+          )
+        }
       }
     },
     [addToast],
@@ -350,7 +424,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
         setNewGroupName('')
         setCreateDialogOpen(false)
       } else {
-        addToast(result.message || '创建失败', 'error')
+        const { message, tone } = resolveSoftPrompt(result.message, '创建失败', { status: 409, verb: 'add' })
+        addToast(message, tone)
       }
     } catch {
       addToast('创建请求失败', 'error')
@@ -364,7 +439,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
         if (result.success) {
           addToast(`分组 "${name}" 已删除`, 'success')
         } else {
-          addToast(result.message || '删除失败', 'error')
+          const { message, tone } = resolveSoftPrompt(result.message, '删除失败', { status: 404, verb: 'delete' })
+          addToast(message, tone)
         }
       } catch {
         addToast('删除请求失败', 'error')
@@ -397,7 +473,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
           setRenameDialogGroupId(null)
           setRenameDialogCurrentName('')
         } else {
-          addToast(result.message || '重命名失败', 'error')
+          const { message, tone } = resolveSoftPrompt(result.message, '重命名失败', { status: 409, verb: 'update' })
+          addToast(message, tone)
         }
       } catch {
         addToast('重命名请求失败', 'error')
@@ -410,6 +487,20 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
     setSelectedGroupId(groupId)
     setSelectedPlatform('')
     setAuthorizeDialogOpen(true)
+  }, [])
+
+  // ── re-scan / re-authorize: skip the platform-picker dialog ──
+  // Used by the per-row "重新扫码" menu item in SortableAuthorizationItem
+  // for failed/stale authorizations. Pre-sets selectedPlatform so the
+  // LoginProgressModal opens directly (no AuthorizeDialog intermediate
+  // step). Same destination as handleAuthorize(), but without the
+  // manual platform-pick UI round-trip — the platform is already known
+  // because the cookie that's failing is tied to a specific (group,
+  // platform) pair.
+  const handleReauthorize = useCallback((groupId: number, platform: string) => {
+    setSelectedGroupId(groupId)
+    setSelectedPlatform(platform)
+    setLoginModalOpen(true)
   }, [])
 
   // Note: refs declared above the handleAuthorize definition so the
@@ -436,7 +527,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
         if (result.success) {
           addToast(`已移除 ${platform} 授权`, 'success')
         } else {
-          addToast(result.message || '移除失败', 'error')
+          const { message, tone } = resolveSoftPrompt(result.message, '移除失败', { status: 404, verb: 'delete' })
+          addToast(message, tone)
         }
       } catch {
         addToast('移除请求失败', 'error')
@@ -454,8 +546,8 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       const res = await api.checkAllAccounts()
       if (res.success && res.data) {
         const total = res.data.length
-        const valid = res.data.filter((d) => d.quick?.valid === true).length
-        const stale = res.data.filter((d) => d.quick?.stale === true).length
+        const valid = res.data.filter((d: AccountQuickCheck) => d.quick?.valid === true).length
+        const stale = res.data.filter((d: AccountQuickCheck) => d.quick?.stale === true).length
         const invalid = total - valid
         if (total === 0) {
           addToast('当前没有可检测的授权账号', 'info')
@@ -507,11 +599,13 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       handleStartRename,
       handleRename,
       handleStartAuthorize,
+      handleReauthorize,
       handleAuthorize,
       handleRemoveAuth,
       handleClearSearch,
       handleCheckAllStatus,
       getPlatformLabel,
+      hoverTargetGroupId,
     }),
     [
       handleDragStart,
@@ -524,11 +618,13 @@ export function AccountsProvider({ children }: { children: ReactNode }) {
       handleStartRename,
       handleRename,
       handleStartAuthorize,
+      handleReauthorize,
       handleAuthorize,
       handleRemoveAuth,
       handleClearSearch,
       handleCheckAllStatus,
       getPlatformLabel,
+      hoverTargetGroupId,
     ],
   )
 

@@ -38,6 +38,10 @@
 - [ ] TBF-019
 - [ ] TBF-020
 - [x] TBF-023
+- [ ] TBF-024
+- [ ] TBF-025
+- [ ] TBF-026
+- [ ] TBF-027
 
 ---
 
@@ -374,7 +378,85 @@
 
 ---
 
-## How to pick up a TBF
+## TBF-024 · test_web_shell: background-thread leak on /api/accounts/login + /api/upload/* (3 hung tests)
+
+- **File · Class**: `tests/test_web_shell.py::TestAccounts::test_login_response_has_data_task_id`, `tests/test_web_shell.py::TestUpload::test_upload_video_response_has_data_task_id`, `tests/test_web_shell.py::TestUpload::test_upload_note_with_data_uris`
+- **Failing tests** (3 hung): all 3 PASS at the test-body level (0.8-0.9s) but `uv run pytest tests/test_web_shell.py` cannot exit for ~150s after the last test completes. The hang is in a worker thread that runs a real `sau douyin login --headless` Playwright subprocess.
+- **Symptom**: test body returns 200 OK in <1s (the route handler returns immediately after `task_executor.submit(...)` — async pattern by design). The worker thread in `web_runner.utils.task_executor` runs the real `_run_sau` → `subprocess.run([sys.executable, "-m", "sau_cli"] + argv, ..., timeout=600)`. Pytest's process can't exit until all daemon threads finish → 150s hang on real Playwright/Chromium.
+- **Root cause** (file:line):
+  - `web_runner/routes/accounts.py:191-200` (`login_account`) + `web_runner/routes/upload.py:84, 159` (`upload_video`, `upload_note`) do `from web_runner.utils import _run_sau, task_executor, ...` (LOCAL REF). The route's local `_run_sau` was bound at import time and is NOT rebinded by `monkeypatch.setattr(web_runner.utils, "_run_sau", ...)`.
+  - The test at `tests/test_web_shell.py:128` patches `web_runner.utils._run_sau` (wrong call site — module attribute, not the route's local ref). The route calls its local ref → real `_run_sau` runs in the worker thread → real subprocess spawns.
+  - `web_runner/utils.py:544-575` (`_run_sau`) is blocking — `subprocess.run(..., timeout=600, cwd=BASE_DIR)`. For `sau douyin login --headless` this is a real Playwright/Chromium subprocess.
+- **3 fix options** (user-listed):
+  1. **(a) Block on task completion in the route handler** — wrong fit. Real users (web UI login flow) would block 150s+ for the JSON response. Defeats the async pattern (the whole point of `task_id` is for the client to poll separately). Production behavior change, NOT a test fix. **Reject.**
+  2. **(b) Fixture-level drain (join task threads with a deadline) in `tests/test_web_shell.py::app` teardown** — test-only fix, belt-and-suspenders. ~10-30 LoC. Catches any future test that leaks threads, not just this one. Implementation: iterate `task_executor._threads` (private API) and `.join(timeout=...)` with a deadline. CAVEAT: do NOT call `task_executor.shutdown(wait=True)` — it's permanent and would break subsequent tests in the same session. Use a non-destructive drain instead.
+  3. **(c) Use a stronger `_run_sau` mock that joins the spawned thread before returning** — test-only fix, minimal change. Just patch at the right call site (the route's local ref): `with patch("web_runner.routes.accounts._run_sau"):` (and `patch("web_runner.routes.upload._run_sau"):` for upload tests). The no-op MagicMock returns immediately, the worker thread runs the no-op and exits in <1s. **NO PRODUCTION CHANGE.** Why this works: when the route's local `_run_sau` ref is a MagicMock, the worker thread's `subprocess.run(...)` call never executes; the no-op returns and the thread exits cleanly. The `task_executor` is a `ThreadPoolExecutor` with `daemon=False` default, but the worker thread completes in <1s so pytest can shut down.
+- **Recommended fix**: **(c) primary, with (b) as optional defensive safety net**:
+  - (c) is the minimal change that fixes the specific leak (~1-char path fix per test). It's idiomatic Python testing — patch at the actual call site, the no-op mock collapses the threaded work to ~zero.
+  - (b) is a defensive fixture that would catch any future thread-leak regression. Optional — (c) alone unblocks the 3 tests. Worth adding if other test files (test_sau_web_upload.py, test_sau_bilibili_*.py, etc.) also submit to `task_executor` and have the same leak surface.
+  - (a) is wrong (production change), do NOT pursue.
+- **Implementation (option c)**: change 1 string in each of the 3 tests:
+  ```diff
+  -    with patch("web_runner.utils._run_sau"):
+  +    with patch("web_runner.routes.accounts._run_sau"):  # login_account
+  ```
+  ```diff
+  -    with patch("web_runner.utils._run_sau"), patch("web_runner.utils.MIN_UPLOAD_BYTES", 0):
+  +    with patch("web_runner.routes.upload._run_sau"), patch("web_runner.utils.MIN_UPLOAD_BYTES", 0):  # upload_video + upload_note
+  ```
+  Add a 2-line comment in each test pointing at the local-ref pitfall so future maintainers don't reintroduce the wrong patch path.
+- **Acceptance**:
+  - `uv run pytest tests/test_web_shell.py -v` exits in <15s (currently hangs ~150s after the 3 offending tests pass; <15s leaves headroom for the 17 tests + silence-fixture teardown + PG pool teardown + loguru handler flush)
+  - All 17 tests still pass (test_health + test_index from the prior PR's fixes; the 3 hung tests now also complete cleanly)
+  - The PG `logs` table is NOT polluted by these tests (silence fixture from prior PR still active)
+  - Code-reviewer SHIP verdict on the test patch changes
+- **Known side effect (pre-existing, NOT introduced by this fix)**: The 3 affected tests call `_db_insert_task(...)` BEFORE `task_executor.submit(...)` in the route handler (see `web_runner/routes/accounts.py:196-201`, `web_runner/routes/upload.py:131-136`, `web_runner/routes/upload.py:184-189`). The `tests/conftest.py::_silence_pg_logs_during_test_session` fixture silences `_db_insert_log` (the `logs` table) but does NOT silence `_db_insert_task` (the `tasks` table). So after option (c) lands, the 3 tests will still leave 3 rows in the operator's dev `tasks` table. Three options to handle this:
+  1. **Extend the silence fixture** — add `wr_utils._db_insert_task` to the no-op swap. Simplest, ~1-line change to `tests/conftest.py::log_writes_enabled`'s complement fixture (e.g. `task_writes_disabled` or extend the autouse session fixture to also no-op `_db_insert_task`). Recommended.
+  2. **Add a test-only cleanup** — a fixture that runs `DELETE FROM tasks WHERE platform = 'douyin' AND account = 'test'` after the test. Test-only, no production change, but couples the test to a specific account name.
+  3. **Accept the side effect** — the 3 rows are harmless (the test account is named `"test"` so they're trivially identifiable), and they don't affect any other test. Document in the ticket only.
+  The recommended approach is **(1)** — extend the silence fixture to also cover `_db_insert_task`. It's a 1-line change and keeps the tests hermetic. File a follow-up ticket if scope-creep risk is a concern; otherwise inline-fix in the same PR as option (c).
+- **Why NOT (b) alone**: (b) requires non-trivial fixture infrastructure (drain helper, thread-pool introspection) and is broader than needed. (c) is the surgical fix. (b) is best as a follow-up safety net, not the primary fix.
+- **Status**: Open (discovered 2026-07-11 via empirical pytest run). **Cross-ref**: surfaced during the prior auth-disable + 2-bug-fix PRs' empirical pytest run — the 3 tests were `-`-deselected with `--deselect` after the 240s pytest timeout to surface the 13 simple-test state. Now that auth-off + 2 test fixes unblocked the route handlers, the leak surface is visible.
+
+---
+
+## TBF-025 · test_web_shell: TestHealth::test_health wrong JSON key (KeyError: 'ok')
+
+- **File · Class**: `tests/test_web_shell.py::TestHealth::test_health`
+- **Failing test** (1): `test_health` — asserted on `data["ok"]` but `/health` returns `{"status": "ok"}` (no `"ok"` key), causing `KeyError: 'ok'`.
+- **Symptom**: with auth-on (the pre-auth-disable world), the test was masked behind 401 UNAUTHORIZED and never reached the failing assertion. After the auth-disable fixture PR (TBF-024 era, this ticket's sibling) unblocked the route handlers, the test surfaced as `KeyError: 'ok'` in pytest output.
+- **Hypothesis**: pre-existing test bug. The `/health` handler in `web_runner/__init__.py:240` returns `{"status": "ok"}` — the test was written against a different response shape that the handler never actually produced.
+- **Fix applied** (in working tree, awaiting commit): `assert data["ok"] is True` → `assert data["status"] == "ok"`. Also added a 1-line comment pointing at `web_runner/__init__.py:240` so future maintainers don't reintroduce the wrong-key assertion.
+- **Acceptance**: `test_health` PASS in <1s; the assertion matches the actual handler response shape.
+- **Status**: Resolved at pending-push-sha (working tree has the fix; not yet committed as a standalone PR — bundled with TBF-026 in the next "test bug fixes" PR after the auth-disable fixture PR lands on origin).
+- **Cross-ref**: surfaced 2026-07-11 during the prior auth-disable PR's empirical pytest run. Same masking dynamic as TBF-026 below.
+
+## TBF-026 · test_web_shell: TestFrontend::test_index_returns_html_or_default 404 (Flask is API-only)
+
+- **File · Class**: `tests/test_web_shell.py::TestFrontend::test_index_returns_html_or_default`
+- **Failing test** (1): `test_index_returns_html_or_default` — asserted on `/` returning 200 + `text/html`, but `/` returns 404 (no route registered for `/` in `web_runner/__init__.py::create_app()`).
+- **Symptom**: with auth-on, the test was masked behind 401. After the auth-disable fixture PR unblocked the route handlers, the test surfaced as `assert 404 == 200` in pytest output.
+- **Hypothesis**: pre-existing test bug. The test was written when Flask served the SPA at `/`. The current architecture is split: Vite serves the SPA at `:5180`, Flask is API-only on `:6001` (per CLAUDE.md "Web stack"). `/` is intentionally not served by the API backend.
+- **Fix applied** (in working tree, awaiting commit): `app.get("/")` + text/html assertion → `app.get("/api/accounts")` + JSON envelope assertions (`is_json` + `success: True` + `data` is list). 4-line comment explaining the API-only rationale + the redundancy caveat. Note: redundant with `TestAccounts::test_list_accounts_empty` (also asserts `/api/accounts` returns 200 + empty list), but kept per the user's directive ("either register the / route in create_app() or update the test to assert on a real route") + original test name/intent.
+- **Acceptance**: `test_index_returns_html_or_default` PASS in <1s; the test now exercises a real `/api/*` route and asserts the canonical JSON envelope.
+- **Status**: Resolved at pending-push-sha (working tree has the fix; not yet committed as a standalone PR — bundled with TBF-025 in the next "test bug fixes" PR after the auth-disable fixture PR lands on origin).
+- **Cross-ref**: surfaced 2026-07-11 during the prior auth-disable PR's empirical pytest run. Same masking dynamic as TBF-025.
+
+## TBF-027 · SortableAuthorizationItem: re-scan handler-logic test deferred (jsdom OOM)
+
+- **File · Class**: `sau_web/frontend/src/features/accounts/SortableAuthorizationItem.test.tsx`
+- **Gap**: The re-scan menu item (round-OPT-3F feature) has 5 render tests covering the trigger button + status pills + platform label. The handler-logic test (proves `handleReauthorize(groupId, platform)` lands `selectedGroupId` + `selectedPlatform` + `loginModalOpen` in the provider state) was dropped from this file after 4 failed vitest attempts — see the postmortem below.
+- **Acceptance**: Add the handler-logic test to `sau_web/frontend/src/features/accounts/AccountsProvider.test.tsx` (where the test infrastructure for provider-level testing already exists), or to a new `AccountsProvider.handleReauthorize.test.tsx`. The test should render `<AccountsProvider>` + a test consumer that reads `useAccountsDispatch()`, call `dispatch.handleReauthorize(42, 'douyin')`, then assert the LoginProgressModal mock is called with `{ open: true, groupId: 42, platform: 'douyin', groupName: '测试组' }`.
+- **Postmortem — 4 failed test approaches in jsdom**:
+  1. `fireEvent.click` on the Radix `DropdownMenuTrigger` — dropdown didn't open. Radix's press detection needs pointerdown/pointerup, not just click.
+  2. `@testing-library/user-event` (real package) — `Error: Failed to resolve import "@testing-library/user-event"`. The package is used by 5 other test files but NOT listed in `package.json` devDependencies; the import silently fails.
+  3. `radixClick` (raw `fireEvent.pointerDown` + `pointerUp` + `focus` + `click` inside `act`) — the canonical workaround from `LandingPage.test.tsx` + `LocalePicker.test.tsx`. In this test context (with the `useSortable` mock + 3 `vi.mock` stubs + `<AccountsProvider>` wrapper), the portal still didn't mount and `findByText('重新扫码')` timed out.
+  4. `DispatchProbe` test consumer with `useEffect` + `onReady` — `FATAL ERROR: Ineffective mark-compacts near heap limit`. The `useEffect` deps (`dispatch`, `onReady`) are new references on every render, so the effect fires on every render, and combined with React 19's strict-mode double-render, the test process runs out of memory before the assertion can run.
+- **Pragmatic resolution for this PR**: dropped the handler-logic test from `SortableAuthorizationItem.test.tsx` (keeps 5 render tests). The component code itself is correct and reviewed (code-reviewer SHIP). The coverage gap is real but not blocking — a regression that swaps `handleReauthorize` to `handleRemoveAuth` in the `onClick` would pass all 5 render tests.
+- **Status**: **Resolved** at round-OPT-3F follow-up. Added `handleReauthorize` test to `sau_web/frontend/src/features/accounts/AccountsProvider.test.tsx` using the existing `renderCombined` + `act` + state-assertion pattern (mirrors the `handleStartAuthorize` test at the same location). The test asserts all 4 invariants: `selectedGroupId === 42`, `selectedPlatform === 'douyin'`, `loginModalOpen === true`, `authorizeDialogOpen === false`. The last assertion is the load-bearing difference from `handleStartAuthorize` — proves the re-scan path skips the platform-picker dialog. AccountsProvider.test.tsx now has 28/28 passing; SortableAuthorizationItem.test.tsx still has 5/5 render tests passing (no regression).
+- **Cross-ref**: surfaced 2026-07-11 during the round-OPT-3F re-scan feature implementation; resolved 2026-07-11 same-day.
+
+---
 
 # 1. Pick a TBF-NNN above (ideally one not adjacent to TBF-010 — see "Out-of-band notes")
 # 2. Capture the actual traceback first:

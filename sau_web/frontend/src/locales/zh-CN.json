@@ -153,6 +153,11 @@
     "back": "返回",
     "loading": "加载中…"
   },
+  "accounts": {
+    "actions": {
+      "menu": "授权操作"
+    }
+  },
   "tasks": {
     "page": {
       "title": "任务列表",

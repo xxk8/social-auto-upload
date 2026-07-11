@@ -1,21 +1,23 @@
 import { memo } from 'react'
-import { useSortable } from '@dnd-kit/react/sortable'
-import { GripVertical, MoreHorizontal, Unlink } from 'lucide-react'
+import { useDraggable } from '@dnd-kit/react'
+import { useTranslation } from 'react-i18next'
+import { GripVertical, LogIn, MoreHorizontal, QrCode, Unlink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/Components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/Components/ui/dropdown-menu'
 import { PlatformBadge } from './PlatformBadge'
-import type { AccountAuthorization } from '@/api/client'
-import {useAccountsDispatch} from './AccountsProvider.helpers';import { toneChipClasses, toneFillBgClass, type Tone } from '@/lib/tone'
+import { QR_LOGIN_PLATFORMS, type AccountAuthorization } from '@/api/client'
+import { useAccountsDispatch } from './AccountsProvider.helpers'
+import { toneChipClasses, toneFillBgClass, type Tone } from '@/lib/tone'
 
 interface SortableAuthorizationItemProps {
   auth: AccountAuthorization
-  index: number
   groupId: number
 }
 
@@ -45,16 +47,28 @@ function AuthorizationStatusPill({ valid, stale, ageHours }: { valid: boolean; s
 
 function SortableAuthorizationItemImpl({
   auth,
-  index,
   groupId,
 }: SortableAuthorizationItemProps) {
+  const { t } = useTranslation()
   const dispatch = useAccountsDispatch()
-  const { ref, isDragging } = useSortable({
+  const { ref, isDragging } = useDraggable({
     id: `auth:${groupId}:${auth.id}`,
-    index,
+    data: { groupId, authId: auth.id, platform: auth.platform },
   })
 
   const platformLabel = dispatch.getPlatformLabel(auth.platform)
+  // Re-scan gate: surface the action for both "失效" (cookie file
+  // missing/broken, valid: false) and "过期" (cookie file present but
+  // expired, valid && stale). Both cases need the same recovery flow
+  // (re-open LoginProgressModal for that platform). Hidden for
+  // valid-and-fresh authorizations where re-scanning is unnecessary.
+  const canRescan = !auth.valid || auth.stale
+  // Icon + label branch: QR platforms get "重新扫码" with the QrCode
+  // icon (matches the modal's primary affordance). Non-QR platforms
+  // (tiktok / baijiahao) get "重新登录" with the LogIn icon — the
+  // modal falls through to the CLI-instruction view for these, so
+  // "重新扫码" would be misleading.
+  const isQrPlatform = QR_LOGIN_PLATFORMS.includes(auth.platform)
 
   return (
     <div
@@ -99,12 +113,27 @@ function SortableAuthorizationItemImpl({
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground/40 hover:text-foreground hover:bg-muted/50 opacity-100 md:opacity-0 md:group-hover/auth:opacity-100 transition-all"
-              aria-label="More actions"
+              aria-label={t('accounts.actions.menu', 'Authorization actions')}
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-36">
+            {canRescan && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => dispatch.handleReauthorize(groupId, auth.platform)}
+                data-testid={`reauthorize-${groupId}-${auth.platform}`}
+              >
+                {isQrPlatform ? (
+                  <QrCode className="h-3.5 w-3.5 mr-2" />
+                ) : (
+                  <LogIn className="h-3.5 w-3.5 mr-2" />
+                )}
+                {isQrPlatform ? '重新扫码' : '重新登录'}
+              </DropdownMenuItem>
+            )}
+            {canRescan && <DropdownMenuSeparator />}
             <DropdownMenuItem
               className="text-destructive focus:text-destructive cursor-pointer"
               onClick={() => void dispatch.handleRemoveAuth(groupId, auth.platform)}
