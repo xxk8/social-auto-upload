@@ -151,11 +151,33 @@
   },
   "common": {
     "back": "Back",
+    "close": "Close",
     "loading": "Loading…"
   },
   "accounts": {
     "actions": {
       "menu": "Authorization actions"
+    },
+    "group": {
+      "rename": "Rename group",
+      "add_authorization": "Add authorization",
+      "delete": "Delete group"
+    },
+    "toolbar": {
+      "clear_search": "Clear search",
+      "grid_view": "Grid view",
+      "list_view": "List view"
+    },
+    "login": {
+      "interactive_browser_handoff": {
+        "title": "Browser is ready — switch to the window to sign in",
+        "guidance_l1": "This platform has no web QR sign-in flow; the backend has launched a headed Chromium on the host machine.",
+        "guidance_l2": "In the popup window, complete Google account + 2FA in the order guided by the platform.",
+        "guidance_l3": "No button click needed after — the backend watches login state and saves the cookie automatically.",
+        "cta_label": "Backend is waiting on the headed Chrome sign-in · auto-cancels after 5 minutes",
+        "timeout_label": "5-minute timeout reached, this authorization was cancelled",
+        "status_label": "Headed Chrome waiting"
+      }
     }
   },
   "tasks": {
@@ -308,15 +330,49 @@
     },
     "list": {
       "empty_title": "No projects yet",
-      "empty_description": "Create your first script project — build a four-act structure around a one-line spark, and turn storyboard generation from thinking into running."
+      "empty_description": "Create your first script project — build a four-act structure around a one-line spark, and turn storyboard generation from thinking into running.",
+      "empty_cta": "Create your first project",
+      "filtered_empty_title": "No matching projects",
+      "filtered_empty_description": "Try a different keyword or clear the filters.",
+      "clear_filters": "Clear filters"
+    },
+    "toolbar": {
+      "search_placeholder": "Search title or synopsis…",
+      "filter_all": "All",
+      "sort_label": "Sort by",
+      "sort_updated": "Recently updated",
+      "sort_created": "Recently created",
+      "sort_title": "Title A→Z",
+      "count": "{{count}} projects"
     },
     "card": {
       "status_draft": "Draft",
       "status_generating": "Generating",
       "status_ready": "Ready",
       "status_exported": "Exported",
+      "episode_count": "{{count}} ep",
       "delete_aria": "Delete project {{title}}",
       "delete_confirm": "Delete project \"{{title}}\"? This cannot be undone."
+    },
+    "create": {
+      "title": "New project",
+      "description": "Enter a one-line spark; later you can generate multi-episode scripts and timeline storyboards around it.",
+      "label_title": "Title",
+      "placeholder_title": "e.g. Ashes",
+      "label_synopsis": "One-line spark",
+      "placeholder_synopsis": "e.g. A young swordsman shelters from a blizzard in a mountain shrine and awakens overnight — a decade of grudges begins to unfold.",
+      "label_style": "Style preset",
+      "style_optional": "(optional)",
+      "style_custom_placeholder": "Enter a custom style, e.g. cyberpunk, wet neon reflections",
+      "cancel": "Cancel",
+      "submit": "Create project",
+      "submitting": "Creating…",
+      "error_generic": "Create failed",
+      "preset_ink": "Ink Wuxia 9:16",
+      "preset_urban": "Urban drama 16:9",
+      "preset_ancient": "Ancient short drama 9:16",
+      "preset_cyberpunk": "Cyberpunk",
+      "preset_custom": "Custom"
     },
     "export": {
       "copy": "Copy Markdown",

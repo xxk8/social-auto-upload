@@ -21,6 +21,8 @@ import { PlatformPieChart } from '@/features/analytics/PlatformPieChart'
 import { FailureReasonChart } from '@/features/analytics/FailureReasonChart'
 import { AccountActivityTable } from '@/features/analytics/AccountActivityTable'
 import { SuccessRateTrendChart } from '@/features/analytics/SuccessRateTrendChart'
+import { MetricsEffectPanel } from '@/features/analytics/MetricsEffectPanel'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs'
 import { api } from '@/api/client'
 
 /**
@@ -179,6 +181,12 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      <Tabs defaultValue="overview" className="mt-4">
+        <TabsList>
+          <TabsTrigger value="overview">概览</TabsTrigger>
+          <TabsTrigger value="effect">效果</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
       {/* ── Stats cards (4) ─────────────────────────────── */}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard
@@ -234,7 +242,12 @@ export default function AnalyticsPage() {
           data={accounts ?? []}
           loading={accountsLoading}
         />
-      </div>
+        </div>
+        </TabsContent>
+        <TabsContent value="effect">
+          <MetricsEffectPanel range={range} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
