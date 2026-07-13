@@ -142,6 +142,11 @@ function mountInboxPage() {
 beforeEach(async () => {
   mockUseAuth.mockReset()
   setAuth()
+  // Wipe the persisted inboxStore blob before each test so the
+  // persist middleware's hydration cycle starts from a clean
+  // baseline (in-memory reset() alone is NOT sufficient — the
+  // middleware auto-rehydrates from localStorage after).
+  localStorage.removeItem('sau-inbox')
   // Reset the Zustand store between tests so entries / inflight /
   // selection / filter state from a previous test don't bleed into
   // the next test's mountInboxPage() render.

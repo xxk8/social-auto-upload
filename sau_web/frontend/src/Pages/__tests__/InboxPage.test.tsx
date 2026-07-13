@@ -193,6 +193,11 @@ beforeEach(async () => {
   // Reset the Zustand inboxStore between tests so entries / inflight /
   // selection / filter state from a previous test don't bleed into
   // the next. The store is a module-level singleton — without this
+  // Wipe the persisted inboxStore blob before each test so the
+  // persist middleware's hydration cycle starts from a clean
+  // baseline (in-memory reset() alone is NOT sufficient — the
+  // middleware auto-rehydrates from localStorage after reset).
+  localStorage.removeItem('sau-inbox')
   // reset, a test that adds entries would leave them in the store for
   // the next test's mountInboxPage(), causing false positives.
   useInboxStore.getState().reset()
@@ -224,7 +229,7 @@ describe('InboxPage · AuthGuard + chrome + key interactions', () => {
 
   // AuthGuard wraps the page in App.tsx. When isAuthenticated is
   // false, AuthGuard fires <Navigate to="/login" replace />, so the
-  // page content never mounts. The "素材收件箱" heading uniquely
+  // page content never mounts. The "下载中心" heading uniquely
   // belongs to this page — its absence is a positive bounce signal.
   // ── Paste-from-clipboard button ────────────────────────────────────────
 
@@ -649,18 +654,18 @@ describe('InboxPage · AuthGuard + chrome + key interactions', () => {
     setAuth({ isAuthenticated: false })
     mountInboxPage()
     expect(
-      screen.queryByRole('heading', { name: '素材收件箱' }),
+      screen.queryByRole('heading', { name: '下载中心' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByTestId('inbox-download')).not.toBeInTheDocument()
   })
 
   // ── Page chrome ───────────────────────────────────────────────────────
 
-  it('renders the PageHeader with title "素材收件箱" when authenticated', () => {
+  it('renders the PageHeader with title "下载中心" when authenticated', () => {
     setAuth()
     mountInboxPage()
     expect(
-      screen.getByRole('heading', { name: '素材收件箱' }),
+      screen.getByRole('heading', { name: '下载中心' }),
     ).toBeInTheDocument()
   })
 
