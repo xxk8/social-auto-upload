@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '@/Components/ui/page-header'
 import { useAccounts, useTasks } from '../hooks/useTasks'
@@ -20,7 +20,6 @@ import { MobileAiDrawer } from '../Components/AiRightPanel/MobileAiDrawer'
 import { useMobileDrawer } from '../hooks/useMobileDrawer'
 import type { TaskItem } from '@/api/client'
 import type { Tone } from '@/lib/tone'
-import type { AiGenerationResult } from '@/Components/AiSidebar/AiSidebar'
 import type { FormHandle, FormSnapshot } from '@/lib/chat/chatFormBridge'
 
 import { ROUTES } from '@/routes'
@@ -259,16 +258,6 @@ export default function PublishPage() {
     setAiCollapsed((v) => !v)
   }, [])
 
-  /**
-   * User taps "全部应用" on an AI result. Forward to the wizard via the
-   * same FormHandle adapter the chat pipeline uses for auto-apply —
-   * single source of truth for "{title, desc, tags} → wizard.content"
-   * routing keeps manual and auto apply paths observationally identical.
-   */
-  const handleAiGenerated = useCallback((result: AiGenerationResult) => {
-    formRef.current?.applyAiResult(result)
-  }, [])
-
   // OPT-3I: cancellable auto-navigate countdown (preserved from before
   // the AI sidebar was dropped). Reset intervals + cleanup on unmount.
   const [navigateCountdown, setNavigateCountdown] = useState<number | null>(null)
@@ -385,7 +374,6 @@ export default function PublishPage() {
           <PublishAiSidebar
             mode={wizardMode}
             platform={activePlatform}
-            onGenerated={handleAiGenerated}
             formRef={formRef}
             collapsed={aiCollapsed}
             onToggleCollapsed={handleToggleAiCollapsed}
@@ -417,7 +405,6 @@ export default function PublishPage() {
         <PublishAiSidebar
           mode={wizardMode}
           platform={activePlatform}
-          onGenerated={handleAiGenerated}
           formRef={formRef}
         />
       </MobileAiDrawer>

@@ -4,7 +4,7 @@ import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/Components/ui/tooltip'
-import PricingPage from './PricingPage'
+import PricingPage from '../PricingPage'
 
 /**
  * round-AI-paywall-v1 — pin the visitor-facing pricing free-tier

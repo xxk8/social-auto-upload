@@ -9,7 +9,7 @@ import { TooltipProvider } from '@/Components/ui/tooltip'
 import i18n from '@/lib/i18n/config'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 import { makeTask } from '@/test/fixtures'
-import type { TaskItem } from '../api/client'
+import type { TaskItem } from '../../api/client'
 
 // ─────────────────────────────────────────────────────────────────────────
 // TasksPage · i18n flip (round-2 dashboard-surface sweep)
@@ -47,7 +47,7 @@ import type { TaskItem } from '../api/client'
 // task list for that render without re-mocking the module.
 let mockTasks: TaskItem[] = []
 
-vi.mock('../hooks/useTasks', () => ({
+vi.mock('../../hooks/useTasks', () => ({
   useTasks: () => ({
     data: mockTasks,
     isLoading: false,
@@ -55,7 +55,7 @@ vi.mock('../hooks/useTasks', () => ({
   }),
 }))
 
-vi.mock('../hooks/useTaskMutations', () => ({
+vi.mock('../../hooks/useTaskMutations', () => ({
   useTaskMutations: () => ({
     refresh: vi.fn(),
     handleOpenAddModal: vi.fn(),
@@ -76,13 +76,13 @@ vi.mock('../hooks/useTaskMutations', () => ({
   }),
 }))
 
-vi.mock('../hooks/useTaskHotkeys', () => ({
+vi.mock('../../hooks/useTaskHotkeys', () => ({
   useTaskHotkeys: () => undefined,
 }))
 
 // Lazy import AFTER vi.mock declarations so the mock chain is in
 // place before TasksPage module evaluation closes over the spies.
-import TasksPage from './TasksPage'
+import TasksPage from '../TasksPage'
 
 function mountTasksPage({
   tasks = [] as TaskItem[],

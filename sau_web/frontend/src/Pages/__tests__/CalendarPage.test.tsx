@@ -18,7 +18,7 @@ vi.mock('@/features/tasks/TaskDrawer', () => ({
   TaskDrawer: () => null,
 }))
 
-import CalendarPage from './CalendarPage'
+import CalendarPage from '../CalendarPage'
 import { useCalendarTasks } from '@/hooks/useCalendarTasks'
 
 const mockUseCalendarTasks = vi.mocked(useCalendarTasks)

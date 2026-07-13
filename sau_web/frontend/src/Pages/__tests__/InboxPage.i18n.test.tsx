@@ -73,7 +73,7 @@ Object.defineProperty(globalThis.navigator, 'clipboard', {
   configurable: true,
 })
 
-import InboxPage from './InboxPage'
+import InboxPage from '../InboxPage'
 
 // Helper: seed the store with a single entry of a given status. Uses
 // the real store API (not a mock) so the production label-resolution

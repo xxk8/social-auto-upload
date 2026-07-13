@@ -28,6 +28,7 @@ import { Input } from '@/Components/ui/input'
 import {
   studioApi,
   type StudioProject,
+  type StudioEpisode,
   type StudioEpisodeCreateInput,
 } from '@/api/studio'
 import { EpisodeAppendDialog } from '@/Components/Studio/EpisodeAppendDialog'

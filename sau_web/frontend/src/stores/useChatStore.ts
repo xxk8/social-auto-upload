@@ -528,9 +528,15 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     const byId: Record<string, ChatSession> = {}
     for (const s of sessions) {
       byId[s.id] = {
-        // Backfill headId from tail for legacy persistence.
-        headId: s.headId ?? (s.messages.length > 0 ? s.messages[s.messages.length - 1]!.id : null),
         ...s,
+        // Backfill headId from tail for legacy persistence (only
+        // fires when s.headId is null AND s.messages is non-empty
+        // — the null-coalescing above is the actual logic). The
+        // spread MUST come first so this override isn't clobbered
+        // by the `headId: null` in `s` (which would silently
+        // re-introduce the legacy-orphan bug for `commitAssistantMessage`
+        // when the caller doesn't pass an explicit `parentId`).
+        headId: s.headId ?? (s.messages.length > 0 ? s.messages[s.messages.length - 1]!.id : null),
       }
     }
     set({

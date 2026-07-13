@@ -35,7 +35,7 @@ export default defineConfig({
       'src/lib/**/*.test.ts',
       'src/api/**/*.test.ts',
       'src/*.test.ts',
-      'src/**/*.test.tsx',
+      'src/**/*.test.tsx', // `**` covers co-located __tests__/ subdirs — do NOT add a separate __tests__/ glob (would be a strict subset)
     ],
     // jsdom 需要这些 polyfill 来支持常见浏览器 API
     environmentOptions: {

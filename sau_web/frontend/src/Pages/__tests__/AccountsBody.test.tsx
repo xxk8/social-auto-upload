@@ -6,7 +6,7 @@ import {
   type AccountsDispatch,
   type AccountsState,
 } from '@/features/accounts/AccountsProvider.helpers'
-import { AccountsBody } from './AccountsPage'
+import { AccountsBody } from '../AccountsPage'
 
 // ── Stub child components ──────────────────────────────────────────────
 // Each stub exposes a stable data-testid the tests assert on. Mirrors

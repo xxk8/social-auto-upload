@@ -4,7 +4,7 @@ import { TestProviders } from '@/test/render-harness'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 import { mockUseAuth } from '@/test/auth-router-spies'
 import { AuthGuard } from '@/features/auth/AuthGuard'
-import AccountsPage from './AccountsPage'
+import AccountsPage from '../AccountsPage'
 
 // ── framework-level mocks ──────────────────────────────────────────────
 

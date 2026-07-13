@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ToastProvider } from '@/Components/ui/toast'
 import { mockUseAuth } from '@/test/auth-router-spies'
-import ProfilePage from './ProfilePage'
+import ProfilePage from '../ProfilePage'
 
 // useAuth is mocked so ProfilePage reads directly from
 // mockUseAuth.mockReturnValue({ user, ... }) without booting the
@@ -26,7 +27,9 @@ function mountProfile() {
   return render(
     <QueryClientProvider client={makeQueryClient()}>
       <MemoryRouter initialEntries={['/dashboard/account']}>
-        <ProfilePage />
+        <ToastProvider>
+          <ProfilePage />
+        </ToastProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   )

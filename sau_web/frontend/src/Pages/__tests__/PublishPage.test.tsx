@@ -20,7 +20,7 @@ vi.mock('@/features/auth/useAuth', () => ({
 // axios calls during render → fetch-fail noise (and on CI, real
 // retry storms). Stub them with empty `data` so the hooks return
 // stable references and the page's render loop completes synchronously.
-vi.mock('@/hooks/useTasks', () => ({
+vi.mock('../../hooks/useTasks', () => ({
   useAccounts: () => ({
     data: [],
     refetch: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock('@/hooks/useTasks', () => ({
   }),
 }))
 
-vi.mock('@/hooks/useAccountGroups', () => ({
+vi.mock('../../hooks/useAccountGroups', () => ({
   useAccountGroups: () => ({
     data: accountGroupsMockStateRef.current.data,
     isLoading: accountGroupsMockStateRef.current.isLoading,
@@ -68,7 +68,7 @@ const defaultPublishState = {
   setSubmitSuccess: vi.fn(),
 }
 
-vi.mock('@/stores/publishStore', () => ({
+vi.mock('../../stores/publishStore', () => ({
   usePublishStore: (selector: (s: typeof defaultPublishState) => unknown) =>
     selector(defaultPublishState),
 }))
@@ -110,12 +110,12 @@ vi.mock('@/features/publish/PublishStatsBar', () => ({
 // open-conditional: null when closed, render-children when open — this
 // mirrors the real Drawer's hide/show semantics so a future regression
 // in the open-state machine surfaces here.
-vi.mock('@/Components/AiRightPanel/PublishAiSidebar', () => ({
+vi.mock('../../Components/AiRightPanel/PublishAiSidebar', () => ({
   PublishAiSidebar: () => (
     <div data-testid="publish-ai-sidebar">PublishAiSidebar</div>
   ),
 }))
-vi.mock('@/Components/AiRightPanel/MobileAiDrawer', () => ({
+vi.mock('../../Components/AiRightPanel/MobileAiDrawer', () => ({
   MobileAiDrawer: ({
     open,
     children,
@@ -132,7 +132,7 @@ let mobileDrawerState: { isMobile: boolean; isOpen: boolean } = {
   isOpen: false,
 }
 
-vi.mock('@/hooks/useMobileDrawer', () => ({
+vi.mock('../../hooks/useMobileDrawer', () => ({
   useMobileDrawer: () => ({
     isMobile: mobileDrawerState.isMobile,
     isOpen: mobileDrawerState.isOpen,
@@ -143,7 +143,7 @@ vi.mock('@/hooks/useMobileDrawer', () => ({
 
 // ── imports (post-mock) ────────────────────────────────────────────────
 
-import PublishPage from './PublishPage'
+import PublishPage from '../PublishPage'
 import { usePublishWizardStore } from '@/stores/publishWizardStore'
 import type { AccountGroup } from '@/api/client'
 

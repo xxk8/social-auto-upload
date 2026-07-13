@@ -18,6 +18,21 @@ export default defineConfig({
   server: {
     port: 5180,
     open: false,
+    // Defense-in-depth: ignore backend write-target `videos/` (where
+    // `web_runner/utils.py::INBOX_DIR = BASE_DIR/videos/inbox` saves
+    // downloads). Vite's default `server.watch` root is the project
+    // root — `sau_web/frontend/` — which does NOT include the repo
+    // root's `videos/`, so this rule is a no-op against the current
+    // config. Guards against future additions to
+    // `server.watch.additionalPaths` (a one-line LATER addition
+    // could re-introduce a chokidar event for any `.mp4` written by
+    // the inbox download path, triggering a full page reload that
+    // aborts the in-flight POST `/api/inbox/download`). Pattern is
+    // chokidar-glob relative to vite's cwd (`sau_web/frontend/`),
+    // so 2 `../` ascend past `sau_web/` to the repo root.
+    watch: {
+      ignored: ['**/../../videos/**'],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:6001',

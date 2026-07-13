@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import PersonalizationPage from './PersonalizationPage'
+import PersonalizationPage from '../PersonalizationPage'
 import userEvent from '@testing-library/user-event'
 
 // useTheme is mocked so PersonalizationPage reads the theme from

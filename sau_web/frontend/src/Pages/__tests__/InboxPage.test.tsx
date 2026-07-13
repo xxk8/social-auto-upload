@@ -72,7 +72,7 @@ Object.defineProperty(globalThis.navigator, 'clipboard', {
 
 // ── imports (post-mock) ────────────────────────────────────────────────
 
-import InboxPage from './InboxPage'
+import InboxPage from '../InboxPage'
 import { useInboxStore } from '@/stores/inboxStore'
 
 // ── helpers (module-level, shared across describe blocks) ───────────────

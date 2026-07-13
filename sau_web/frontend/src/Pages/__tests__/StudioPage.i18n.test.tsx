@@ -46,7 +46,7 @@ vi.mock('@/api/studio', () => ({
   },
 }))
 
-import StudioPage from './StudioPage'
+import StudioPage from '../StudioPage'
 
 function setAuth() {
   mockUseAuth.mockReturnValue({

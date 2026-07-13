@@ -5,6 +5,22 @@ export interface StudioProject {
   title: string
   synopsis: string
   style: string | null
+  /**
+   * Visual Style Preset envelope (round-OPT-presets-v1). The page
+   * picker writes `{ preset, version: 1 }`; the catalog is the
+   * authoritative source of valid `preset` ids, but the row keeps
+   * the user's pick verbatim server-side (option B3) so a future
+   * catalog-renamed preset can be surfaced as "未识别 · 回退到
+   * Classic" instead of silently switching classes.
+   *
+   * `version: number` (not literal `1`) keeps the contract forward-
+   * compatible: a backend bump to v2 schema only requires a
+   * discriminated-union upgrade on the read side, not a type
+   * change here. Mutation input on the PATCH side still uses
+   * `version: 1` literal — the literal-to-number widening is
+   * allowed by TS subtyping.
+   */
+  render_config?: { preset: string; version: number } | null
   status: 'draft' | 'generating' | 'ready' | 'exported'
   owner_user_id: number
   created_at: string
