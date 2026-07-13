@@ -9,9 +9,9 @@
 | Async job state + retry policy                             | `web_runner/studio_backends/kling.py::KlingAPIClient`   |
 | Per-tier quota (KlingSeconds / ZhipuSeconds)               | `web_runner/middleware/usage_metering.py` (extends existing) |
 
-## ADDED requirements
+## ADDED Requirements
 
-### `requirement: dispatch renders through StudioRenderBackend`
+### Requirement: dispatch renders through StudioRenderBackend
 
 `_render_via_remotion`'s body SHALL dispatch through a
 `StudioRenderBackend::render` impl picked from
@@ -58,7 +58,7 @@
 - **AND** the operator SHALL see a toast: "Kling API key 缺失,
   本地渲染兜底"
 
-### `requirement: per-vendor quota enforcement`
+### Requirement: per-vendor quota enforcement
 
 `web_runner/middleware/usage_metering.py` SHALL enforce
 per-vendor monthly quotas on free-tier users. Pro/Studio tiers
@@ -82,7 +82,7 @@ are exempt.
 - **WHEN** operator triggers a Kling render
 - **THEN** the dispatch SHALL proceed without quota checks
 
-### `requirement: picker exposes vendor backend`
+### Requirement: picker exposes vendor backend
 
 `StudioDetailPage.tsx` SHALL render a second dropdown beside the
 Visual Style Preset picker with vendor options.
@@ -105,7 +105,7 @@ Visual Style Preset picker with vendor options.
   "kling", "version": 1}}`
 - **AND** the next render SHALL route via KlingBackend
 
-### `requirement: per-project render audit query`
+### Requirement: per-project render audit query
 
 `GET /api/admin/audit/render-backend?days=N` SHALL return the
 count of renders per backend per day for ops-side reporting.
@@ -119,7 +119,7 @@ count of renders per backend per day for ops-side reporting.
 - **AND** the query SHALL return within 200 ms on 100k-row
   production-size tables
 
-## MODIFIED requirements
+## MODIFIED Requirements
 
 - **`requirement: catalog entries are TS-only`** (from
   `studio-visual-presets/specs/visual-presets/spec.md`):
@@ -133,7 +133,7 @@ count of renders per backend per day for ops-side reporting.
   `preferred_backend: 'remotion'|'kling'|'zhipu'|null` against
   a whitelist. Unknown values rejected with a 400.
 
-## REMOVED requirements
+## REMOVED Requirements
 
 None.
 

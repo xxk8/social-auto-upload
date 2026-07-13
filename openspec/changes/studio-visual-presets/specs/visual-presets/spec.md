@@ -14,9 +14,9 @@ catalog id string. Drift between TS catalog and PATCH payloads is
 caught by the bridge (`getPresetById` resolves unknown ids to
 Classic).
 
-## ADDED requirements
+## ADDED Requirements
 
-### `requirement: catalog entries are TS-only`
+### Requirement: catalog entries are TS-only
 
 The Studio renderer SHALL consume Visual Style Presets from a
 single-source-of-truth TypeScript catalog at
@@ -44,12 +44,12 @@ pre-PR-A render), `noir` (cinematic dark), `vibrant`
 - **AND** the picker SHALL NOT offer the renamed id as an option
   until the catalog update lands in the user's deployed bundle
 
-### `requirement: PATCH validates shape`
+### Requirement: PATCH validates shape
 
-A PATCH to `/api/studio/projects/{id}` body `render_config` field
-SHALL accept `null`, an empty string, a dict (optionally with a
-`preset` sub-string of 1..64 chars), or be rejected with a
-400-status Chinese error message.
+A PATCH to `/api/studio/projects/{id}` body `render_config` field SHALL
+accept `null`, an empty string, a dict (optionally with a `preset`
+sub-string of 1..64 chars), or be rejected with a 400-status Chinese
+error message.
 
 #### Scenario: clear column with null
 
@@ -135,7 +135,7 @@ SHALL accept `null`, an empty string, a dict (optionally with a
   (mentions either `"不能为空字符串"` or `"null"` substring, so
   the picker-UI flow stays unambiguous vs the API-level flow)
 
-### `requirement: render payload includes render_config`
+### Requirement: render payload includes render_config
 
 `_render_via_remotion` SHALL inject the full
 `project.render_config` JSONB dict into
@@ -162,7 +162,7 @@ SHALL accept `null`, an empty string, a dict (optionally with a
 - **AND** `<SceneCard>` SHALL render with the vibrant palette
   (`#f43f5e` accent, `800` title weight, `bounce` curve)
 
-### `requirement: picker UI beside render button`
+### Requirement: picker UI beside render button
 
 `/dashboard/studio/{id}` SHALL render a Visual Style Preset picker
 dropdown inline beside the existing "渲染成片" button.
@@ -200,7 +200,7 @@ dropdown inline beside the existing "渲染成片" button.
 - **AND** a "未识别 · 回退到 Classic" status hint SHALL appear
   with the original unknown id in the `title` tooltip
 
-### `requirement: bridge fallback unknown ids to classic`
+### Requirement: bridge fallback unknown ids to classic
 
 `presets.ts::getPresetById` SHALL return `PRESETS[0]` (Classic)
 when the id argument is `null` / `undefined` / empty / not in
@@ -215,7 +215,7 @@ the `PRESETS` array. The function SHALL NOT throw.
 - **AND** `<SceneCard>`'s rendered hex tokens SHALL match
   `PRESETS[0]` (not the legacy `noir` values)
 
-### `requirement: idempotent ALTER`
+### Requirement: idempotent ALTER
 
 `_init_db_postgres` SHALL add the `render_config` JSONB column via
 `ALTER TABLE … ADD COLUMN IF NOT EXISTS render_config JSONB`
@@ -231,10 +231,10 @@ column-add precedent).
 - **AND** no `column already exists` error SHALL surface in the
   startup logs
 
-## MODIFIED requirements
+## MODIFIED Requirements
 
 None.
 
-## REMOVED requirements
+## REMOVED Requirements
 
 None.

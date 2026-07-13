@@ -1,0 +1,31 @@
+{
+  "name": "mediacrawler-integration",
+  "created": "2026-07-13T00:00:00+08:00",
+  "status": "implemented",
+  "artifacts": {
+    "proposal": "将 MediaCrawler 的全部 7 个平台爬取能力直接嵌入 social-auto-upload，实现单项目单部署的评论爬取、竞品监控、IP代理、AI情感分析、自动回复建议",
+    "design": "单体集成模式：在 crawler/ 目录下重建 MediaCrawler 全部模块，替换存储层为 PostgreSQL，集成 IP 代理池，新增 AI 情感分析和自动回复建议",
+    "tasks": {
+      "total": 81,
+      "completed": 81
+    }
+  },
+  "layers": [
+    "cli",
+    "api",
+    "frontend"
+  ],
+  "platforms": [
+    "xhs",
+    "douyin",
+    "kuaishou",
+    "bilibili",
+    "weibo",
+    "tieba",
+    "zhihu"
+  ],
+  "applyReady": false,
+  "specs": [
+    "specs/crawler-core/spec.md"
+  ]
+}

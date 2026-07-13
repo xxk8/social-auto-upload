@@ -22,6 +22,7 @@ from cli.models import (
 from cli.platforms import (
     baijiahao,
     bilibili,
+    crawl,
     douyin,
     kuaishou,
     tencent,
@@ -357,6 +358,45 @@ async def _dispatch_baijiahao(args: argparse.Namespace) -> int:
     raise RuntimeError(f'Unsupported Baijiahao action: {args.action}')
 
 
+async def _dispatch_crawl(args: argparse.Namespace) -> int:
+    """Dispatch ``sau crawl <action>`` to :mod:`cli.platforms.crawl`.
+
+    Three action verbs as set up by :func:`cli.parser._add_crawl_subcommands`:
+
+      * ``search``   — ``--platform`` / ``--keywords`` / ``--max-count`` / ``--page-num`` / ``--detach`` / ``--poll-timeout``
+      * ``detail``   — ``--platform`` / ``--post-ids``  / ``--detach`` / ``--poll-timeout``
+      * ``comments`` — ``--platform`` / ``--post-ids``  / ``--max-count`` / ``--detach`` / ``--poll-timeout``
+
+    Each action returns a shell exit code (0 on success, 1 on a final
+    failure) — the caller (``cli/main.py``) maps this to ``sys.exit``.
+    """
+    if args.action == 'search':
+        return await crawl.search(
+            platform=args.platform,
+            keywords=args.keywords,
+            max_count=args.max_count,
+            page_num=args.page_num,
+            detach=args.detach,
+            poll_timeout=args.poll_timeout,
+        )
+    if args.action == 'detail':
+        return await crawl.detail(
+            platform=args.platform,
+            post_ids=args.post_ids,
+            detach=args.detach,
+            poll_timeout=args.poll_timeout,
+        )
+    if args.action == 'comments':
+        return await crawl.comments(
+            platform=args.platform,
+            post_ids=args.post_ids,
+            max_count=args.max_count,
+            detach=args.detach,
+            poll_timeout=args.poll_timeout,
+        )
+    raise RuntimeError(f'Unsupported crawl action: {args.action}')
+
+
 PLATFORM_REGISTRY: dict[str, Any] = {
     'douyin': _dispatch_douyin,
     'kuaishou': _dispatch_kuaishou,
@@ -365,6 +405,10 @@ PLATFORM_REGISTRY: dict[str, Any] = {
     'tencent': _dispatch_tencent,
     'tiktok': _dispatch_tiktok,
     'baijiahao': _dispatch_baijiahao,
+    # Crawler (openspec/changes/mediacrawler-integration) — read-only
+    # data-collection surface. Action verb is one of
+    # ``search`` | ``detail`` | ``comments``.
+    'crawl': _dispatch_crawl,
 }
 
 

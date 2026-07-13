@@ -1,7 +1,7 @@
 # OpenSpec 索引 · OpenSpec Index
 
 > 本文件汇总 `openspec/` 下所有变更（changes）与聚合规格（specs）的状态与用途。
-> 状态来源：`openspec list`（权威）。结构校验：`openspec validate --changes`（当前 11 通过 / 19 失败）。
+> 状态来源：`openspec list`（权威）。结构校验：`openspec validate --changes`（当前 28 通过 / 0 失败）。
 > 已归档的历史变更在 [`changes/archive/`](changes/archive/)。
 
 ---
@@ -38,26 +38,15 @@
 
 ## 2. 已完成但未归档（complete，建议 `openspec archive`）
 
-这些变更状态为 `complete`，但仍在 `changes/` 而非 `changes/archive/`。按 OpenSpec 工作流应归档。
-
-| 变更 | 任务 | 用途 |
-| --- | --- | --- |
-| [`admin-dashboard-ui-redesign`](changes/admin-dashboard-ui-redesign/) | 18/18 | 后台仪表盘 UI 重设计 |
-| [`migrate-sqlite-to-postgresql-20`](changes/migrate-sqlite-to-postgresql-20/) | 22/22 | SQLite → PostgreSQL 20 迁移 |
-| [`email-auth-login`](changes/email-auth-login/) | 49/49 | 邮箱验证码登录系统 |
-| [`drop-legacy-failing-tests-2026q3`](changes/drop-legacy-failing-tests-2026q3/) | 16/16 | 删除遗留失败测试 |
-| [`audit-account-groups-unique-collision-2026q3`](changes/audit-account-groups-unique-collision-2026q3/) | 22/22 | 审计 account_groups UNIQUE 冲突机制 |
-| [`ai-sidebar-enhancements`](changes/ai-sidebar-enhancements/) | 21/21 | AI 侧边栏增强（平台感知/历史/模板/SSE） |
-| [`ai-sidebar-content-generation`](changes/ai-sidebar-content-generation/) | 19/19 | AI 内容生成集成到 PublishPage |
-| [`add-web-visualization-shell`](changes/add-web-visualization-shell/) | 27/27 | 最小 Web 壳（React+Vite+Flask） |
+（空 — 所有已完成的变更均已归档到 §5）
 
 ---
 
 ## 3. 聚合规格 / Specs（`openspec/specs/`）
 
-共 6 个，作为跨变更的长期契约（已删除 4 个仅被已归档变更引用、且代码中无引用的废弃 spec：`bilibili-note-upload`、`chat-form-bridge`、`multi-platform-generate`、`smart-tag-recommend`）：
+共 21 个，作为跨变更的长期契约（已删除 4 个仅被已归档变更引用、且代码中无引用的废弃 spec：`bilibili-note-upload`、`chat-form-bridge`、`multi-platform-generate`、`smart-tag-recommend`）：
 
-`ai-stream-multimessage`（代码引用）· `api-reliability` · `chat-persistence` · `cli-hardening` · `frontend-polish` · `multi-turn-chat`
+`account-group-unique-collision` · `admin-card-system` · `admin-stat-card` · `ai-content-generation` · `ai-content-optimization` · `ai-generation-history` · `ai-platform-prompts` · `ai-prompt-templates` · `ai-stream-multimessage`（代码引用）· `ai-streaming-response` · `api-reliability` · `canvas-editor` · `chat-persistence` · `cli-hardening` · `crawler-core` · `email-auth` · `frontend-polish` · `legacy-failing-tests-cleanup` · `migrate-sqlite-to-postgresql-20` · `multi-turn-chat` · `web-shell`
 
 ---
 
@@ -71,13 +60,13 @@
 - **状态不同步**：部分 `_index.json` 的 `status` 与 `openspec list` 不一致（如 `cli-uploader-architecture-consistency` 在 `_index.json` 标 `proposed`，CLI 标 `in-progress`）。建议以 `openspec list` 为准，统一索引文件。
 - **索引格式不一致**：变更目录下混用 `_index.json` 与 `.openspec.yaml`，少数两者皆无（`admin-dashboard-ui-redesign`、`ai-script-studio` 等）。
 - **散落备份文件**：`changes/public-inbox-monetization/_index.bak` 应删除。
-- **校验失败**：`openspec validate --changes` 当前 19 个失败，需逐个修复（缺 `design.md`/`proposal.md` 或 spec 结构问题）。
+- **校验失败**：`openspec validate --changes` 当前 0 个失败（3 个 Studio spec 格式问题已修复：delta header 大小写 + `### Requirement:` 格式 + SHALL 关键字位置）。
 
 ---
 
 ## 5. 已归档（参考）
 
-[`changes/archive/`](changes/archive/) 下 4 个：`2026-06-19-add-bilibili-note-support`、`2026-06-21-cli-backend-migration-review`、`2026-06-24-ai-sidebar-multi-turn-chat`、`2026-06-27-ai-content-generation`。
+[`changes/archive/`](changes/archive/) 下 15 个：`2026-06-19-add-bilibili-note-support`、`2026-06-21-cli-backend-migration-review`、`2026-06-24-ai-sidebar-multi-turn-chat`、`2026-06-27-ai-content-generation`、`2026-07-07-studio-whiteboard`、`2026-07-08-webhook-notifications`、`2026-07-13-add-web-visualization-shell`、`2026-07-13-admin-dashboard-ui-redesign`、`2026-07-13-ai-sidebar-content-generation`、`2026-07-13-ai-sidebar-enhancements`、`2026-07-13-audit-account-groups-unique-collision-2026q3`、`2026-07-13-drop-legacy-failing-tests-2026q3`、`2026-07-13-email-auth-login`、`2026-07-13-mediacrawler-integration`、`2026-07-13-migrate-sqlite-to-postgresql-20`。
 
 ---
 
@@ -85,12 +74,12 @@
 
 > 本节追踪上一轮 wholesale `## 概述 → ## ADDED Requirements` 迁移遗留的 stub 规格，状态为「待回填」。
 
-上一轮 openspec delta-format 迁移后，`openspec/changes/*/specs/*/spec.md` 下有 **57** 个文件包含 `openspec delta-format stub` 标记。这些是占位符，不是正式规格。CI 在 `.github/workflows/ci.yml::openspec-stub-gate` 中以 `docs/openspec-stub-baseline.txt` 为 baseline，冻结 stub 总数禁止净增长（仅允许随 backfill 同步递减）。
+上一轮 openspec delta-format 迁移后，`openspec/changes/*/specs/*/spec.md`（不含 archive/）下有 **54** 个文件包含 `openspec delta-format stub` 标记。这些是占位符，不是正式规格。CI 在 `.github/workflows/ci.yml::openspec-stub-gate` 中以 `docs/openspec-stub-baseline.txt` 为 baseline，冻结 stub 总数禁止净增长（仅允许随 backfill 同步递减）。
 
 **回填顺序（优先级从高到低，与 GitHub Issue 一致）**：
 
 **Tier 1 — 高频功能（用户优先点）**（6 条）
-- `openspec/changes/add-web-visualization-shell/specs/web-shell/spec.md`
+- `openspec/specs/web-shell/spec.md`（已归档变更 `add-web-visualization-shell` 的 spec 已提升到此）
 - `openspec/changes/admin-dashboard-social-login/specs/admin-dashboard/spec.md`
 - `openspec/changes/admin-dashboard-social-login/specs/social-login/spec.md`
 - `openspec/changes/platform-value-upgrade-2026-q3/specs/publish-wizard/spec.md`
@@ -108,7 +97,8 @@
 - `youtube-full-integration` 5 条 · `account-health-monitoring` 4 条 · `task-sse-streaming` 3 条 · `script-studio` 3 条 · `inbox-multi-platform` 4 条 · `add-web-inbox` 1 条
 
 **Tier 4 — 清理 / 小众**（7 条）
-- `ai-sidebar-bottom-panel` 3 条 · `audit-account-groups-unique-collision-2026q3` · `drop-legacy-failing-tests-2026q3` · `fix-baijiahao-schedule-time` · `phase5-uploader-migration-tail`
+- `ai-sidebar-bottom-panel` 3 条 · `fix-baijiahao-schedule-time` · `phase5-uploader-migration-tail`
+  - 已归档：`audit-account-groups-unique-collision-2026q3` · `drop-legacy-failing-tests-2026q3`（spec 已提升到 `openspec/specs/`）
 
 **回填流程**（内部追踪，backfill assignee 协同）：
 1. 选定一个文件，将 `### Requirement: ... (openspec delta-format stub ...)` 与 `#### Scenario: ... (stub)` 改写为正式 delta 格式（参考 `studio-whiteboard/specs/canvas-editor/spec.md` 为模板）。
