@@ -17,6 +17,7 @@ export interface SSEHandlers {
   onPlatformError?: (data: unknown) => void
   onVariantResult?: (data: unknown) => void
   onVariantError?: (data: unknown) => void
+  onGenerationDone?: (data: { episodes: unknown[] }) => void
 }
 
 /**
@@ -113,7 +114,19 @@ export async function readSSEStream(
               case 'variant_error':
                 handlers.onVariantError?.(data)
                 break
+              case 'generation_done':
+                if (handlers.onGenerationDone && typeof data === 'object' && data !== null) {
+                  handlers.onGenerationDone(data as { episodes: unknown[] })
+                }
+                break
               case 'error':
+                // TODO: localize error messages by code. The
+                // /api/crawl/search-stream endpoint emits
+                // `{code: "missing_account", message: "..."}` on
+                // missing-cookie — the backend's English message
+                // leaks to the user via onError → task list. Detect
+                // known codes here and emit a Chinese hint instead
+                // of the raw backend message.
                 handlers.onError?.(data.message || 'Unknown error')
                 return
             }
