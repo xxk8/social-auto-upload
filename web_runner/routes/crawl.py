@@ -196,14 +196,15 @@ def crawl_search_stream():
     ``search_stream``, the base implementation streams the full
     ``search()`` result at the end.
 
-    TODO: only ``DouyinCrawler`` defines a real ``search_stream()``
-    async generator. The other 6 platforms (xhs/ks/bili/wb/tieba/
-    zhihu) don't, so this route currently fails with
-    ``AttributeError`` → generic SSE ``event: error``. Promote
-    ``_run_async_gen`` + add a default ``search_stream()`` to
-    ``crawler.base.base_crawler.AbstractCrawler`` (yields from
-    ``self.search()``). Full design in the previous round's audit
-    recommendation (a).
+    Note: ``AbstractCrawler.search_stream`` (base default at
+    ``crawler/base/base_crawler.py``) yields from ``self.search()``,
+    so the 6 non-douyin platforms (xhs/ks/bili/wb/tieba/zhihu) work
+    out-of-the-box via inheritance — only ``DouyinCrawler`` overrides
+    it for true incremental async streaming. See
+    ``tests/test_crawler.py::TestAbstractCrawlerSubcontract::test_six_non_douyin_platforms_inherit_search_stream``
+    for the lock-in test guarding this contract. The previous
+    AttributeError concern (round-MC-2024 audit) was based on
+    outdated info; the base default was added before this round.
 
     Request body::
 
