@@ -1,0 +1,11 @@
+{
+  "id": "crawler-search-stream",
+  "title": "Crawler SSE search-stream contract (aclose race fix + 401 missing_account + concurrency limit)",
+  "status": "in-progress",
+  "created": "2026-07-14",
+  "proposal": "proposal.md",
+  "tasks": "tasks.md",
+  "specs": [
+    "specs/search-stream/spec.md"
+  ]
+}
