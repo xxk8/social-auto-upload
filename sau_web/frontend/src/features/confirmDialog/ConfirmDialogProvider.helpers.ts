@@ -34,6 +34,7 @@
 export type ConfirmKind =
   | 'deleteApiKey'
   | 'deleteHistoryEntry'
+  | 'deleteGroup'
 
 /**
  * Per-kind request payload. Each branch declares exactly the data

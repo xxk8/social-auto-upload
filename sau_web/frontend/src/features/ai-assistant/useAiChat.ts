@@ -469,7 +469,7 @@ export function useAiChat(params: UseAiChatParams): UseAiChatResult {
    * from being scheduled at all.
    */
   const runFullflow = useCallback(
-    async (text: string, images: string[] = []) => {
+    async (text: string, _images: string[] = []) => {
       const ctrl = acquire()
       try {
         const enhanced = text.trim() ? await enhanceInternal(ctrl, text) : text

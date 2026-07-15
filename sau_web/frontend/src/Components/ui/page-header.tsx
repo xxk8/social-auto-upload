@@ -17,7 +17,7 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn("flex items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-6", className)}>
+    <div className={cn("flex items-start justify-between gap-3 sm:gap-4", className)}>
       <div className="flex items-start gap-3">
         {icon && (
           <div

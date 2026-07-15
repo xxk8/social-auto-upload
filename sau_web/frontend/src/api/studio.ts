@@ -1,5 +1,9 @@
 import { request } from './request'
 
+const baseURL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
+  (import.meta.env.DEV ? '' : 'http://localhost:6001')
+
 export interface StudioProject {
   id: number
   title: string
@@ -280,6 +284,26 @@ export const studioApi = {
     return request
       .get<StudioApiEnvelope<StudioQuotaEnvelope>>('/api/usage/quota')
       .then((r) => r.data)
+  },
+
+  /**
+   * POST /api/studio/projects/<id>/generate — AI 生成四幕分集。
+   *
+   * 这是一个 SSE 端点，调用方应使用 `readSSEStream` 直接消费流。
+   * 流结束后，后端会自动把生成的 episodes 写入 DB。
+   *
+   * Example:
+   * ```ts
+   * const url = studioApi.generateEpisodes(projectId)
+   * await readSSEStream(url, {}, {
+   *   onChunk: (text) => setProgress(text),
+   *   onGenerationDone: () => queryClient.invalidateQueries(...),
+   *   onError: (msg) => toast.error(msg),
+   * })
+   * ```
+   */
+  generateEpisodes(projectId: number) {
+    return `${baseURL}/api/studio/projects/${projectId}/generate`
   },
 
   /**

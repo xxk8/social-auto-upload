@@ -99,9 +99,9 @@ vi.mock('@/Components/motion/drawer', () => ({
 }))
 
 vi.mock('@/Components/CliCommand', () => ({
-  CliCommandBlock: ({ command }: MockProps) => (
-    <pre data-tag="cli-command">{command}</pre>
-  ),
+    CliCommandBlock: ({ command }: MockProps) => (
+      <pre data-tag="cli-command">{String(command)}</pre>
+    ),
 }))
 
 import { TaskDrawer } from './TaskDrawer'

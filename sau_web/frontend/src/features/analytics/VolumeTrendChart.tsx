@@ -13,6 +13,7 @@ import { EmptyState } from '@/Components/ui/empty-state'
 import { BarChart3 } from 'lucide-react'
 import type { AnalyticsSummary } from '@/hooks/useAnalytics'
 import { formatDay } from './format'
+import { CHART_TOOLTIP_STYLE, CHART_TICK_STYLE, CHART_AXIS_LINE } from '@/lib/recharts-theme'
 
 /**
  * §12.3 — VolumeTrendChart: stacked area chart showing daily publish
@@ -24,14 +25,6 @@ interface VolumeTrendChartProps {
   data: AnalyticsSummary['by_day']
   loading: boolean
 }
-
-const tooltipStyle = {
-  backgroundColor: 'var(--popover)',
-  border: '1px solid var(--border)',
-  borderRadius: '8px',
-  fontSize: '12px',
-  color: 'var(--popover-foreground)',
-} as const
 
 export const VolumeTrendChart = memo(function VolumeTrendChart({
   data,
@@ -88,19 +81,19 @@ export const VolumeTrendChart = memo(function VolumeTrendChart({
               />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                tick={CHART_TICK_STYLE}
                 tickLine={false}
-                axisLine={{ stroke: 'var(--border)' }}
+                axisLine={CHART_AXIS_LINE}
               />
               <YAxis
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                tick={CHART_TICK_STYLE}
                 tickLine={false}
                 axisLine={false}
                 allowDecimals={false}
                 width={28}
               />
               <Tooltip
-                contentStyle={tooltipStyle}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={{ fontWeight: 600, marginBottom: 4 }}
               />
               <Area

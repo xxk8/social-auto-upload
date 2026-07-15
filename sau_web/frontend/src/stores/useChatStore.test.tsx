@@ -111,7 +111,7 @@ describe('useChatStore — appendUserMessage', () => {
     const id = session()
     useChatStore.getState().appendUserMessage(id, {
       content: '缩短标题',
-      formContextAtSend: { title: '无敌美食', desc: '', tags: '' },
+      formContextAtSend: { title: '无敌美食', desc: '', tags: [] },
     })
     const msg = useChatStore.getState().sessions[id].messages[0]
     expect(msg.formContextAtSend).toEqual({ title: '无敌美食', desc: '', tags: '' })
@@ -321,6 +321,7 @@ describe('useChatStore — hydrate + reset', () => {
     const sessions = [
       {
         id: 's1',
+        headId: null,
         title: 'first',
         messages: [],
         formMode: 'video' as const,
@@ -329,6 +330,7 @@ describe('useChatStore — hydrate + reset', () => {
       },
       {
         id: 's2',
+        headId: null,
         title: 'second',
         messages: [],
         formMode: 'note' as const,
@@ -347,6 +349,7 @@ describe('useChatStore — hydrate + reset', () => {
       [
         {
           id: 's1',
+          headId: null,
           title: 'first',
           messages: [],
           formMode: 'video' as const,

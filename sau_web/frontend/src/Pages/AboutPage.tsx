@@ -10,6 +10,9 @@ import { PricingTier } from '@/Components/ui/pricing-tier'
 import type { PricingTierProps } from '@/Components/ui/pricing-tier'
 import { PlatformIcon } from '@/Components/ui/platform-icon'
 import { useRevealStagger } from '@/lib/use-reveal-stagger'
+import { useVisitorMotion } from '@/lib/use-visitor-motion'
+import { MeshGradient } from '@/Components/motion/MeshGradient'
+import { GlowOrb, DotGridBg, CtaSpotlightGlow } from '@/Components/motion/visitor-decor'
 import { ROUTES } from '@/routes'
 import {
   Send,
@@ -150,11 +153,14 @@ function MissionSection() {
       data-section="mission"
       className="relative overflow-hidden border-b border-border/40 scroll-mt-24"
     >
-      {/* Subtle radial gradient — same allowed decoration as LandingPage */}
-      <div
-        className="absolute inset-0 bg-[radial-gradient(circle_at_top,var(--background),transparent_70%)] opacity-60"
-        aria-hidden
-      />
+      {/* Background stack — mirrors LandingPage HeroSection
+          grammar for the brand intro:
+            1. MeshGradient intensity="normal" — depth layer
+            2. GlowOrb — 600×600 breathing radial
+            3. DotGridBg — subtle dot pattern */}
+      <MeshGradient intensity="normal" />
+      <GlowOrb />
+      <DotGridBg />
       <div className="relative px-6 py-20 text-center sm:py-24">
         {/* Brand lockup */}
         <div className="flex items-center justify-center gap-3">
@@ -164,14 +170,22 @@ function MissionSection() {
           </span>
         </div>
 
-        {/* Heading cell */}
+        {/* Heading cell — title wrapped in `data-text-segment`
+            spans so `useVisitorMotion` reveals it on scroll.
+            Manual spans (NOT `<SplitText>`) — same rationale as
+            the PricingPage hero h1: SplitText splits on
+            whitespace, which gives 1 word for whitespace-less
+            Chinese strings. Manual spans work for both zh-CN
+            (no whitespace) and en-US (whitespace) translations
+            without tokenization cost. */}
         <div data-section-cell className="mx-auto mt-8 max-w-3xl">
           <SectionHeading
             variant="landing"
             eyebrow="为什么做这个项目"
             title={
               <>
-                把繁琐重复的事 <span className="text-muted-foreground">交给脚本</span>
+                <span data-text-segment className="inline-block">把繁琐重复的事</span>{' '}
+                <span data-text-segment className="inline-block text-muted-foreground">交给脚本</span>
               </>
             }
             description="social-auto-upload 是一个为视频创作者 / 矩阵运营 / MCN 设计的多平台自动发布工具。我们相信:内容分发的繁琐工作不该消耗创作者的主要精力。"
@@ -187,8 +201,21 @@ function MissionSection() {
           ))}
         </div>
 
-        {/* Product scope mockup */}
-        <ProjectScopeMockup />
+        {/* Product scope mockup — wrapped in `data-reveal-group` +
+            `data-reveal-cell` so `useRevealStagger` fades it in
+            on scroll (matches the entrance choreography of the
+            rest of the mission section). NOT given
+            `data-mockup-float` — the ProjectScopeMockup is a
+            supporting visual inside the mission section, not
+            a hero focal point like LandingPage's ProductMockup;
+            the float would over-animate a secondary element
+            and fight the section ambient parallax. The mockup
+            stays static after entrance. */}
+        <div data-reveal-group>
+          <div data-reveal-cell>
+            <ProjectScopeMockup />
+          </div>
+        </div>
       </div>
     </section>
   )
@@ -226,15 +253,22 @@ const SCALE_CARDS: ReadonlyArray<ScaleCard> = [
 
 function ScaleSection() {
   return (
-    <section data-section="scale" className="border-b border-border/40 px-6 py-16 sm:py-20">
-      {/* Heading cell */}
+    // `data-no-parallax` opts this section out of
+    // `useVisitorMotion`'s ambient section parallax. The 3
+    // stat cards display large prominent numbers ("6",
+    // "7×24h", "100%") — a continuously scrubbing -24px
+    // translate would shift the numbers as the user reads.
+    <section data-no-parallax data-section="scale" className="border-b border-border/40 px-6 py-16 sm:py-20">
+      {/* Heading cell — title wrapped in `data-text-segment`
+          spans so `useVisitorMotion` reveals it on scroll. */}
       <div data-section-cell>
         <SectionHeading
           variant="landing"
           eyebrow="项目活跃度"
           title={
             <>
-              持续迭代 <span className="text-muted-foreground">稳定可靠</span>
+              <span data-text-segment className="inline-block">持续迭代</span>{' '}
+              <span data-text-segment className="inline-block text-muted-foreground">稳定可靠</span>
             </>
           }
           description="产品每周持续迭代,6 大平台适配器持续打磨,保障多账号发布流程稳定可靠。"
@@ -329,15 +363,22 @@ const TIERS: ReadonlyArray<PricingTierProps> = [
 
 function TiersSection() {
   return (
-    <section data-section="tiers" className="border-b border-border/40 px-6 py-16 sm:py-20">
-      {/* Heading cell */}
+    // `data-no-parallax` opts this section out of
+    // `useVisitorMotion`'s ambient section parallax. The 3
+    // tier cards display prominent prices ("¥0", "¥199",
+    // "联系销售") — a continuously scrubbing -24px translate
+    // would shift the prices as the user reads.
+    <section data-no-parallax data-section="tiers" className="border-b border-border/40 px-6 py-16 sm:py-20">
+      {/* Heading cell — title wrapped in `data-text-segment`
+          spans so `useVisitorMotion` reveals it on scroll. */}
       <div data-section-cell>
         <SectionHeading
           variant="landing"
           eyebrow="三档可选"
           title={
             <>
-              按你的运营规模 <span className="text-muted-foreground">决定套餐</span>
+              <span data-text-segment className="inline-block">按你的运营规模</span>{' '}
+              <span data-text-segment className="inline-block text-muted-foreground">决定套餐</span>
             </>
           }
           description="从单兵创作者到大规模矩阵,都有合适的选择。完整的对比与价格请前往定价页。"
@@ -360,24 +401,56 @@ function TiersSection() {
 
 function CtaSection() {
   return (
-    <section data-section="cta" className="px-6 py-20 sm:py-24">
-      {/* Heading cell */}
-      <div data-section-cell className="mx-auto flex max-w-3xl flex-col items-center gap-8 text-center">
+    // `data-cta-section` is the design-system signature (matches
+    // LandingPage + PricingPage CTAs — `useVisitorMotion`
+    // recognizes it as the bottom-of-page conversion zone).
+    // `data-section="cta"` is the existing e2e test invariant
+    // from `landing-pricing-attribution.spec.ts` (expects 2
+    // `[data-section-cell]` in the cta section). Both attributes
+    // are intentional; do not "clean up" the apparent duplicate.
+    <section
+      data-cta-section
+      data-section="cta"
+      className="relative overflow-hidden px-6 py-20 sm:py-24"
+    >
+      {/* Background stack — mirrors LandingPage CtaSection:
+            1. MeshGradient intensity="dramatic" — 1.4× area,
+               +6% primary tint, faster cadence
+            2. CtaSpotlightGlow — 1100×1100 focused radial
+               centered on the h2 (data-cta-glow for 2.8s
+               yoyo pulse)
+            3. GlowOrb — soft top wash
+            4. DotGridBg — subtle texture */}
+      <MeshGradient intensity="dramatic" />
+      <CtaSpotlightGlow />
+      <GlowOrb />
+      <DotGridBg className="opacity-[0.03]" />
+      {/* Heading cell — title wrapped in `data-text-segment`
+          spans so `useVisitorMotion` reveals it on scroll. */}
+      <div data-section-cell className="relative mx-auto flex max-w-3xl flex-col items-center gap-8 text-center">
         <SectionHeading
           variant="landing"
           eyebrow="继续"
           title={
             <>
-              看完之后 <span className="text-muted-foreground">挑一个方向</span>
+              <span data-text-segment className="inline-block">看完之后</span>{' '}
+              <span data-text-segment className="inline-block text-muted-foreground">挑一个方向</span>
             </>
           }
           description="回到首页了解产品全景,或者前往定价页直接挑选最匹配的套餐。"
         />
       </div>
 
-      {/* Button row cell */}
-      <div data-section-cell className="mx-auto mt-6 flex max-w-3xl flex-col items-center gap-3 sm:flex-row sm:justify-center sm:gap-4">
-        <Button asChild size="lg" className="h-11 px-6 text-sm font-medium">
+      {/* Button row cell — primary CTA carries both `shimmer`
+          (light sweep) and `cta-ring` (animated box-shadow
+          halo), same design-system affordance as LandingPage
+          and PricingPage CTAs. */}
+      <div data-section-cell className="relative mx-auto mt-6 flex max-w-3xl flex-col items-center gap-3 sm:flex-row sm:justify-center sm:gap-4">
+        <Button
+          asChild
+          size="lg"
+          className="shimmer cta-ring h-11 px-6 text-sm font-medium"
+        >
           <Link to={ROUTES.public.pricing}>查看定价 →</Link>
         </Button>
         <Button asChild variant="outline" size="lg" className="h-11 px-6 text-sm font-medium">
@@ -405,7 +478,16 @@ function CtaSection() {
 }
 
 export default function AboutPage() {
+  // Two motion hooks share the same root ref. useRevealStagger
+  // owns the entrance choreography (data-reveal-cell /
+  // data-reveal-group fade-up). useVisitorMotion owns the
+  // ambient + interactive layer on top (text-segment reveal,
+  // mockup float on the ProjectScopeMockup, glow breathe,
+  // CTA pulse, section ambient parallax). Renamed from
+  // useLandingMotion → useVisitorMotion in round-unify-grammar
+  // so all 3 visitor surfaces share the same hook.
   const motionRoot = useRevealStagger()
+  useVisitorMotion(motionRoot)
   return (
     <div ref={motionRoot} className="min-h-screen w-full bg-background text-foreground">
       <MarketingTopBar />

@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/Components/ui/tooltip'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { UserMenu } from './UserMenu'
+import type { AuthUser } from '@/features/auth/authApi'
 import { mockUseAuth } from '@/test/auth-router-spies'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 
@@ -59,7 +60,7 @@ function mountUserMenu({
 
 function setAuth({
   user = { id: 1, email: 'qa@example.com', role: 'admin' as const },
-}: { user?: { id: number; email: string; role: 'admin' | 'user' } | null } = {}) {
+}: { user?: AuthUser | null } = {}) {
   mockUseAuth.mockReturnValue({
     user,
     isAuthenticated: user !== null,

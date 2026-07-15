@@ -38,11 +38,13 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { useMemo, useState, useCallback } from 'react'
+import { motion } from 'motion/react'
 import { useQuery } from '@tanstack/react-query'
 import { adminApi } from './adminApi'
 import { useTimeRangeFilter, TIME_RANGE_OPTIONS, type PresetRange } from './useTimeRangeFilter'
 import { trendMock } from './trendMock'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { AdminNavTabs } from './components/AdminNavTabs'
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/Components/ui/card'
 import { Skeleton } from '@/Components/ui/skeleton'
@@ -322,284 +324,308 @@ export default function AdminOverviewPage() {
   })()
 
   return (
-    <div className="p-6">
-      <AdminNavTabs />
+    <PageWrapper topNav={<AdminNavTabs />}>
       <PageHeader
-        title="系统概览"
-        description="项目使用统计与最近活动"
-        icon={<BarChart3 className="h-5 w-5 text-[var(--status-info-fg)]" />}
-        actions={
-          <div className="flex items-center gap-2">
-            <span
-              className="hidden sm:inline-flex font-mono tabular-nums text-[11px] text-muted-foreground/70"
-              aria-live="polite"
-            >
-              {lastUpdatedLabel}
-            </span>
-            {/* v3-trends days-picker — a compact 3-option segmented
-                control that gates BOTH the sparkline width AND the
-                CSV export scope. Picker is disabled mid-export so a
-                user can't change scope while a download is in
-                flight (the previous-days CSV would be on disk
-                before the new-days one starts). a11y: the wrapper
-                carries role="radiogroup" and each option carries
-                aria-checked (NOT aria-pressed) so screen readers
-                like VoiceOver announce the canonical
-                single-select radio pattern (e.g. "1 of 3, checked")
-                rather than the toggle-button "pressed/not pressed"
-                pattern — see §22.10.4 in
-                docs/DESIGN-admin-dashboard.md. */}
-            <div
-              role="radiogroup"
-              aria-label="趋势时间范围"
-              className="inline-flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5"
-            >
-              {DAYS_OPTIONS.map((opt) => {
-                const isActive = days === opt.value
-                return (
+          title="系统概览"
+          description="项目使用统计与最近活动"
+          icon={<BarChart3 className="h-5 w-5 text-[var(--status-info-fg)]" />}
+          actions={
+            <div className="flex items-center gap-2">
+              <span
+                className="hidden sm:inline-flex items-center gap-1.5 font-mono tabular-nums text-[11px] text-muted-foreground/70"
+                aria-live="polite"
+              >
+                {/* Live pulse dot — a tiny green LED that conveys the
+                    page is actively polling, not a static snapshot. */}
+                <span aria-hidden className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--status-success-fg)] opacity-60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--status-success-fg)]" />
+                </span>
+                {lastUpdatedLabel}
+              </span>
+              {/* v3-trends days-picker — a compact 3-option segmented
+                  control that gates BOTH the sparkline width AND the
+                  CSV export scope. Picker is disabled mid-export so a
+                  user can't change scope while a download is in
+                  flight (the previous-days CSV would be on disk
+                  before the new-days one starts). a11y: the wrapper
+                  carries role="radiogroup" and each option carries
+                  aria-checked (NOT aria-pressed) so screen readers
+                  like VoiceOver announce the canonical
+                  single-select radio pattern (e.g. "1 of 3, checked")
+                  rather than the toggle-button "pressed/not pressed"
+                  pattern — see §22.10.4 in
+                  docs/DESIGN-admin-dashboard.md. */}
+              <div
+                role="radiogroup"
+                aria-label="趋势时间范围"
+                className="inline-flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5"
+              >
+                {DAYS_OPTIONS.map((opt) => {
+                  const isActive = days === opt.value
+                  return (
+                    <Button
+                      key={opt.value}
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        'h-7 px-2.5 text-xs font-medium tabular-nums',
+                        isActive
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground',
+                      )}
+                      onClick={() => setDays(opt.value)}
+                      disabled={isExporting}
+                      aria-checked={isActive}
+                      data-testid={`admin-overview-days-${opt.value}`}
+                    >
+                      {opt.label}
+                    </Button>
+                  )
+                })}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={handleExportTrends}
+                disabled={isExporting}
+                data-testid="admin-overview-export-trends"
+                aria-label="下载趋势数据 CSV"
+              >
+                <Download
+                  className={cn(
+                    'h-3.5 w-3.5',
+                    isExporting && 'animate-pulse',
+                  )}
+                />
+                下载趋势
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={refresh}
+                disabled={overviewQuery.isFetching || systemQuery.isFetching}
+                data-testid="admin-overview-refresh"
+                aria-label="刷新概览数据"
+              >
+                <RefreshCw
+                  className={cn(
+                    'h-3.5 w-3.5',
+                    (overviewQuery.isFetching || systemQuery.isFetching) && 'animate-spin',
+                  )}
+                />
+                刷新
+              </Button>
+            </div>
+          }
+        />
+
+        {/* Hero stat strip — 4 premium cards with staggered motion
+            entrance (0ms / 80ms / 160ms / 240ms) + top accent stripe +
+            radial glow. Icons upgraded to h-5 w-5 for better visibility
+            inside the bigger h-10 w-10 tone-colored container. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <AdminStat
+            label="总用户数"
+            value={String(overview?.total_users ?? 0)}
+            icon={<Users className="h-5 w-5" strokeWidth={1.75} />}
+            tone="info"
+            loading={isLoading}
+            meta="全部"
+            trend={trends?.total_users}
+            delay={0}
+          />
+          <AdminStat
+            label="今日活跃"
+            value={String(overview?.active_today ?? 0)}
+            icon={<Activity className="h-5 w-5" strokeWidth={1.75} />}
+            tone="success"
+            loading={isLoading}
+            meta="活跃用户"
+            trend={trends?.active_today}
+            delay={0.08}
+          />
+          <AdminStat
+            label="总任务数"
+            value={String(overview?.total_tasks ?? 0)}
+            icon={<ListChecks className="h-5 w-5" strokeWidth={1.75} />}
+            tone="warning"
+            loading={isLoading}
+            meta="历史累计"
+            trend={trends?.total_tasks}
+            delay={0.16}
+          />
+          <AdminStat
+            label="任务成功率"
+            value={`${overview?.task_success_rate ?? 0}%`}
+            icon={<CheckCircle className="h-5 w-5" strokeWidth={1.75} />}
+            tone={/* success band on >=95, warning 80–94, error <80 */
+              (overview?.task_success_rate ?? 0) >= 95
+                ? 'success'
+                : (overview?.task_success_rate ?? 0) >= 80
+                  ? 'warning'
+                  : 'error'}
+            loading={isLoading}
+            meta="近 30 天"
+            trend={trends?.task_success_rate}
+            delay={0.24}
+          />
+        </div>
+
+        {/* Platform distribution strip — sibling to the recent activity
+            card. Wrapped in a motion Card for a staggered entrance after
+            the stat strip. Renders nothing if system data is unavailable
+            so we don't degrade the page when the endpoint is missing. */}
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <Card className="bg-card/60 ring-1 ring-foreground/10 hover:ring-foreground/20 transition-all hover:shadow-md hover:shadow-foreground/5">
+            <CardContent className="px-5 py-5 sm:px-6 sm:py-6">
+              <PlatformDistribution
+                tasksByPlatform={systemQuery.data?.data?.tasks_by_platform}
+                loading={systemQuery.isLoading}
+              />
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Recent activity — feed-style list with avatar + email + action
+            CodePill + relative time. Wrapped in a motion Card for a
+            staggered entrance after the platform strip. */}
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <Card className="bg-card/60 ring-1 ring-foreground/10 hover:ring-foreground/20 transition-all hover:shadow-md hover:shadow-foreground/5">
+            <CardHeader className="px-5 py-4 sm:px-6">
+              <div className="flex items-baseline gap-2">
+                <CardTitle className="text-[14.5px] font-semibold text-foreground tracking-tight">
+                  最近操作
+                </CardTitle>
+                <span className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground/70 uppercase">
+                  最近 10 条
+                </span>
+              </div>
+              <CardAction className="flex items-center gap-3">
+                <SegmentedTimeRange
+                  value={timeRange}
+                  onValueChange={(v) => updateTimeRange(v as PresetRange)}
+                  options={TIME_RANGE_TABS}
+                  ariaLabel="时间范围筛选"
+                />
+                {filtersActive && (
                   <Button
-                    key={opt.value}
                     variant="ghost"
                     size="sm"
-                    className={cn(
-                      'h-7 px-2.5 text-xs font-medium tabular-nums',
-                      isActive
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                    onClick={() => setDays(opt.value)}
-                    disabled={isExporting}
-                    aria-checked={isActive}
-                    data-testid={`admin-overview-days-${opt.value}`}
+                    className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={clearFilters}
                   >
-                    {opt.label}
+                    <X className="h-3 w-3" />
+                    清除筛选
                   </Button>
-                )
-              })}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={handleExportTrends}
-              disabled={isExporting}
-              data-testid="admin-overview-export-trends"
-              aria-label="下载趋势数据 CSV"
-            >
-              <Download
-                className={cn(
-                  'h-3.5 w-3.5',
-                  isExporting && 'animate-pulse',
                 )}
-              />
-              下载趋势
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={refresh}
-              disabled={overviewQuery.isFetching || systemQuery.isFetching}
-              data-testid="admin-overview-refresh"
-              aria-label="刷新概览数据"
-            >
-              <RefreshCw
-                className={cn(
-                  'h-3.5 w-3.5',
-                  (overviewQuery.isFetching || systemQuery.isFetching) && 'animate-spin',
-                )}
-              />
-              刷新
-            </Button>
-          </div>
-        }
-      />
+              </CardAction>
+            </CardHeader>
+            <CardContent className="p-0">
+              {timeRange === 'custom' && (
+                <div className="flex items-center gap-3 border-b border-border/40 px-5 py-3 sm:px-6">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="overview-start" className="text-xs text-muted-foreground">
+                      开始日期
+                    </Label>
+                    <Input
+                      id="overview-start"
+                      type="date"
+                      value={customStart}
+                      onChange={(e) => updateCustomStart(e.target.value)}
+                      className="h-8 w-36 text-xs"
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground">—</span>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="overview-end" className="text-xs text-muted-foreground">
+                      结束日期
+                    </Label>
+                    <Input
+                      id="overview-end"
+                      type="date"
+                      value={customEnd}
+                      onChange={(e) => updateCustomEnd(e.target.value)}
+                      className="h-8 w-36 text-xs"
+                    />
+                  </div>
+                </div>
+              )}
 
-      {/* Hero stat strip — 4 elevated cards in a responsive grid. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <AdminStat
-          label="总用户数"
-          value={String(overview?.total_users ?? 0)}
-          icon={<Users className="h-4 w-4" strokeWidth={1.75} />}
-          tone="info"
-          loading={isLoading}
-          meta="全部"
-          trend={trends?.total_users}
-        />
-        <AdminStat
-          label="今日活跃"
-          value={String(overview?.active_today ?? 0)}
-          icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
-          tone="success"
-          loading={isLoading}
-          meta="活跃用户"
-          trend={trends?.active_today}
-        />
-        <AdminStat
-          label="总任务数"
-          value={String(overview?.total_tasks ?? 0)}
-          icon={<ListChecks className="h-4 w-4" strokeWidth={1.75} />}
-          tone="warning"
-          loading={isLoading}
-          meta="历史累计"
-          trend={trends?.total_tasks}
-        />
-        <AdminStat
-          label="任务成功率"
-          value={`${overview?.task_success_rate ?? 0}%`}
-          icon={<CheckCircle className="h-4 w-4" strokeWidth={1.75} />}
-          tone={/* success band on >=95, warning 80–94, error <80 */
-            (overview?.task_success_rate ?? 0) >= 95
-              ? 'success'
-              : (overview?.task_success_rate ?? 0) >= 80
-                ? 'warning'
-                : 'error'}
-          loading={isLoading}
-          meta="近 30 天"
-          trend={trends?.task_success_rate}
-        />
-      </div>
-
-      {/* Platform distribution strip — sibling to the recent activity
-          card. Renders nothing if system data is unavailable so we
-          don't degrade the page when the endpoint is missing. */}
-      <Card className="mt-5 bg-card/60 ring-1 ring-foreground/10">
-        <CardContent className="px-5 py-5 sm:px-6 sm:py-6">
-          <PlatformDistribution
-            tasksByPlatform={systemQuery.data?.data?.tasks_by_platform}
-            loading={systemQuery.isLoading}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Recent activity — feed-style list with avatar + email + action
-          CodePill + relative time. Wrapped in a Card so the rhythm
-          matches the platform strip above. */}
-      <Card className="mt-5 bg-card/60 ring-1 ring-foreground/10">
-        <CardHeader className="px-5 py-4 sm:px-6">
-          <div className="flex items-baseline gap-2">
-            <CardTitle className="text-[14.5px] font-semibold text-foreground tracking-tight">
-              最近操作
-            </CardTitle>
-            <span className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground/70 uppercase">
-              最近 10 条
-            </span>
-          </div>
-          <CardAction className="flex items-center gap-3">
-            <SegmentedTimeRange
-              value={timeRange}
-              onValueChange={(v) => updateTimeRange(v as PresetRange)}
-              options={TIME_RANGE_TABS}
-              ariaLabel="时间范围筛选"
-            />
-            {filtersActive && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={clearFilters}
-              >
-                <X className="h-3 w-3" />
-                清除筛选
-              </Button>
-            )}
-          </CardAction>
-        </CardHeader>
-        <CardContent className="p-0">
-
-          {timeRange === 'custom' && (
-            <div className="flex items-center gap-3 border-b border-border/40 px-5 py-3 sm:px-6">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="overview-start" className="text-xs text-muted-foreground">
-                  开始日期
-                </Label>
-                <Input
-                  id="overview-start"
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => updateCustomStart(e.target.value)}
-                  className="h-8 w-36 text-xs"
-                />
-              </div>
-              <span className="text-xs text-muted-foreground">—</span>
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="overview-end" className="text-xs text-muted-foreground">
-                  结束日期
-                </Label>
-                <Input
-                  id="overview-end"
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => updateCustomEnd(e.target.value)}
-                  className="h-8 w-36 text-xs"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="px-2 sm:px-3 py-2">
-            {isLoading ? (
-              <div className="space-y-1 px-3 py-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
-                ))}
-              </div>
-            ) : hasRecentActions ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>时间</TableHead>
-                    <TableHead>用户</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {overview?.recent_actions?.map((action) => {
-                    const absTime = action.created_at?.slice(0, 16).replace('T', ' ') ?? '—'
-                    const relTime = relativeTimeFromNow(action.created_at)
-                    return (
-                      <TableRow
-                        key={action.id}
-                        className="hover:bg-muted/30 border-b border-border/40"
-                      >
-                        <TableCell className="text-xs tabular-nums py-3">
-                          <span className="font-mono text-foreground/80" title={absTime}>
-                            {absTime}
-                          </span>
-                          {relTime && (
-                            <span className="ml-2 text-[11px] text-muted-foreground/70">
-                              {relTime}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs py-3">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <AdminAvatar identifier={action.user_email ?? undefined} size="sm" />
-                            <span className="text-foreground truncate">
-                              {action.user_email ?? '—'}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-xs py-3 text-right">
-                          <CodePill tone="info">{action.action}</CodePill>
-                        </TableCell>
+              <div className="px-2 sm:px-3 py-2">
+                {isLoading ? (
+                  <div className="space-y-1 px-3 py-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : hasRecentActions ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>时间</TableHead>
+                        <TableHead>用户</TableHead>
+                        <TableHead className="text-right">操作</TableHead>
                       </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            ) : (
-              <PremiumEmptyState
-                tone="info"
-                eyebrow="EMPTY FEED"
-                icon={<BarChart3 className="h-6 w-6" strokeWidth={1.5} />}
-                title="暂无记录"
-                description="所选时间范围内没有用户操作"
-              />
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+                    </TableHeader>
+                    <TableBody>
+                      {overview?.recent_actions?.map((action) => {
+                        const absTime = action.created_at?.slice(0, 16).replace('T', ' ') ?? '—'
+                        const relTime = relativeTimeFromNow(action.created_at)
+                        return (
+                          <TableRow
+                            key={action.id}
+                            className="hover:bg-muted/30 border-b border-border/40"
+                          >
+                            <TableCell className="text-xs tabular-nums py-3">
+                              <span className="font-mono text-foreground/80" title={absTime}>
+                                {absTime}
+                              </span>
+                              {relTime && (
+                                <span className="ml-2 text-[11px] text-muted-foreground/70">
+                                  {relTime}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs py-3">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <AdminAvatar identifier={action.user_email ?? undefined} size="sm" />
+                                <span className="text-foreground truncate">
+                                  {action.user_email ?? '—'}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs py-3 text-right">
+                              <CodePill tone="info">{action.action}</CodePill>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <PremiumEmptyState
+                    tone="info"
+                    eyebrow="EMPTY FEED"
+                    icon={<BarChart3 className="h-6 w-6" strokeWidth={1.5} />}
+                    title="暂无记录"
+                    description="所选时间范围内没有用户操作"
+                  />
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+    </PageWrapper>
   )
 }

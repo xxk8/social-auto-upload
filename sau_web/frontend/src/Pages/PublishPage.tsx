@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { useAccounts, useTasks } from '../hooks/useTasks'
 import { useAccountGroups } from '../hooks/useAccountGroups'
 import { usePublishStore } from '../stores/publishStore'
@@ -315,9 +316,9 @@ export default function PublishPage() {
   )
 
   return (
-    <div className="flex flex-col h-full p-3 sm:p-6 overflow-x-hidden min-w-0 max-w-[1600px] mx-auto w-full">
+    <PageWrapper variant="publish" data-testid="publish-page-root">
       {/* ── Fixed header section (flex-shrink-0) ──────────────────── */}
-      <div className="flex-shrink-0">
+      <div className="flex flex-col gap-4 flex-shrink-0">
         <PageHeader
           title="发布中心"
           description="发布视频或图文到多个平台"
@@ -354,7 +355,7 @@ export default function PublishPage() {
           // which made the wizard card visibly shorter than the AI
           // sidebar once the latter got explicitly `h-full` from the
           // OPT-3F rewire.
-          'mt-4 sm:mt-6 flex-1 min-h-0 grid gap-4 sm:gap-6 overflow-y-auto',
+          'flex-1 min-h-0 grid gap-4 sm:gap-6 overflow-y-auto',
           aiCollapsed
             ? 'lg:grid-cols-[1fr_60px]'
             : 'lg:grid-cols-[2fr_3fr]',
@@ -408,6 +409,6 @@ export default function PublishPage() {
           formRef={formRef}
         />
       </MobileAiDrawer>
-    </div>
+    </PageWrapper>
   )
 }

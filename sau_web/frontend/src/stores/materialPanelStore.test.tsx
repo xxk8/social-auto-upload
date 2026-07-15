@@ -138,6 +138,7 @@ describe('searchImages — §11.1 scenario 2 (failure envelope)', () => {
       success: false,
       message: '未配置图片搜索 API key。请在 .env 设置 PEXELS_API_KEY',
       code: 'IMAGE_SOURCE_NOT_CONFIGURED',
+      data: [],
     })
     await useMaterialPanelStore.getState().searchImages('foo')
     const s = useMaterialPanelStore.getState()
@@ -236,6 +237,7 @@ describe('recommendByTitle — §11.1 scenario 3 (manual coexist with recommend)
     vi.mocked(aiApi.recommendImages).mockResolvedValue({
       success: false,
       message: 'boom',
+      data: [],
     })
     await useMaterialPanelStore.getState().recommendByTitle('t')
     expect(useMaterialPanelStore.getState().recommendCount).toBe(1)

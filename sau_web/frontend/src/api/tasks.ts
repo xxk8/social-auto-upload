@@ -4,6 +4,57 @@ export const tasksApi = {
   getTasks() {
     return request.get('/api/tasks').then((res) => res.data)
   },
+  /**
+   * Subscribe to task status updates via SSE.
+   *
+   * The backend emits:
+   *   - event: initial — full task list on connection
+   *   - event: update — full task list when it changes
+   *   - event: done   — when all tasks reach a terminal state
+   */
+  streamTasks(signal?: AbortSignal) {
+    const baseURL = request.defaults.baseURL || ''
+    const url = `${baseURL}/api/tasks/stream`
+    const eventSource = new EventSource(url, { withCredentials: true } as EventSourceInit)
+    let abortListener: (() => void) | null = null
+
+    if (signal) {
+      abortListener = () => eventSource.close()
+      signal.addEventListener('abort', abortListener)
+    }
+
+    const onMessage = (handler: (tasks: unknown[]) => void) => {
+      const listener = (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data)
+          if (Array.isArray(data)) {
+            handler(data)
+          }
+        } catch {
+          // ignore malformed messages
+        }
+      }
+      eventSource.addEventListener('initial', listener)
+      eventSource.addEventListener('update', listener)
+      eventSource.addEventListener('done', () => {
+        eventSource.close()
+      })
+    }
+
+    return {
+      eventSource,
+      onMessage,
+      onError: (handler: (error: Event) => void) => {
+        eventSource.onerror = handler
+      },
+      close: () => {
+        if (abortListener && signal) {
+          signal.removeEventListener('abort', abortListener)
+        }
+        eventSource.close()
+      },
+    }
+  },
   retryTask(taskId: string) {
     return request.post('/api/tasks/retry', { task_id: taskId }).then((res) => res.data)
   },

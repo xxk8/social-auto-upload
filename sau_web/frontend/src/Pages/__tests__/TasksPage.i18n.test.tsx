@@ -188,7 +188,7 @@ describe('TasksPage · i18n flip', () => {
     // "刷新" appears in the toolbar refresh button (the table is
     // empty, so the empty-state refresh button is the second instance)
     expect(screen.getAllByText('刷新').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText('轮询中')).toBeInTheDocument()
+    expect(screen.getByText('实时')).toBeInTheDocument()
     // Clear button
     expect(screen.getByText('清理')).toBeInTheDocument()
   })
@@ -260,7 +260,7 @@ describe('TasksPage · i18n flip', () => {
       'Search task ID, platform, account (press / to focus)',
     ) as HTMLInputElement
     expect(searchInput).toBeInTheDocument()
-    expect(screen.getByText('Polling')).toBeInTheDocument()
+    expect(screen.getByText('Live')).toBeInTheDocument()
     // "Refresh" + "Clear" buttons
     expect(screen.getAllByText('Refresh').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Clear')).toBeInTheDocument()

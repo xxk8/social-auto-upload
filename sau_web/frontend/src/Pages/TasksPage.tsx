@@ -22,9 +22,9 @@ import { Input } from '@/Components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/Components/ui/tooltip'
 import { StatusTabs } from '../features/tasks/StatusTabs'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import {
   BarChart3,
-  Loader2,
   Plus,
   RefreshCw,
   Trash2,
@@ -123,7 +123,7 @@ export default function TasksPage() {
   } = table
 
   return (
-    <div className="space-y-6 p-6 max-w-[1600px] mx-auto w-full">
+    <PageWrapper>
       <PageHeader
         title={t('tasks.page.title', '任务列表')}
         description={t('tasks.page.description', '查看和管理所有上传任务')}
@@ -188,9 +188,15 @@ export default function TasksPage() {
               visually quiet (outline / secondary) so they don't
               compete with the write-actions below. */}
           <div className="flex items-center gap-2 ml-auto">
-            <Badge variant="secondary" className="text-xs gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              {t('tasks.page.polling_chip', '轮询中')}
+            <Badge
+              variant="secondary"
+              className="text-xs gap-1 border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-900/20 dark:text-green-400"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+              </span>
+              {t('tasks.page.live_chip', '实时')}
             </Badge>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -276,7 +282,7 @@ export default function TasksPage() {
         onConfirm={m.handleAddTaskConfirm}
         onCancel={m.handleCloseAddModal}
       />
-    </div>
+    </PageWrapper>
   )
 }
 

@@ -95,7 +95,6 @@ export function StudioRenderQuotaPill({
     )
   }
 
-  const remaining = slot.remaining
   const atLimit = used >= limit
   const approaching = !atLimit && limit > 0 && used / limit >= 0.8
 

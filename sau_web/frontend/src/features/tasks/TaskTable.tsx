@@ -145,43 +145,6 @@ export const TaskTable = memo(function TaskTable({
   )
 })
 
-/** Re-export the toolbar badges so TasksPage can render the polling chip and shortcut hints. */
-export function TaskToolbarExtras({ manualRefreshing }: { manualRefreshing: boolean }) {
-  return (
-    <>
-      {manualRefreshing ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <RefreshCw className="h-4 w-4" />
-      )}
-      <Badge variant="secondary" className="text-xs">
-        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-        轮询中
-      </Badge>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="outline" className="text-[10px] cursor-help hidden sm:inline-flex">
-            R·N·/
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent>
-          <div className="space-y-1 text-xs">
-            <div>
-              <kbd className="px-1 py-0.5 rounded bg-muted border">R</kbd> 刷新列表
-            </div>
-            <div>
-              <kbd className="px-1 py-0.5 rounded bg-muted border">N</kbd> 新建任务
-            </div>
-            <div>
-              <kbd className="px-1 py-0.5 rounded bg-muted border">/</kbd> 聚焦搜索
-            </div>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </>
-  )
-}
-
 /** Compact Card wrapper used by TasksPage to host the table and batch panel. */
 export function TaskTableCard({ children }: { children: React.ReactNode }) {
   return (

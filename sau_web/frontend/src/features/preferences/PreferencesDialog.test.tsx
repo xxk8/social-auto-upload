@@ -5,6 +5,7 @@ import userEvent from '@/test/user-event-shim'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { TooltipProvider } from '@/Components/ui/tooltip'
+import { ToastProvider } from '@/Components/ui/toast'
 import { PreferencesDialog } from '@/features/preferences/PreferencesDialog'
 import {
   PreferencesDialogProvider,
@@ -72,14 +73,16 @@ function mountDialogUnderTest({
 
   return render(
     <TooltipProvider>
-      <QueryClientProvider client={makeQueryClient()}>
-        <MemoryRouter initialEntries={['/dashboard']}>
-          <PreferencesDialogProvider>
-            <OpenTrigger />
-            <PreferencesDialog />
-          </PreferencesDialogProvider>
-        </MemoryRouter>
-      </QueryClientProvider>
+      <ToastProvider>
+        <QueryClientProvider client={makeQueryClient()}>
+          <MemoryRouter initialEntries={['/dashboard']}>
+            <PreferencesDialogProvider>
+              <OpenTrigger />
+              <PreferencesDialog />
+            </PreferencesDialogProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </ToastProvider>
     </TooltipProvider>,
   )
 }
@@ -124,13 +127,15 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
   it('does NOT render dialog content before openPreferences is called', () => {
     render(
       <TooltipProvider>
-        <QueryClientProvider client={makeQueryClient()}>
-          <MemoryRouter initialEntries={['/dashboard']}>
-            <PreferencesDialogProvider>
-              <PreferencesDialog />
-            </PreferencesDialogProvider>
-          </MemoryRouter>
-        </QueryClientProvider>
+        <ToastProvider>
+          <QueryClientProvider client={makeQueryClient()}>
+            <MemoryRouter initialEntries={['/dashboard']}>
+              <PreferencesDialogProvider>
+                <PreferencesDialog />
+              </PreferencesDialogProvider>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
       </TooltipProvider>,
     )
     expect(screen.queryByTestId('preferences-dialog')).not.toBeInTheDocument()
@@ -250,14 +255,16 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
 
     render(
       <TooltipProvider>
-        <QueryClientProvider client={makeQueryClient()}>
-          <MemoryRouter initialEntries={['/dashboard']}>
-            <PreferencesDialogProvider>
-              <OpenTrigger />
-              <PreferencesDialog />
-            </PreferencesDialogProvider>
-          </MemoryRouter>
-        </QueryClientProvider>
+        <ToastProvider>
+          <QueryClientProvider client={makeQueryClient()}>
+            <MemoryRouter initialEntries={['/dashboard']}>
+              <PreferencesDialogProvider>
+                <OpenTrigger />
+                <PreferencesDialog />
+              </PreferencesDialogProvider>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
       </TooltipProvider>,
     )
 
@@ -811,6 +818,49 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     expect(
       screen.getByTestId('preferences-tab-overview'),
     ).toHaveAttribute('aria-selected', 'false')
+  })
+
+  // (v) Health alert notification toggles on SettingsTab call
+  // useAuth().updateMe with the correct boolean when flipped.
+  it('Settings tab health-alert toggles call updateMe with correct boolean', async () => {
+    const user = userEvent.setup()
+    const updateMeSpy = vi.fn().mockResolvedValue({ success: true })
+    mountDialogUnderTest({
+      user: {
+        id: 1,
+        email: 'qa@sau.dev',
+        role: 'admin',
+        name: 'qa',
+        avatar: null,
+        tier: 'legacy',
+        notify_health_email: true,
+        notify_health_webhook: false,
+      },
+    })
+    // Override updateMe so we can spy on the payload; mountDialogUnderTest
+    // already provides a default resolved updateMe mock.
+    mockUseAuth.mockReturnValue({
+      ...mockUseAuth(),
+      updateMe: updateMeSpy,
+    } as any)
+
+    await user.click(screen.getByTestId('test-open-trigger'))
+    await user.click(screen.getByTestId('preferences-tab-settings'))
+
+    // The email toggle should be checked (notify_health_email=true)
+    // and the webhook toggle unchecked (notify_health_webhook=false).
+    const emailSwitch = screen.getByRole('switch', { name: /邮件通知/i })
+    const webhookSwitch = screen.getByRole('switch', { name: /Webhook/i })
+    expect(emailSwitch).toHaveAttribute('aria-checked', 'true')
+    expect(webhookSwitch).toHaveAttribute('aria-checked', 'false')
+
+    // Flip email off
+    await user.click(emailSwitch)
+    expect(updateMeSpy).toHaveBeenCalledWith({ notify_health_email: false })
+
+    // Flip webhook on
+    await user.click(webhookSwitch)
+    expect(updateMeSpy).toHaveBeenCalledWith({ notify_health_webhook: true })
   })
 
   // NOTE: click-outside-to-close is Radix Dialog's native

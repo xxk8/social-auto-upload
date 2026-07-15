@@ -186,7 +186,7 @@
       "description": "View and manage all upload tasks",
       "new_task_button": "New task",
       "search_placeholder": "Search task ID, platform, account (press / to focus)",
-      "polling_chip": "Polling",
+      "live_chip": "Live",
       "refresh_button": "Refresh",
       "refresh_aria": "Refresh tasks",
       "clear_button": "Clear",

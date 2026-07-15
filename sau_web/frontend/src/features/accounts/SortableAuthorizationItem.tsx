@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { useDraggable } from '@dnd-kit/react'
 import { useTranslation } from 'react-i18next'
-import { GripVertical, LogIn, MoreHorizontal, QrCode, Unlink } from 'lucide-react'
+import { GripVertical, LogIn, MoreHorizontal, QrCode, RefreshCw, Unlink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/Components/ui/button'
 import {
@@ -12,9 +12,12 @@ import {
   DropdownMenuTrigger,
 } from '@/Components/ui/dropdown-menu'
 import { PlatformBadge } from './PlatformBadge'
+import { HealthBadge } from './HealthBadge'
 import { QR_LOGIN_PLATFORMS, type AccountAuthorization } from '@/api/client'
-import { useAccountsDispatch } from './AccountsProvider.helpers'
+import { useAccountsDispatch, useAccountsState } from './AccountsProvider.helpers'
 import { toneChipClasses, toneFillBgClass, type Tone } from '@/lib/tone'
+import { api } from '@/api/client'
+import { useState } from 'react'
 
 interface SortableAuthorizationItemProps {
   auth: AccountAuthorization
@@ -51,10 +54,12 @@ function SortableAuthorizationItemImpl({
 }: SortableAuthorizationItemProps) {
   const { t } = useTranslation()
   const dispatch = useAccountsDispatch()
+  const { refetch } = useAccountsState()
   const { ref, isDragging } = useDraggable({
     id: `auth:${groupId}:${auth.id}`,
     data: { groupId, authId: auth.id, platform: auth.platform },
   })
+  const [checking, setChecking] = useState(false)
 
   const platformLabel = dispatch.getPlatformLabel(auth.platform)
   // Re-scan gate: surface the action for both "失效" (cookie file
@@ -69,6 +74,17 @@ function SortableAuthorizationItemImpl({
   // modal falls through to the CLI-instruction view for these, so
   // "重新扫码" would be misleading.
   const isQrPlatform = QR_LOGIN_PLATFORMS.includes(auth.platform)
+
+  const handleCheckNow = async () => {
+    if (checking) return
+    setChecking(true)
+    try {
+      await api.checkAuthorizationHealth(auth.id)
+      refetch()
+    } finally {
+      setChecking(false)
+    }
+  }
 
   return (
     <div
@@ -106,6 +122,18 @@ function SortableAuthorizationItemImpl({
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
+        <HealthBadge health={auth.health} />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          onClick={handleCheckNow}
+          disabled={checking}
+          data-testid={`check-health-${auth.id}`}
+        >
+          <RefreshCw className={cn('h-3 w-3 mr-1', checking && 'animate-spin')} />
+          {checking ? '检查中' : '立即检查'}
+        </Button>
         <AuthorizationStatusPill valid={auth.valid} stale={auth.stale} ageHours={auth.age_hours} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

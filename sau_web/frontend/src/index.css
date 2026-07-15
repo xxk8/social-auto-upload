@@ -786,301 +786,296 @@
   background: var(--background);
 }
 
-/* =====================================================================
- * react-big-calendar — dark-mode overrides.
+/* ──────────────────────────────────────────────────────────────────────
+ * Landing-page motion layer (round-beautify).
  *
- * react-big-calendar v1.x ships a hardcoded light-mode stylesheet
- * (imported in `Pages/CalendarPage.tsx`). The library has no native
- * theme respect, so when ThemeProvider flips `.dark` on `<html>` the
- * calendar body keeps a white grid on dark chrome — the calendar
- * reads as a "white window" pasted onto the dark dashboard and
- * every `.rbc-*` hairline, day number, and toolbar button is set
- * to library defaults that don't adapt.
+ *   1. .mesh-blob / .mesh-blob--N
+ *        3 radial-gradient blobs that drift around the section
+ *        background. Pure-CSS animation (NOT GSAP-driven) because
+ *        the cycle runs continuously — putting it on a GSAP tween
+ *        would create a permanent tween ticking in the background
+ *        that useGSAP would have to clean up on every route
+ *        change. CSS keyframes handle cleanup for free (the
+ *        browser drops them on element unmount).
+ *   2. .shimmer
+ *        Brand-primary light sweep across an element on a 6s loop.
+ *        Used as a `::before` overlay on the hero CTA so the
+ *        button reads as "premium" without being noisy. The
+ *        keyframe translates a soft gradient from -100% → 200%
+ *        along the X axis. Reduced-motion kills the loop; the
+ *        element stays at 0% (no sweep, no flicker).
+ *   3. .badge-pulse
+ *        Scales the leading dot in the eyebrow badge 1 → 1.35
+ *        with a 1.6s ease cycle. Pairs with the existing
+ *        `animate-pulse` Tailwind utility on the dot but with a
+ *        more visible scale change.
+ *   4. .feature-icon-float
+ *        Used as the y-target of a GSAP tween (not directly via
+ *        the @keyframes), but exposed as a CSS variable so a
+ *        future CSS-only fallback can hook into it without a JS
+ *        re-write.
  *
- * Selectors are written `.dark .rbc-*` (specificity 0,2,0) so they
- * beat the library's bare `.rbc-*` (0,1,0) regardless of CSS
- * cascade order. Order matters less than specificity in practice:
- * Vite loads the library's stylesheet after `index.css` in some
- * bundling modes, but `.dark .X` always wins against `.X` for
- * same-cascade ties.
+ * Reduced-motion: every keyframe block here has a paired
+ * `prefers-reduced-motion: reduce` override that disables the
+ * animation. Belt-and-suspenders against the global rule at
+ * the top of this file (which sets duration to 0.01ms) — this
+ * guarantees the visual at-rest state is the same as the
+ * start-frame.
+ * ────────────────────────────────────────────────────────────────────── */
+.mesh-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  /* 30% primary tint, 70% transparent — the same density the
+   * existing `GlowOrb` uses, so the mesh reads as a softer
+   * (multi-blob) version of the existing single-orb effect. */
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 30%, transparent) 0%,
+    transparent 70%
+  );
+  will-change: transform;
+  transform-origin: center center;
+}
+
+.mesh-blob--1 {
+  top: 5%;
+  left: 15%;
+  width: 50%;
+  height: 60%;
+  animation: mesh-float-1 18s ease-in-out infinite;
+}
+
+.mesh-blob--2 {
+  top: 30%;
+  right: 5%;
+  width: 45%;
+  height: 55%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 24%, transparent) 0%,
+    transparent 70%
+  );
+  animation: mesh-float-2 24s ease-in-out infinite;
+}
+
+.mesh-blob--3 {
+  bottom: 5%;
+  left: 25%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 22%, transparent) 0%,
+    transparent 70%
+  );
+  animation: mesh-float-3 28s ease-in-out infinite;
+}
+
+@keyframes mesh-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(22%, -18%) scale(1.12); }
+  66%      { transform: translate(-15%, 22%) scale(0.92); }
+}
+
+@keyframes mesh-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-22%, 18%) scale(0.9); }
+  66%      { transform: translate(18%, -22%) scale(1.12); }
+}
+
+@keyframes mesh-float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(15%, 22%) scale(1.05); }
+  66%      { transform: translate(-22%, -15%) scale(0.95); }
+}
+
+/* Light-sweep overlay used on the hero primary CTA via a
+ * `::before` pseudo. The base `position: relative;
+ * overflow: hidden` on the button keeps the gradient clipped
+ * to the rounded rectangle. */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    transparent 35%,
+    color-mix(in oklab, var(--primary-foreground) 28%, transparent) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: shimmer-sweep 6s ease-in-out infinite;
+  pointer-events: none;
+  /* Don't intercept button clicks — pointer-events: none
+   * keeps the underlying <a>/<button> clickable. */
+}
+@keyframes shimmer-sweep {
+  0%   { transform: translateX(-100%); }
+  35%  { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* The leading dot on the eyebrow badge ("多平台分发 · 本地优先")
+ * already uses `animate-pulse` from Tailwind. `.badge-dot-pulse`
+ * is the deeper-scaled replacement (1 → 1.45 vs Tailwind's
+ * 1 → 1.05) that we attach to dots that need more presence
+ * without adding new keyframes per call site. */
+.badge-dot-pulse {
+  animation: badge-dot-pulse 1.6s ease-in-out infinite;
+}
+@keyframes badge-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.45); opacity: 0.7; }
+}
+
+/* 3D-tilt preparation — sets the perspective on the parent
+ * container so the child card can `rotateY` without a separate
+ * `transform-style: preserve-3d` declaration. The `transition`
+ * keeps the tilt in/out smooth when the user moves the mouse
+ * off the card. Currently unused (the platform cards keep their
+ * existing Tailwind hover lift) — reserved for a future
+ * feature-card or pricing-tier 3D-tilt pass. */
+.tilt-3d-perspective {
+  perspective: 1000px;
+}
+.tilt-3d-card {
+  transform-style: preserve-3d;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Dramatic mesh variant — 1.4× the area, +6% primary tint, 14/18/22s
+ * drift cadence. Activated by the `.mesh-blob--variant-dramatic`
+ * wrapper class added by `<MeshGradient intensity="dramatic">`.
+ * Same 3-blob structure as the base variant so the visual rhythm
+ * stays recognizable, but the larger area + higher tint + faster
+ * cadence reads as "more active" without becoming noisy.
+ * ────────────────────────────────────────────────────────────────────── */
+.mesh-blob--variant-dramatic .mesh-blob {
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 38%, transparent) 0%,
+    transparent 65%
+  );
+  filter: blur(100px);
+}
+.mesh-blob--variant-dramatic .mesh-blob--1 {
+  width: 70%;
+  height: 80%;
+  animation: mesh-float-dramatic-1 14s ease-in-out infinite;
+}
+.mesh-blob--variant-dramatic .mesh-blob--2 {
+  width: 65%;
+  height: 75%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 32%, transparent) 0%,
+    transparent 65%
+  );
+  animation: mesh-float-dramatic-2 18s ease-in-out infinite;
+}
+.mesh-blob--variant-dramatic .mesh-blob--3 {
+  width: 70%;
+  height: 70%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 30%, transparent) 0%,
+    transparent 65%
+  );
+  animation: mesh-float-dramatic-3 22s ease-in-out infinite;
+}
+
+@keyframes mesh-float-dramatic-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(28%, -22%) scale(1.15); }
+  66%      { transform: translate(-20%, 26%) scale(0.88); }
+}
+@keyframes mesh-float-dramatic-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-26%, 22%) scale(0.88); }
+  66%      { transform: translate(22%, -28%) scale(1.18); }
+}
+@keyframes mesh-float-dramatic-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(20%, 26%) scale(1.1); }
+  66%      { transform: translate(-28%, -20%) scale(0.9); }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * .cta-ring — animated box-shadow halo around the primary CTA
+ * button. Pairs with the existing `shadow-lg shadow-primary/20`
+ * baseline by REPLACING it (the new halo + ring width reads as
+ * one continuous glow, not two competing shadows). The 3.2s
+ * ease-in-out cycle makes the halo "breathe" — the same rhythm
+ * as the rest of the CTA section's ambient layer so the page
+ * reads as one organism, not a stack of unrelated effects.
  *
- * Paint contract: cell canvas = `--card` (so dark-mode cards blend
- * seamlessly); HEADER strip = `--popover` for a 1-step luminance
- * lift (visual hierarchy); OFF-RANGE dates drop to muted at 45%
- * opacity so neighbouring-month cells don't compete; TODAY's
- * cell = low-chroma `--primary` wash so the marker stays
- * secondary to the brand-coloured events at first glance;
- * SELECTION cell = slightly stronger `--primary` wash; EVENTS
- * keep the per-brand backgrounds (`eventPropGetter` already
- * paints them) — only the default 1px library border is
- * suppressed so the chip blends into its brand fill.
- * Event text remains white (set in `eventPropGetter`) — works on
- * every saturated platform colour in the brand palette.
+ * Hover upgrade: the halo intensifies to full primary at 70%
+ * spread — a 2.5× visual lift without a layout shift (box-
+ * shadow paints, doesn't reserve space). The transition is
+ * 0.25s, fast enough to feel responsive on the click target.
  *
- * Originally verified against react-big-calendar v1.13+ via the
- * 8-oxo repository's pinned dep in `package.json`. Bumping the
- * library past a major version should re-verify these selectors
- * (most affected: `.rbc-time-slot`, `.rbc-timeslot-group`,
- * `.rbc-current .rbc-button-link`).
- * ===================================================================== */
-.dark .rbc-calendar,
-.dark .rbc-month-view,
-.dark .rbc-time-view,
-.dark .rbc-agenda-view {
-  background-color: var(--card);
-  color: var(--card-foreground);
-  border-color: var(--rbc-grid-line) !important;
-  /* Scoped token for dense grid lines — cell grid, header strip,
-   * agenda row borders. The 18% mix (round 1 was 45%; round 2 dialed
-   * to 30%; this third pass drops to 18% per operator escalation
-   * 2026-07-10 「我说的是边框太艳了，再暗色的时候」 — they were
-   * still finding the 30% grid too prismatic against the deep
-   * dark canvas. Aggressive softening here + matching wrapper
-   * border /12 in `CalendarPage.tsx` keeps the dense monthly grid
-   * as a glint-row cue rather than as visible dividers cutting
-   * through the canvas. The outer calendar shell + toolbar button
-   * borders still use the full-strength `var(--border)` so the
-   * calendar's perimeter reads as a contained widget. */
-   --rbc-grid-line: color-mix(in oklab, var(--border) 10%, transparent);
+ * The class stacks on the existing `.shimmer` so the button
+ * keeps its light-sweep animation — the halo and the sweep
+ * are two separate affordances, both subtle, neither one
+ * overshadowing the other.
+ * ────────────────────────────────────────────────────────────────────── */
+.cta-ring {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--primary) 80%, transparent),
+    0 0 22px 4px color-mix(in oklab, var(--primary) 30%, transparent);
+  animation: cta-ring-pulse 3.2s ease-in-out infinite;
+  transition: box-shadow 0.25s ease, transform 0.18s ease;
+}
+.cta-ring:hover {
+  box-shadow:
+    0 0 0 2px var(--primary),
+    0 0 36px 8px color-mix(in oklab, var(--primary) 55%, transparent);
+  transform: translateY(-1px);
+}
+.cta-ring:active {
+  transform: translateY(0);
+}
+@keyframes cta-ring-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--primary) 80%, transparent),
+      0 0 18px 3px color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--primary),
+      0 0 32px 7px color-mix(in oklab, var(--primary) 45%, transparent);
+  }
 }
 
-.dark .rbc-toolbar {
-  color: var(--card-foreground);
-}
-.dark .rbc-toolbar button {
-  color: var(--card-foreground);
-  background-color: transparent;
-  border-color: var(--border);
-}
-.dark .rbc-toolbar button:hover,
-.dark .rbc-toolbar button:focus {
-  background-color: var(--accent);
-  border-color: var(--border);
-  color: var(--accent-foreground);
-}
-.dark .rbc-toolbar button.rbc-active,
-.dark .rbc-toolbar button:active {
-  background-color: var(--accent);
-  border-color: var(--primary);
-  color: var(--accent-foreground);
-}
-
-.dark .rbc-header {
-  background-color: var(--popover);
-  border-color: var(--rbc-grid-line) !important;
-  color: var(--muted-foreground);
-  font-weight: 500;
-}
-.dark .rbc-month-row,
-.dark .rbc-day-bg {
-  background-color: var(--card);
-  border-color: var(--rbc-grid-line) !important;
-}
-.dark .rbc-off-range-bg {
-  background-color: var(--muted);
-}
-.dark .rbc-off-range {
-  color: var(--muted-foreground);
-  opacity: 0.45;
-}
-.dark .rbc-today {
-  background-color: color-mix(in oklab, var(--primary) 8%, var(--card));
-}
-
-.dark .rbc-current .rbc-button-link {
-  color: var(--primary);
-  font-weight: 600;
-}
-.dark .rbc-selected-cell {
-  background-color: color-mix(in oklab, var(--primary) 14%, transparent);
-}
-
-.dark .rbc-time-header,
-.dark .rbc-time-header-content,
-.dark .rbc-time-content,
-.dark .rbc-time-gutter,
-.dark .rbc-time-slot,
-.dark .rbc-timeslot-group,
-.dark .rbc-day-slot {
-  border-color: var(--rbc-grid-line) !important;
-  color: var(--card-foreground);
-}
-
-.dark .rbc-agenda-view table.rbc-agenda-table {
-  background-color: var(--card);
-  color: var(--card-foreground);
-  border-color: var(--border);
-}
-.dark .rbc-agenda-view table.rbc-agenda-table thead > tr > th {
-  background-color: var(--popover);
-  color: var(--muted-foreground);
-  border-color: var(--rbc-grid-line) !important;
-}
-.dark .rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
-  border-color: var(--rbc-grid-line) !important;
-}
-
-.dark .rbc-show-more {
-  color: var(--primary);
-  background-color: transparent;
-  font-weight: 500;
-}
-.dark .rbc-show-more:hover {
-  color: var(--primary);
-  text-decoration: underline;
-}
-
-/* Catch-all: suppress every rbc border in dark mode so the library's
- * default bright borders (hardcoded #ddd, #ccc) don't leak through. */
-.dark [class*="rbc"] {
-  border-color: var(--rbc-grid-line) !important;
-}
-
-/* Preserve event chip styling — `eventPropGetter` already applies
- * platform-colour backgrounds + white text per event. Only the
- * library's default 1px border needs suppressing so the chip
- * blends into its brand background instead of carrying a hairline
- * that lights up oddly against the saturated fills in dark mode. */
-.dark .rbc-event {
-  border: none;
-}
-
-/* =====================================================================
- * Calendar table polish — Round 4 (OPT-cal-table-beautify, 2026-07-10).
- *
- * Five surgical additions to the existing rbc dark-mode override
- * block. Each one is scoped inside `.dark` so the light theme
- * surface is untouched, and each one preserves the existing
- * hairline-density contract (var(--rbc-grid-line) 18% mix) — the
- * polish only changes how the *visible* elements feel, not how
- * the dividers read.
- *
- *   1. Header roster typography — `.dark .rbc-header` switches to
- *      IBM Plex Mono + uppercase + 0.08em tracking so the Sun / Mon
- *      / … / Sat row reads as a "weekday roster" instead of generic
- *      sans title-case. Same `--popover` / `--rbc-grid-line` chrome,
- *      only the typography changes.
- *
- *   2. Today accent strip — `.dark .rbc-month-view .rbc-today`
- *      gets a 2px var(--primary) `box-shadow: inset` along the
- *      top edge. Linear-style callout constrained to the top so
- *      it doesn't compete with the full-cell brand-color fills of
- *      the event chips below. The existing 8% primary wash is
- *      untouched (still defined on `.dark .rbc-today` higher in
- *      the file).
- *
- *   3. Today date-number typography — `.dark .rbc-current
- *      .rbc-button-link` switches to IBM Plex Mono + 600 + 13px
- *      + an `今日 · ` ::before eyebrow. Today reads as
- *      「今日 · 10」with the prefix in muted-foreground 9px sans
- *      and the number in primary 13px mono — operator can spot
- *      today at one glance without losing scan-ability of the
- *      other 41 date numbers.
- *
- *   4. Weekend soft tint — Sat/Sun day-bg cells (`.rbc-weekend-bg`
- *      in rbc's own class; belt-and-suspenders `.rbc-row-bg
- *      .rbc-day-bg:nth-child(6|7)` for versions that diverge)
- *      get a 50% muted + 50% card mix so the workweek columns
- *      visually breathe against the weekend columns without
- *      breaking visual rhythm.
- *
- *   5. Off-range dim — `.dark .rbc-off-range` opacity drops from
- *      0.45 → 0.30 so neighbor-month spillover dates read
- *      clearly as "not this month" against the current-month sat
- *      at 1.0.
- *
- * Invariants (pinned in `CalendarPage.dark-mode.test.tsx`):
- *   - The `--rbc-grid-line` 18% mix (round-3 contract) is UNCHANGED.
- *   - The softenedSelector list (12 selectors referencing
- *     `var(--rbc-grid-line)`) is UNCHANGED.
- *   - The perimeterSelector list (toolbar button + agenda table
- *     outer table using `var(--border)`) is UNCHANGED.
- * =====================================================================
- */
-
-/* ── 1. Header roster typography ──
- * Extends the existing `.dark .rbc-header` rule higher in the file
- * (which sets background/border/color/font-weight) — only typography
- * + padding properties are added here so source order remains the
- * single source of truth for the cell chrome. */
-.dark .rbc-header {
-  font-family: var(--font-jetbrains-mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 8px 6px;
-}
-
-/* ── 2. Today accent strip ──
- * 2px primary top edge via inset box-shadow so the strip sits one
- * pixel INSIDE the cell border rather than overlapping it. Builds
- * on the existing 8% primary wash on `.dark .rbc-today`. The
- * `inset 0 2px 0 0` shape is the same idiom used by TierCardBlock's
- * `tier-recommended-accent` (see "TierCard" section
- * higher in the file) so the engineering-tool honest-signal
- * pattern stays consistent across surfaces. */
-.dark .rbc-month-view .rbc-today {
-  box-shadow: inset 0 2px 0 0 var(--primary);
-}
-
-/* ── 3. Today date-number typography ──
- * Mono + 600 + 13px + 今日 · ::before eyebrow. The eyebrow uses
- * `content: '今日 · '` so no custom JSX / BigCalendar `components`
- * override is needed — purely CSS-driven so changing the locale
- * (or updating 「今日」to 今周 or similar) is a single-token edit. */
-.dark .rbc-current .rbc-button-link {
-  font-family: var(--font-jetbrains-mono);
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: -0.01em;
-  padding: 2px 4px 2px;
-  display: block;
-  text-align: left;
-  width: 100%;
-}
-.dark .rbc-current .rbc-button-link::before {
-  content: '今日 · ';
-  font-size: 9px;
-  font-weight: 500;
-  font-family: var(--font-body);
-  color: var(--muted-foreground);
-  letter-spacing: 0;
-  text-transform: none;
-  vertical-align: 1px;
-}
-
-/* ── 4. Weekend soft tint ──
- * Selector `.rbc-weekend-bg` is rbc's own class applied to Sat/Sun
- * day-bg cells; the `:nth-child(6|7)` version is belt-and-suspenders
- * in case a future rbc release drops the weekend-bg class on a
- * subset of viewports. Both selector branches paint the same
- * muted/card 50/50 mix so semantic intent is preserved. */
-.dark .rbc-month-view .rbc-weekend-bg,
-.dark .rbc-month-view .rbc-row-bg .rbc-day-bg:nth-child(6),
-.dark .rbc-month-view .rbc-row-bg .rbc-day-bg:nth-child(7) {
-  background-color: color-mix(in oklab, var(--muted) 50%, var(--card));
-}
-
-/* ── 5. Off-range dim ──
- * Extends the existing `.dark .rbc-off-range` rule (which sets
- * `color: var(--muted-foreground)`); only opacity is overridden
- * here. 0.30 reads as "clearly another month" against the
- * current-month dates at 1.0 — somewhere between a footnote and
- * a watermark. If the grid later needs neighbor-month dates to
- * still be clickable for cross-month range selection, this is
- * the knob. */
-.dark .rbc-off-range {
-  opacity: 0.30;
-}
-
-/* ── Selected cell ring (Phase-2 quick-create prerequisite) ──
- * Click a cell → future Phase-2 quick-create modal opens to that
- * date. Without a clear ring the click feedback was inconsistent
- * vs. the toolbar buttons (which keep full var(--border)). 1px
- * primary inset ring + the existing 14% primary wash — both
- * `inset` so the ring sits inside the cell instead of overlapping
- * the 18% hairline. */
-.dark .rbc-month-view .rbc-selected-cell {
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 60%, transparent);
+@media (prefers-reduced-motion: reduce) {
+  .mesh-blob--1,
+  .mesh-blob--2,
+  .mesh-blob--3,
+  .mesh-blob--variant-dramatic .mesh-blob--1,
+  .mesh-blob--variant-dramatic .mesh-blob--2,
+  .mesh-blob--variant-dramatic .mesh-blob--3,
+  .shimmer::before,
+  .badge-dot-pulse,
+  .cta-ring {
+    animation: none !important;
+  }
+  .mesh-blob--1 { transform: none; }
+  .mesh-blob--2 { transform: none; }
+  .mesh-blob--3 { transform: none; }
+  .mesh-blob--variant-dramatic .mesh-blob--1 { transform: none; }
+  .mesh-blob--variant-dramatic .mesh-blob--2 { transform: none; }
+  .mesh-blob--variant-dramatic .mesh-blob--3 { transform: none; }
+  .shimmer::before { transform: translateX(0); opacity: 0.4; }
+  .badge-dot-pulse { transform: scale(1); }
+  .cta-ring { box-shadow: 0 0 0 2px var(--primary), 0 0 18px 3px color-mix(in oklab, var(--primary) 30%, transparent); }
 }
 

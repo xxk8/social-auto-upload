@@ -1,4 +1,5 @@
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 // Round-OPT-prefs-dialog v5 (barrel migration): collapsed
 // '@/features/preferences/tabs/PersonalizationTab' → '@/features/preferences'.
 import { PersonalizationTab } from '@/features/preferences'
@@ -20,13 +21,13 @@ import { Sun } from 'lucide-react'
 
 export default function PersonalizationPage() {
   return (
-    <div className="space-y-6 p-6">
+    <PageWrapper variant="flush">
       <PageHeader
         title="个性化"
         description="外观与显示"
         icon={<Sun className="h-5 w-5 text-muted-foreground" />}
       />
       <PersonalizationTab />
-    </div>
+    </PageWrapper>
   )
 }

@@ -13,6 +13,7 @@ import { EmptyState } from '@/Components/ui/empty-state'
 import { TrendingUp } from 'lucide-react'
 import type { AnalyticsSummary } from '@/hooks/useAnalytics'
 import { computeSuccessRates } from './format'
+import { CHART_TOOLTIP_STYLE, CHART_TICK_STYLE, CHART_AXIS_LINE } from '@/lib/recharts-theme'
 
 /**
  * §12.6 — SuccessRateTrendChart: line chart showing the daily publish
@@ -26,14 +27,6 @@ interface SuccessRateTrendChartProps {
   loading: boolean
 }
 
-const tooltipStyle = {
-  backgroundColor: 'var(--popover)',
-  border: '1px solid var(--border)',
-  borderRadius: '8px',
-  fontSize: '12px',
-  color: 'var(--popover-foreground)',
-} as const
-
 interface SuccessRateTooltipProps {
   active?: boolean
   label?: string | number
@@ -44,7 +37,7 @@ function SuccessRateTooltip({ active, label, payload }: SuccessRateTooltipProps)
   if (!active || !payload || payload.length === 0) return null
   const rate = payload[0]?.value
   return (
-    <div style={tooltipStyle} className="px-3 py-2">
+    <div style={CHART_TOOLTIP_STYLE} className="px-3 py-2">
       <p style={{ fontWeight: 600, marginBottom: 4 }}>{label}</p>
       <p>{rate === null || rate === undefined ? '无任务' : `成功率 ${rate}%`}</p>
     </div>
@@ -86,15 +79,15 @@ export const SuccessRateTrendChart = memo(function SuccessRateTrendChart({
               />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                tick={CHART_TICK_STYLE}
                 tickLine={false}
-                axisLine={{ stroke: 'var(--border)' }}
+                axisLine={CHART_AXIS_LINE}
               />
               <YAxis
                 domain={[0, 100]}
                 tickFormatter={(v: number) => `${v}%`}
                 allowDecimals={false}
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                tick={CHART_TICK_STYLE}
                 tickLine={false}
                 axisLine={false}
                 width={36}

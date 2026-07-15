@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { type ReactNode } from 'react'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -114,7 +115,7 @@ vi.mock('@/features/auth/useAuth', () => ({
 // sites become no-op callbacks), null PreferencesDialog (real
 // dialog JSX never evaluates even when isAuthenticated).
 vi.mock('@/features/preferences', () => ({
-  PreferencesDialogProvider: ({ children }) => children,
+  PreferencesDialogProvider: ({ children }: { children: ReactNode }) => children,
   usePreferencesDialog: () => ({
     open: false,
     activeTab: 'account',

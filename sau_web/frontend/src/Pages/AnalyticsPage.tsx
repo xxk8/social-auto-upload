@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
+import { motion } from 'motion/react'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { Button } from '@/Components/ui/button'
 import { Card } from '@/Components/ui/index'
 import { useToast } from '@/Components/ui/toast'
@@ -49,40 +51,74 @@ const RANGE_LABELS: Record<DateRange, string> = {
   all: '全部',
 }
 
-/** Stats card — one of 4 summary tiles with optional trend indicator. */
+/** Stats card — one of 4 summary tiles with gradient + trend indicator. */
+const STATS_GRADIENTS: Record<string, string> = {
+  total: 'from-blue-500/10 to-blue-500/5',
+  success: 'from-emerald-500/10 to-emerald-500/5',
+  accounts: 'from-violet-500/10 to-violet-500/5',
+  today: 'from-amber-500/10 to-amber-500/5',
+}
+
+const STATS_ICON_BG: Record<string, string> = {
+  total: 'bg-blue-500/15',
+  success: 'bg-emerald-500/15',
+  accounts: 'bg-violet-500/15',
+  today: 'bg-amber-500/15',
+}
+
+const STATS_ICON_COLOR: Record<string, string> = {
+  total: 'text-blue-500',
+  success: 'text-emerald-500',
+  accounts: 'text-violet-500',
+  today: 'text-amber-500',
+}
+
 function StatsCard({
   label,
   value,
   icon: Icon,
   trend,
   trendDir,
+  variant = 'total',
 }: {
   label: string
   value: string | number
   icon: typeof TrendingUp
   trend?: string
   trendDir?: 'up' | 'down' | 'flat'
+  variant?: 'total' | 'success' | 'accounts' | 'today'
 }) {
   const TrendIcon = trendDir === 'up' ? ArrowUpRight : trendDir === 'down' ? ArrowDownRight : Minus
   const trendColor =
     trendDir === 'up' ? 'text-emerald-500' : trendDir === 'down' ? 'text-destructive' : 'text-muted-foreground'
 
   return (
-    <Card className="flex items-center gap-3 px-4 py-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-        <Icon className="h-5 w-5 text-primary" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-2xl font-bold leading-none tabular-nums">{value}</p>
-        <p className="text-[11px] text-muted-foreground mt-1">{label}</p>
-      </div>
-      {trend && (
-        <div className={cn('flex items-center gap-0.5 text-[11px] font-medium', trendColor)}>
-          <TrendIcon className="h-3 w-3" />
-          {trend}
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      <Card className={cn(
+        'relative overflow-hidden bg-gradient-to-br ring-1 ring-foreground/5 hover:ring-foreground/10 transition-all',
+        STATS_GRADIENTS[variant],
+      )}>
+        <div className="flex items-center gap-3 px-4 py-4">
+          <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl shrink-0', STATS_ICON_BG[variant])}>
+            <Icon className={cn('h-5 w-5', STATS_ICON_COLOR[variant])} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-2xl font-bold leading-none tabular-nums tracking-tight">{value}</p>
+            <p className="text-[11px] text-muted-foreground mt-1.5">{label}</p>
+          </div>
+          {trend && (
+            <div className={cn('flex items-center gap-0.5 text-[11px] font-medium shrink-0', trendColor)}>
+              <TrendIcon className="h-3 w-3" />
+              {trend}
+            </div>
+          )}
         </div>
-      )}
-    </Card>
+      </Card>
+    </motion.div>
   )
 }
 
@@ -140,7 +176,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto w-full">
+    <PageWrapper>
       <PageHeader
         title="数据分析"
         description="发布趋势、平台表现、账号活跃度"
@@ -163,7 +199,7 @@ export default function AnalyticsPage() {
           shown when tier === 'free' and range is clamped to 7 days. */}
 
       {/* ── Date range selector — distinct toolbar ───────── */}
-      <div className="mt-4 flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
+      <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
         <Calendar className="h-4 w-4 text-muted-foreground/70" />
         <span className="text-xs font-medium text-muted-foreground/80 mr-1">时间范围</span>
         <div className="flex items-center gap-1">
@@ -181,7 +217,7 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="mt-4">
+      <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">概览</TabsTrigger>
           <TabsTrigger value="effect">效果</TabsTrigger>
@@ -195,6 +231,7 @@ export default function AnalyticsPage() {
           icon={TrendingUp}
           trend={trendPct}
           trendDir={trendDir}
+          variant="total"
         />
         <StatsCard
           label="成功率"
@@ -202,16 +239,19 @@ export default function AnalyticsPage() {
           icon={CheckCircle2}
           trend={summary ? `${summary.success}/${summary.total}` : undefined}
           trendDir="flat"
+          variant="success"
         />
         <StatsCard
           label="活跃账号"
           value={activeAccounts}
           icon={Users}
+          variant="accounts"
         />
         <StatsCard
           label="今日"
           value={summary?.today ?? '—'}
           icon={BarChart3}
+          variant="today"
         />
       </div>
 
@@ -248,6 +288,6 @@ export default function AnalyticsPage() {
           <MetricsEffectPanel range={range} />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageWrapper>
   )
 }

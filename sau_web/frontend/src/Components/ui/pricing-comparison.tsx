@@ -54,6 +54,14 @@ export interface PricingComparisonProps {
   description?: string
   /** Extra classes for the outer <section>. */
   className?: string
+  /**
+   * Opt the section out of `useVisitorMotion`'s ambient
+   * section parallax. Default `true` because PricingComparison
+   * is a data table — a continuously scrubbing -24px translate
+   * would shift the prices and check/X cells as the user reads,
+   * which is actively distracting. Round-unify-grammar default.
+   */
+  noParallax?: boolean
 }
 
 export function PricingComparison({
@@ -62,9 +70,13 @@ export function PricingComparison({
   title = '一表看清差异',
   description = '横向对比四个版本的核心能力,绿色对勾代表包含,灰色叉号代表不包含。',
   className = '',
+  noParallax = true,
 }: PricingComparisonProps) {
   return (
-    <section className={`border-b border-border/40 px-6 py-16 sm:py-20 ${className}`}>
+    <section
+      data-no-parallax={noParallax ? '' : undefined}
+      className={`border-b border-border/40 px-6 py-16 sm:py-20 ${className}`}
+    >
       <div className="mx-auto max-w-4xl">
         <SectionHeading variant="landing" eyebrow={eyebrow} title={title} description={description} />
         <div data-reveal-group className="mt-10 overflow-x-auto rounded-xl border border-border/40 bg-card/40">

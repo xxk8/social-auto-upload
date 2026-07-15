@@ -1,0 +1,333 @@
+/* =====================================================================
+ * react-big-calendar — dark-mode overrides.
+ *
+ * NOTE: This module is imported by `Pages/CalendarPage.tsx` and relies
+ * on the CSS custom properties (`--card`, `--border`, `--primary`,
+ * `--font-body`, `--font-jetbrains-mono`, etc.) defined in `index.css`.
+ * It must be loaded after `index.css` so the variables resolve correctly.
+ *
+ * react-big-calendar v1.x ships a hardcoded light-mode stylesheet
+ * (imported in `Pages/CalendarPage.tsx`). The library has no native
+ * theme respect, so when ThemeProvider flips `.dark` on `<html>` the
+ * calendar body keeps a white grid on dark chrome — the calendar
+ * reads as a "white window" pasted onto the dark dashboard and
+ * every `.rbc-*` hairline, day number, and toolbar button is set
+ * to library defaults that don't adapt.
+ *
+ * Selectors are written `.dark .rbc-*` (specificity 0,2,0) so they
+ * beat the library's bare `.rbc-*` (0,1,0) regardless of CSS
+ * cascade order. Order matters less than specificity in practice:
+ * Vite loads the library's stylesheet after `index.css` in some
+ * bundling modes, but `.dark .X` always wins against `.X` for
+ * same-cascade ties.
+ *
+ * Paint contract: cell canvas = `--card` (so dark-mode cards blend
+ * seamlessly); HEADER strip = `--popover` for a 1-step luminance
+ * lift (visual hierarchy); OFF-RANGE dates drop to muted at 45%
+ * opacity so neighbouring-month cells don't compete; TODAY's
+ * cell = low-chroma `--primary` wash so the marker stays
+ * secondary to the brand-coloured events at first glance;
+ * SELECTION cell = slightly stronger `--primary` wash; EVENTS
+ * keep the per-brand backgrounds (`eventPropGetter` already
+ * paints them) — only the default 1px library border is
+ * suppressed so the chip blends into its brand fill.
+ * Event text remains white (set in `eventPropGetter`) — works on
+ * every saturated platform colour in the brand palette.
+ *
+ * Originally verified against react-big-calendar v1.13+ via the
+ * 8-oxo repository's pinned dep in `package.json`. Bumping the
+ * library past a major version should re-verify these selectors
+ * (most affected: `.rbc-time-slot`, `.rbc-timeslot-group`,
+ * `.rbc-current .rbc-button-link`).
+ * ===================================================================== */
+
+.dark .rbc-calendar,
+.dark .rbc-month-view,
+.dark .rbc-time-view,
+.dark .rbc-agenda-view {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border-color: var(--rbc-grid-line) !important;
+  /* Scoped token for dense grid lines — cell grid, header strip,
+   * agenda row borders. The 18% mix (round 1 was 45%; round 2 dialed
+   * to 30%; this third pass drops to 18% per operator escalation
+   * 2026-07-10 「我说的是边框太艳了，再暗色的时候」 — they were
+   * still finding the 30% grid too prismatic against the deep
+   * dark canvas. Aggressive softening here + matching wrapper
+   * border /12 in `CalendarPage.tsx` keeps the dense monthly grid
+   * as a glint-row cue rather than as visible dividers cutting
+   * through the canvas. The outer calendar shell + toolbar button
+   * borders still use the full-strength `var(--border)` so the
+   * calendar's perimeter reads as a contained widget. */
+   --rbc-grid-line: color-mix(in oklab, var(--border) 18%, transparent);
+}
+
+.dark .rbc-toolbar {
+  color: var(--card-foreground);
+}
+.dark .rbc-toolbar button {
+  color: var(--card-foreground);
+  background-color: transparent;
+  border-color: var(--border);
+}
+.dark .rbc-toolbar button:hover,
+.dark .rbc-toolbar button:focus {
+  background-color: var(--accent);
+  border-color: var(--border);
+  color: var(--accent-foreground);
+}
+.dark .rbc-toolbar button.rbc-active,
+.dark .rbc-toolbar button:active {
+  background-color: var(--accent);
+  border-color: var(--primary);
+  color: var(--accent-foreground);
+}
+
+.dark .rbc-header {
+  background-color: var(--popover);
+  border-color: var(--rbc-grid-line) !important;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.dark .rbc-month-row,
+.dark .rbc-day-bg {
+  background-color: var(--card);
+  border-color: var(--rbc-grid-line) !important;
+}
+.dark .rbc-off-range-bg {
+  background-color: var(--muted);
+}
+.dark .rbc-off-range {
+  color: var(--muted-foreground);
+  opacity: 0.45;
+}
+.dark .rbc-today {
+  background-color: color-mix(in oklab, var(--primary) 8%, var(--card));
+}
+
+.dark .rbc-current .rbc-button-link {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* Date-number links inside month-view cells. react-big-calendar's
+ * default stylesheet sets a near-black color on `.rbc-button-link`
+ * that becomes unreadable against the dark card canvas. Scope the
+ * override to `.rbc-date-cell` so toolbar / agenda links aren't
+ * affected. Off-range dates inherit the muted treatment above.
+ * The `.rbc-current` re-override preserves today's primary accent
+ * because it shares specificity and appears later in source order. */
+.dark .rbc-date-cell .rbc-button-link {
+  color: var(--card-foreground);
+}
+.dark .rbc-date-cell.rbc-current .rbc-button-link {
+  color: var(--primary);
+}
+.dark .rbc-date-cell.rbc-off-range .rbc-button-link {
+  color: var(--muted-foreground);
+}
+.dark .rbc-selected-cell {
+  background-color: color-mix(in oklab, var(--primary) 14%, transparent);
+}
+
+.dark .rbc-time-header,
+.dark .rbc-time-header-content,
+.dark .rbc-time-content,
+.dark .rbc-time-gutter,
+.dark .rbc-time-slot,
+.dark .rbc-timeslot-group,
+.dark .rbc-day-slot {
+  border-color: var(--rbc-grid-line) !important;
+  color: var(--card-foreground);
+}
+
+/* Week-view text-color audit: the catch-all rule above sets `color`
+ * on the container, but react-big-calendar's default stylesheet applies
+ * a near-black color directly on `.rbc-label` and `.rbc-time-slot`
+ * elements that can win in some bundling orders. Add explicit
+ * dark-mode overrides so the left gutter time labels and the main
+ * grid slot labels always read against the dark card canvas. Header
+ * labels are already handled by the existing `.dark .rbc-header`
+ * rule and keep their muted treatment. */
+.dark .rbc-time-gutter .rbc-label,
+.dark .rbc-time-content .rbc-time-slot {
+  color: var(--card-foreground);
+}
+
+.dark .rbc-agenda-view table.rbc-agenda-table {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border-color: var(--border);
+}
+.dark .rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  background-color: var(--popover);
+  color: var(--muted-foreground);
+  border-color: var(--rbc-grid-line) !important;
+}
+.dark .rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  border-color: var(--rbc-grid-line) !important;
+}
+
+.dark .rbc-show-more {
+  color: var(--primary);
+  background-color: transparent;
+  font-weight: 500;
+}
+.dark .rbc-show-more:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* Catch-all: suppress every rbc border in dark mode so the library's
+ * default bright borders (hardcoded #ddd, #ccc) don't leak through. */
+.dark [class*="rbc"] {
+  border-color: var(--rbc-grid-line) !important;
+}
+
+/* Preserve event chip styling — `eventPropGetter` already applies
+ * platform-colour backgrounds + white text per event. Only the
+ * library's default 1px border needs suppressing so the chip
+ * blends into its brand background instead of carrying a hairline
+ * that lights up oddly against the saturated fills in dark mode. */
+.dark .rbc-event {
+  border: none;
+}
+
+/* =====================================================================
+ * Calendar table polish — Round 4 (OPT-cal-table-beautify, 2026-07-10).
+ *
+ * Five surgical additions to the existing rbc dark-mode override
+ * block. Each one is scoped inside `.dark` so the light theme
+ * surface is untouched, and each one preserves the existing
+ * hairline-density contract (var(--rbc-grid-line) 18% mix) — the
+ * polish only changes how the *visible* elements feel, not how
+ * the dividers read.
+ *
+ *   1. Header roster typography — `.dark .rbc-header` switches to
+ *      IBM Plex Mono + uppercase + 0.08em tracking so the Sun / Mon
+ *      / … / Sat row reads as a "weekday roster" instead of generic
+ *      sans title-case. Same `--popover` / `--rbc-grid-line` chrome,
+ *      only the typography changes.
+ *
+ *   2. Today accent strip — `.dark .rbc-month-view .rbc-today`
+ *      gets a 2px var(--primary) `box-shadow: inset` along the
+ *      top edge. Linear-style callout constrained to the top so
+ *      it doesn't compete with the full-cell brand-color fills of
+ *      the event chips below. The existing 8% primary wash is
+ *      untouched (still defined on `.dark .rbc-today` higher in
+ *      the file).
+ *
+ *   3. Today date-number typography — `.dark .rbc-current
+ *      .rbc-button-link` switches to IBM Plex Mono + 600 + 13px
+ *      + an `今日 · ` ::before eyebrow. Today reads as
+ *      「今日 · 10」with the prefix in muted-foreground 9px sans
+ *      and the number in primary 13px mono — operator can spot
+ *      today at one glance without losing scan-ability of the
+ *      other 41 date numbers.
+ *
+ *   4. Weekend soft tint — Sat/Sun day-bg cells (`.rbc-weekend-bg`
+ *      in rbc's own class; belt-and-suspenders `.rbc-row-bg
+ *      .rbc-day-bg:nth-child(6|7)` for versions that diverge)
+ *      get a 50% muted + 50% card mix so the workweek columns
+ *      visually breathe against the weekend columns without
+ *      breaking visual rhythm.
+ *
+ *   5. Off-range dim — `.dark .rbc-off-range` opacity drops from
+ *      0.45 → 0.30 so neighbor-month spillover dates read
+ *      clearly as "not this month" against the current-month sat
+ *      at 1.0.
+ *
+ * Invariants (pinned in `CalendarPage.dark-mode.test.tsx`):
+ *   - The `--rbc-grid-line` 18% mix (round-3 contract) is UNCHANGED.
+ *   - The softenedSelector list (12 selectors referencing
+ *     `var(--rbc-grid-line)`) is UNCHANGED.
+ *   - The perimeterSelector list (toolbar button + agenda table
+ *     outer table using `var(--border)`) is UNCHANGED.
+ * =====================================================================
+ */
+
+/* ── 1. Header roster typography ──
+ * Extends the existing `.dark .rbc-header` rule higher in the file
+ * (which sets background/border/color/font-weight) — only typography
+ * + padding properties are added here so source order remains the
+ * single source of truth for the cell chrome. */
+.dark .rbc-header {
+  font-family: var(--font-jetbrains-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 6px;
+}
+
+/* ── 2. Today accent strip ──
+ * 2px primary top edge via inset box-shadow so the strip sits one
+ * pixel INSIDE the cell border rather than overlapping it. Builds
+ * on the existing 8% primary wash on `.dark .rbc-today`. The
+ * `inset 0 2px 0 0` shape is the same idiom used by TierCardBlock's
+ * `tier-recommended-accent` (see "TierCard" section
+ * higher in the file) so the engineering-tool honest-signal
+ * pattern stays consistent across surfaces. */
+.dark .rbc-month-view .rbc-today {
+  box-shadow: inset 0 2px 0 0 var(--primary);
+}
+
+/* ── 3. Today date-number typography ──
+ * Mono + 600 + 13px + 今日 · ::before eyebrow. The eyebrow uses
+ * `content: '今日 · '` so no custom JSX / BigCalendar `components`
+ * override is needed — purely CSS-driven so changing the locale
+ * (or updating 「今日」to 今周 or similar) is a single-token edit. */
+.dark .rbc-current .rbc-button-link {
+  font-family: var(--font-jetbrains-mono);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  padding: 2px 4px 2px;
+  display: block;
+  text-align: left;
+  width: 100%;
+}
+.dark .rbc-current .rbc-button-link::before {
+  content: '今日 · ';
+  font-size: 9px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  color: var(--muted-foreground);
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: 1px;
+}
+
+/* ── 4. Weekend soft tint ──
+ * Selector `.rbc-weekend-bg` is rbc's own class applied to Sat/Sun
+ * day-bg cells; the `:nth-child(6|7)` version is belt-and-suspenders
+ * in case a future rbc release drops the weekend-bg class on a
+ * subset of viewports. Both selector branches paint the same
+ * muted/card 50/50 mix so semantic intent is preserved. */
+.dark .rbc-month-view .rbc-weekend-bg,
+.dark .rbc-month-view .rbc-row-bg .rbc-day-bg:nth-child(6),
+.dark .rbc-month-view .rbc-row-bg .rbc-day-bg:nth-child(7) {
+  background-color: color-mix(in oklab, var(--muted) 50%, var(--card));
+}
+
+/* ── 5. Off-range dim ──
+ * Extends the existing `.dark .rbc-off-range` rule (which sets
+ * `color: var(--muted-foreground)`); only opacity is overridden
+ * here. 0.30 reads as "clearly another month" against the
+ * current-month dates at 1.0 — somewhere between a footnote and
+ * a watermark. If the grid later needs neighbor-month dates to
+ * still be clickable for cross-month range selection, this is
+ * the knob. */
+.dark .rbc-off-range {
+  opacity: 0.30;
+}
+
+/* ── Selected cell ring (Phase-2 quick-create prerequisite) ──
+ * Click a cell → future Phase-2 quick-create modal opens to that
+ * date. Without a clear ring the click feedback was inconsistent
+ * vs. the toolbar buttons (which keep full var(--border)). 1px
+ * primary inset ring + the existing 14% primary wash — both
+ * `inset` so the ring sits inside the cell instead of overlapping
+ * the 18% hairline. */
+.dark .rbc-month-view .rbc-selected-cell {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 60%, transparent);
+}

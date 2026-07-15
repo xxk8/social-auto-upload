@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '@/Components
 import { EmptyState } from '@/Components/ui/empty-state'
 import { XCircle } from 'lucide-react'
 import type { AnalyticsSummary } from '@/hooks/useAnalytics'
+import { CHART_TOOLTIP_STYLE, CHART_TICK_STYLE, CHART_AXIS_LINE } from '@/lib/recharts-theme'
 
 /**
  * §12.5 — FailureReasonChart: horizontal bar chart showing the top 5
@@ -23,14 +24,6 @@ interface FailureReasonChartProps {
   data: AnalyticsSummary['failure_reasons']
   loading: boolean
 }
-
-const tooltipStyle = {
-  backgroundColor: 'var(--popover)',
-  border: '1px solid var(--border)',
-  borderRadius: '8px',
-  fontSize: '12px',
-  color: 'var(--popover-foreground)',
-} as const
 
 /** Truncate reason text to 20 chars for the Y-axis label. */
 function truncate(reason: string): string {
@@ -79,7 +72,7 @@ export const FailureReasonChart = memo(function FailureReasonChart({
             >
               <XAxis
                 type="number"
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                tick={CHART_TICK_STYLE}
                 tickLine={false}
                 axisLine={false}
                 allowDecimals={false}
@@ -88,13 +81,13 @@ export const FailureReasonChart = memo(function FailureReasonChart({
               <YAxis
                 type="category"
                 dataKey="reason"
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                tick={CHART_TICK_STYLE}
                 tickLine={false}
-                axisLine={{ stroke: 'var(--border)' }}
+                axisLine={CHART_AXIS_LINE}
                 width={120}
               />
               <Tooltip
-                contentStyle={tooltipStyle}
+                contentStyle={CHART_TOOLTIP_STYLE}
                 formatter={(value, _name, entry) => [
                   `${value} 次`,
                   (entry?.payload as { fullReason?: string })?.fullReason ?? '失败',

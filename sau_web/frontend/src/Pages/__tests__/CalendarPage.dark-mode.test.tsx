@@ -3,8 +3,8 @@
 // `vitest.config.ts` sets `css: false`, so our stylesheet doesn't
 // get injected into jsdom by Vite's pipeline — that blocks testing
 // of computed styles in jsdom's CSSOM. Instead, read
-// `src/index.css` at test time and regex-pin the contract that
-// ships the calendar dark-mode "hairline grid lines" fix:
+// `src/calendar-dark.css` at test time and regex-pin the contract
+// that ships the calendar dark-mode "hairline grid lines" fix:
 //
 //   1. `--rbc-grid-line` token declared inside `.dark .rbc-(calendar
 //      |month-view|time-view|agenda-view)` as
@@ -49,7 +49,7 @@ import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const indexCss = readFileSync(resolve(__dirname, '../index.css'), 'utf-8')
+const calendarCss = readFileSync(resolve(__dirname, '../../calendar-dark.css'), 'utf-8')
 
 // `.dark .rbc-(calendar|month-view|time-view|agenda-view)` — the
 // selector group that introduces `--rbc-grid-line`. Matched as a
@@ -86,13 +86,13 @@ function expectSelectorHasBorderColor(selector: string, expected: string): void 
       '[^}]*\\}',
   )
   expect(
-    re.test(indexCss),
-    `${selector} should set border-color: ${expected} — see doc in src/index.css`,
+    re.test(calendarCss),
+    `${selector} should set border-color: ${expected} — see doc in src/calendar-dark.css`,
   ).toBe(true)
 }
 
 describe('CalendarPage — rbc dark-mode CSS spec', () => {
-  it('declares --rbc-grid-line scoped to .dark .rbc-* as color-mix(--border 45%)', () => {
+  it('declares --rbc-grid-line scoped to .dark .rbc-* as color-mix(--border 18%)', () => {
     // Single-knob contract: scope + value. Drift in either piece
     // regresses the calendar's dark-mode density visually.
     const re = new RegExp(
@@ -102,7 +102,7 @@ describe('CalendarPage — rbc dark-mode CSS spec', () => {
         '%\\s*,\\s*transparent\\s*\\)',
     )
     expect(
-      re.test(indexCss),
+      re.test(calendarCss),
       '--rbc-grid-line declaration is missing or has shape drift (scope, percentage, or color-mix args)',
     ).toBe(true)
   })
@@ -158,7 +158,7 @@ describe('CalendarPage — rbc dark-mode CSS spec', () => {
 // polish contract (header roster, today callout, weekend tint, off-
 // range dim, selected-cell ring). The two describe blocks together
 // cover the rbc dark-mode visual contract end-to-end — see the
-// "Calendar polish — round 4" comment block in `src/index.css` for
+// "Calendar polish — round 4" comment block in `src/calendar-dark.css` for
 // the why behind each selector.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -177,7 +177,7 @@ describe('CalendarPage — rbc dark-mode table polish (round 4 / OPT-cal-table-b
         escapeForRegex(value) +
         '[^}]*\\}',
     )
-    return re.test(indexCss)
+    return re.test(calendarCss)
   }
 
   it('today cell carries a 2px primary top-accent strip', () => {
@@ -194,7 +194,7 @@ describe('CalendarPage — rbc dark-mode table polish (round 4 / OPT-cal-table-b
         '[^}]*\\}',
     )
     expect(
-      re.test(indexCss),
+      re.test(calendarCss),
       '.dark .rbc-month-view .rbc-today must carry `box-shadow: inset 0 2px 0 0 var(--primary)` (2px top accent strip)',
     ).toBe(true)
   })
@@ -223,7 +223,7 @@ describe('CalendarPage — rbc dark-mode table polish (round 4 / OPT-cal-table-b
         '[^}]*\\}',
     )
     expect(
-      linkRe.test(indexCss) && eyebrowRe.test(indexCss),
+      linkRe.test(calendarCss) && eyebrowRe.test(calendarCss),
       [
         '.dark .rbc-current .rbc-button-link must set',
         ' font-family: var(--font-jetbrains-mono) AND font-weight: 600',
@@ -265,7 +265,7 @@ describe('CalendarPage — rbc dark-mode table polish (round 4 / OPT-cal-table-b
         '[^}]*\\}',
     )
     expect(
-      re.test(indexCss),
+      re.test(calendarCss),
       '.dark .rbc-month-view .rbc-weekend-bg must set background-color: color-mix(in oklab, var(--muted) 50%, var(--card))',
     ).toBe(true)
   })
@@ -281,7 +281,7 @@ describe('CalendarPage — rbc dark-mode table polish (round 4 / OPT-cal-table-b
         '\\s*\\{[^}]*opacity:\\s*0\\.30[^}]*\\}',
     )
     expect(
-      re.test(indexCss),
+      re.test(calendarCss),
       '.dark .rbc-off-range must set opacity: 0.30 (round-4 dim; was 0.45 in round-3)',
     ).toBe(true)
   })
@@ -302,8 +302,47 @@ describe('CalendarPage — rbc dark-mode table polish (round 4 / OPT-cal-table-b
         '[^}]*\\}',
     )
     expect(
-      re.test(indexCss),
+      re.test(calendarCss),
       '.dark .rbc-month-view .rbc-selected-cell must carry `box-shadow: inset 0 0 0 1px color-mix(... var(--primary) ...)`',
     ).toBe(true)
   })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Week-view text-color audit (follow-up to round-3/round-4 fixes).
+// react-big-calendar's default stylesheet applies near-black colors to
+// `.rbc-label` and `.rbc-time-slot` elements that can leak through the
+// dark-mode container `color`. These selectors pin explicit
+// `color: var(--card-foreground)` on the exact text-bearing nodes in the
+// week view so the gutter time labels and slot labels remain readable.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('CalendarPage — rbc dark-mode week-view text-color audit', () => {
+  function propHas(selector: string, prop: string, value: string): boolean {
+    const re = new RegExp(
+      escapeForRegex(selector) +
+        '(?:\\s*,\\s*[^,{}]+)*' +
+        '\\s*\\{[^}]*' +
+        prop +
+        ':\\s*' +
+        escapeForRegex(value) +
+        '[^}]*\\}',
+    )
+    return re.test(calendarCss)
+  }
+
+  it('week-view gutter labels use card-foreground', () => {
+    expect(
+      propHas('.dark .rbc-time-gutter .rbc-label', 'color', 'var(--card-foreground)'),
+      '.dark .rbc-time-gutter .rbc-label must set color: var(--card-foreground)',
+    ).toBe(true)
+  })
+
+  it('week-view content slot labels use card-foreground', () => {
+    expect(
+      propHas('.dark .rbc-time-content .rbc-time-slot', 'color', 'var(--card-foreground)'),
+      '.dark .rbc-time-content .rbc-time-slot must set color: var(--card-foreground)',
+    ).toBe(true)
+  })
+
 })

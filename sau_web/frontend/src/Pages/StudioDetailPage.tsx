@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,6 +17,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
+import { readSSEStream } from '@/api/sse'
 import { Button } from '@/Components/ui/button'
 import { Card, CardContent } from '@/Components/ui/card'
 import { Badge } from '@/Components/ui/badge'
@@ -182,6 +183,11 @@ export default function StudioDetailPage() {
   const [episodeDialogOpen, setEpisodeDialogOpen] = useState(false)
   const [episodeError, setEpisodeError] = useState<string | null>(null)
 
+  // AI 生成四幕状态
+  const [generating, setGenerating] = useState(false)
+  const [generateError, setGenerateError] = useState<string | null>(null)
+  const generateAbortRef = useRef<AbortController | null>(null)
+
   const updateMutation = useMutation({
     mutationFn: (patch: {
       title?: string
@@ -254,6 +260,44 @@ export default function StudioDetailPage() {
       setEpisodeError(err?.message ?? '网络错误,稍后重试')
     },
   })
+
+  const handleGenerateEpisodes = () => {
+    if (generating) return
+    if (!project?.synopsis?.trim()) return
+
+    setGenerating(true)
+    setGenerateError(null)
+
+    const abort = new AbortController()
+    generateAbortRef.current = abort
+
+    const url = studioApi.generateEpisodes(projectId)
+    readSSEStream(
+      url,
+      {},
+      {
+        onChunk: () => {
+          // Intentionally no-op: parsing partial JSON for act names is
+          // brittle and can flicker. The button spinner provides enough
+          // progress feedback for v0.1.
+        },
+        onGenerationDone: () => {
+          qc.invalidateQueries({ queryKey: ['studio-project', projectId] })
+          qc.invalidateQueries({ queryKey: ['studio-projects'] })
+        },
+        onError: (msg) => {
+          // Surface AI generation errors inline in the episodes section
+          // so the user sees the failure contextually next to the
+          // generate button, not inside the unrelated episode dialog.
+          setGenerateError(msg || 'AI 生成失败')
+        },
+      },
+      abort.signal,
+    ).finally(() => {
+      setGenerating(false)
+      generateAbortRef.current = null
+    })
+  }
 
   const renderMutation = useMutation({
     mutationFn: () => studioApi.renderProject(projectId),
@@ -847,6 +891,24 @@ export default function StudioDetailPage() {
         </div>
       )}
 
+      {generateError && (
+        <div
+          className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-[12px] text-destructive flex items-start justify-between gap-3"
+          role="alert"
+          data-testid="ai-generate-error"
+        >
+          <span>{generateError}</span>
+          <button
+            type="button"
+            onClick={() => setGenerateError(null)}
+            className="shrink-0 -mr-1 p-0.5 rounded-sm hover:bg-destructive/10"
+            aria-label="关闭错误提示"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[14px] font-semibold text-foreground">分集</h2>
@@ -877,16 +939,33 @@ export default function StudioDetailPage() {
           <EmptyState
             icon={<Sparkles className="h-6 w-6 text-muted-foreground/50" />}
             title="还没有分集"
-            description="先手动添加 1 集,挑出值得拍的那几集后点「渲染成片」。后续会有 「AI 自动生成 4 幕」 (Phase 2),在此之前先手动试试看。"
+            description="使用 AI 一键生成四幕剧本,或手动添加 1 集。"
             action={
-              <Button
-                onClick={() => setEpisodeDialogOpen(true)}
-                className="gap-1.5"
-                data-testid="episode-append-button"
-              >
-                <Plus className="h-4 w-4" strokeWidth={2.5} />
-                添加 1 集
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={handleGenerateEpisodes}
+                  disabled={generating || !project.synopsis?.trim()}
+                  className="gap-1.5"
+                  data-testid="ai-generate-button"
+                >
+                  {generating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {generating ? '生成中…' : 'AI 生成四幕'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setEpisodeDialogOpen(true)}
+                  disabled={generating}
+                  className="gap-1.5"
+                  data-testid="episode-append-button"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2.5} />
+                  手动添加 1 集
+                </Button>
+              </div>
             }
           />
         ) : (

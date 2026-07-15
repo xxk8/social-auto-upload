@@ -6,6 +6,7 @@ import { Badge } from '@/Components/ui/badge'
 import { PieChart as PieIcon } from 'lucide-react'
 import { PLATFORMS } from '@/api/client'
 import type { AnalyticsSummary } from '@/hooks/useAnalytics'
+import { CHART_TOOLTIP_STYLE, CHART_SLICE_GAP, PLATFORM_COLORS } from '@/lib/recharts-theme'
 
 /**
  * §12.4 — PlatformPieChart: donut chart showing per-platform publish
@@ -18,30 +19,6 @@ interface PlatformPieChartProps {
   data: AnalyticsSummary['by_platform']
   loading: boolean
 }
-
-/** Map platform values to hex brand colors for the pie slices.
- *  Unlike the other charts which use `var(--status-*)` CSS tokens, these
- *  are hardcoded hex values because they represent platform brand
- *  identity (Douyin magenta, Bilibili blue, etc.) that should NOT change
- *  with theme switching. The dark-mode adaptation comes from the
- *  `stroke="var(--background)"` gap between slices. */
-const PLATFORM_COLORS: Record<string, string> = {
-  douyin: '#ff0050',
-  kuaishou: '#ff7a00',
-  xiaohongshu: '#ff2442',
-  tencent: '#07c160',
-  bilibili: '#00a1d6',
-  tiktok: '#00f2ea',
-  baijiahao: '#f5a623',
-}
-
-const tooltipStyle = {
-  backgroundColor: 'var(--popover)',
-  border: '1px solid var(--border)',
-  borderRadius: '8px',
-  fontSize: '12px',
-  color: 'var(--popover-foreground)',
-} as const
 
 export const PlatformPieChart = memo(function PlatformPieChart({
   data,
@@ -107,7 +84,7 @@ export const PlatformPieChart = memo(function PlatformPieChart({
                     <Cell
                       key={entry.platform}
                       fill={PLATFORM_COLORS[entry.platform] ?? '#888888'}
-                      stroke="var(--background)"
+                      stroke={CHART_SLICE_GAP}
                       strokeWidth={2}
                       opacity={activeIndex === null || activeIndex === index ? 1 : 0.4}
                       style={{ cursor: 'pointer', transition: 'opacity 0.2s' }}
@@ -115,7 +92,7 @@ export const PlatformPieChart = memo(function PlatformPieChart({
                   ))}
                 </Pie>
                 <Tooltip
-                  contentStyle={tooltipStyle}
+                  contentStyle={CHART_TOOLTIP_STYLE}
                   formatter={(value, _name, entry) => {
                     const payload = entry?.payload as { success?: number; failed?: number; name?: string }
                     return [
@@ -145,7 +122,7 @@ export const PlatformPieChart = memo(function PlatformPieChart({
                     }}
                   />
                   <Badge
-                    variant={activeIndex === index ? 'default' : 'secondary'}
+                    variant={activeIndex === index ? 'info' : 'secondary'}
                     className="text-[11px] font-normal"
                   >
                     {entry.name} {entry.value}

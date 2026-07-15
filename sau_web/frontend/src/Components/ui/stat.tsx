@@ -93,7 +93,6 @@ function Stat({
 
 export {
   Stat,
-  type StatProps,
   type StatVariant,
   type StatSize,
 }

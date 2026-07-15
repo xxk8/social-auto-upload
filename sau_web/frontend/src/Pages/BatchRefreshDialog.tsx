@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useToast } from '@/Components/ui/toast'
 import { accountsApi } from '@/api/accounts'
 import { PLATFORMS } from '@/api/client'
@@ -73,7 +73,7 @@ export default function BatchRefreshDialog({
     es.addEventListener('progress', (e) => {
       try {
         const data = JSON.parse(e.data)
-        const { index, platform, account, status, message } = data
+        const { index, status, message } = data
         setItems((prev) => {
           const next = [...prev]
           if (next[index]) {

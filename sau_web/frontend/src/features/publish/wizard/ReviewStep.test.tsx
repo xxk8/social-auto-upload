@@ -93,6 +93,8 @@ describe('ReviewStep · target-platform rendering branches (LOW-pass regression)
 
   it('renders the defensive warning banner when groupSelection has 0 platforms', () => {
     const groupSelection: GroupSelection = {
+      groupId: 1,
+      groupName: 'qa',
       platforms: [],
       mappings: [],
     }
@@ -120,10 +122,12 @@ describe('ReviewStep · target-platform rendering branches (LOW-pass regression)
 
   it('renders the chip cluster when at least one platform is selected', () => {
     const groupSelection: GroupSelection = {
+      groupId: 2,
+      groupName: 'qa-2',
       platforms: ['douyin', 'bilibili'],
       mappings: [
-        { platform: 'douyin', cookieFile: 'a' },
-        { platform: 'bilibili', cookieFile: 'b' },
+        { platform: 'douyin', cookieFile: 'a', authId: 1 },
+        { platform: 'bilibili', cookieFile: 'b', authId: 2 },
       ],
     }
     mountReviewStep({ groupSelection })

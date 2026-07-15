@@ -33,6 +33,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import { adminApi, type AdminUser } from './adminApi'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { AdminNavTabs } from './components/AdminNavTabs'
 import { Card, CardContent } from '@/Components/ui/card'
 import { Skeleton } from '@/Components/ui/skeleton'
@@ -428,22 +429,21 @@ export default function AdminUsersPage() {
   ])
 
   return (
-    <div className="p-6">
-      <AdminNavTabs />
+    <PageWrapper topNav={<AdminNavTabs />}>
       <PageHeader
-        title="用户管理"
-        description="查看和管理所有注册用户"
-        icon={<Shield className="h-5 w-5 text-[var(--status-info-fg)]" />}
-        actions={
-          <div
-            className="hidden sm:flex items-center gap-1.5 font-mono tabular-nums text-[11px] text-muted-foreground/70"
-            aria-live="polite"
-          >
-            <Users className="h-3 w-3" strokeWidth={1.75} />
-            共 {summary.total} 位用户
-          </div>
-        }
-      />
+          title="用户管理"
+          description="查看和管理所有注册用户"
+          icon={<Shield className="h-5 w-5 text-[var(--status-info-fg)]" />}
+          actions={
+            <div
+              className="hidden sm:flex items-center gap-1.5 font-mono tabular-nums text-[11px] text-muted-foreground/70"
+              aria-live="polite"
+            >
+              <Users className="h-3 w-3" strokeWidth={1.75} />
+              共 {summary.total} 位用户
+            </div>
+          }
+        />
 
       {/* Summary sub-strip — three KPI cards. Hidden while loading so
           the strip doesn't flash 0 / 0 / 0 before data arrives. */}
@@ -473,7 +473,7 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      <Card className="mt-5 border-border/60 bg-card/60 shadow-[0_1px_0_0_color-mix(in_oklab,var(--foreground)_4%,transparent)]">
+      <Card className="border-border/60 bg-card/60 shadow-[0_1px_0_0_color-mix(in_oklab,var(--foreground)_4%,transparent)]">
         <CardContent className="p-0">
           {isLoading ? (
             <div className="space-y-1 px-3 py-2">
@@ -628,6 +628,6 @@ export default function AdminUsersPage() {
           </div>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageWrapper>
   )
 }

@@ -160,7 +160,7 @@ function getStubDiagnostics(): Map<string, readonly ts.Diagnostic[]> {
   if (!configParseResult.config) {
     throw new Error(
       `Failed to parse tsconfig.app.json: ${ts.flattenDiagnosticMessageText(
-        configParseResult.error ?? 'unknown',
+        configParseResult.error?.messageText ?? 'unknown',
         '\n',
       )}`,
     )

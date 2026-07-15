@@ -18,10 +18,13 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 import { Link } from 'react-router-dom'
-import { ArrowRight, CreditCard, FileText, LayoutList, Sparkles } from 'lucide-react'
+import { ArrowRight, Bell, CreditCard, FileText, LayoutList, Sparkles } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card'
 import { Button } from '@/Components/ui/button'
+import { Switch } from '@/Components/ui/switch'
+import { Label } from '@/Components/ui/label'
 import { useAuth } from '@/features/auth/useAuth'
+import { useToast } from '@/Components/ui/toast'
 
 import { ROUTES } from '@/routes'
 // ── TIER_MAP (SettingsTab-local source-of-truth) ─────────────────────
@@ -75,9 +78,17 @@ const TIER_MAP: Record<TierKey, TierMeta> = {
 }
 
 export function SettingsTab() {
-  const { user: authUser } = useAuth()
+  const { user: authUser, updateMe, updateMeStatus } = useAuth()
+  const { addToast } = useToast()
   const tierKey = (authUser?.tier ?? 'legacy') as TierKey
   const plan = TIER_MAP[tierKey] ?? TIER_MAP.legacy
+  const isUpdating = updateMeStatus === 'pending'
+
+  const handleToggle = (key: 'notify_health_email' | 'notify_health_webhook', checked: boolean) => {
+    updateMe({ [key]: checked }).catch(() => {
+      addToast('通知偏好保存失败，请重试', 'error')
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -166,6 +177,42 @@ export function SettingsTab() {
         <CardHeader className="pb-4">
           <CardTitle className="text-[15px] flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+              <Bell className="h-4 w-4" />
+            </span>
+            健康告警通知
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-[13px] text-muted-foreground leading-relaxed">
+            当账号 cookie 从「健康」降级为「即将过期」或「已失效」时，系统会通过以下渠道通知你。
+          </p>
+          <NotificationToggle
+            id="notify-health-email"
+            label="邮件通知"
+            description="向管理员邮箱发送 cookie 失效告警"
+            checked={authUser?.notify_health_email ?? true}
+            disabled={isUpdating}
+            onCheckedChange={(checked) =>
+              handleToggle('notify_health_email', checked)
+            }
+          />
+          <NotificationToggle
+            id="notify-health-webhook"
+            label="Webhook 通知"
+            description="向配置的 webhook 地址推送 cookie 失效事件"
+            checked={authUser?.notify_health_webhook ?? true}
+            disabled={isUpdating}
+            onCheckedChange={(checked) =>
+              handleToggle('notify_health_webhook', checked)
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-[15px] flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
               <LayoutList className="h-4 w-4" />
             </span>
             相关页面
@@ -185,6 +232,46 @@ export function SettingsTab() {
           </Button>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// ── NotificationToggle (SettingsTab-private helper) ────────────────────
+// Reusable row for a Switch + label + description pair. Keeps the
+// health-alert toggles visually consistent with the rest of the
+// settings pane and avoids duplicating layout markup.
+interface NotificationToggleProps {
+  id: string
+  label: string
+  description: string
+  checked: boolean
+  disabled?: boolean
+  onCheckedChange: (checked: boolean) => void
+}
+
+function NotificationToggle({
+  id,
+  label,
+  description,
+  checked,
+  disabled,
+  onCheckedChange,
+}: NotificationToggleProps) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="space-y-0.5">
+        <Label htmlFor={id} className="text-sm font-medium text-foreground">
+          {label}
+        </Label>
+        <p className="text-[13px] text-muted-foreground leading-relaxed">{description}</p>
+      </div>
+      <Switch
+        id={id}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        aria-label={label}
+      />
     </div>
   )
 }

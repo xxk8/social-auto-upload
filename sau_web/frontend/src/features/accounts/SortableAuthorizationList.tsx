@@ -18,11 +18,10 @@ export function SortableAuthorizationList({
 }: SortableAuthorizationListProps) {
   return (
     <div className="space-y-2">
-      {authorizations.map((auth, index) => (
+        {authorizations.map((auth) => (
         <SortableAuthorizationItem
           key={auth.id}
           auth={auth}
-          index={index}
           groupId={groupId}
         />
       ))}

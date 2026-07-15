@@ -70,7 +70,7 @@ function StatusTabTrigger({
 }: {
   value: string
   option: StatusTabOption
-  tone: { bg: string; fg: string } | null
+  tone: { bg: string; fg: string; ring?: string } | null
 }) {
   const { value: current, setValue, layoutId } = useTabs()
   const active = current === value

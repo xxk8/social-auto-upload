@@ -97,6 +97,20 @@ const stubNavigation: AccountsBodyContextValue['navigation'] = {
   onOpenPublish: vi.fn(),
 }
 
+function makeTestGroup(): AccountsState['localGroups'][number] {
+  return {
+    id: 1,
+    name: '测试组',
+    created: '2024-01-01T00:00:00Z',
+    authorizations: [
+      { id: 1, platform: 'douyin', cookie_file: '/c/d.json', valid: true, stale: false, health: 'valid' },
+      { id: 2, platform: 'bilibili', cookie_file: '/c/b.json', valid: true, stale: false, health: 'expiring_soon' },
+      { id: 3, platform: 'xiaohongshu', cookie_file: '/c/x.json', valid: false, stale: false, health: 'invalid' },
+      { id: 4, platform: 'kuaishou', cookie_file: '/c/k.json', valid: true, stale: false },
+    ],
+  }
+}
+
 function mountAccountsBody(over: BodyRelevantState = {}) {
   const state = { ..._DEFAULTS, ...over } as AccountsState
   const dispatch = makeStubDispatch()
@@ -182,5 +196,23 @@ describe('AccountsBody · layout branches (round N+1 regression)', () => {
     mountAccountsBody()
     expect(screen.getByTestId('homepage-overview')).toBeInTheDocument()
     expect(screen.getByTestId('dialog-host')).toBeInTheDocument()
+  })
+
+  it('renders health summary when authorizations exist', () => {
+    const group = makeTestGroup()
+    mountAccountsBody({
+      groups: [{ id: 1, name: '测试组', created: '2024-01-01T00:00:00Z', authorizations: [] }],
+      localGroups: [group],
+      filteredGroups: [group],
+    })
+    expect(screen.getByText(/健康 1\/4/)).toBeInTheDocument()
+    expect(screen.getByText(/即将过期 1/)).toBeInTheDocument()
+    expect(screen.getByText(/已失效 1/)).toBeInTheDocument()
+    expect(screen.getByText(/未检查 1/)).toBeInTheDocument()
+  })
+
+  it('does not render health summary when there are no authorizations', () => {
+    mountAccountsBody()
+    expect(screen.queryByText(/健康/)).not.toBeInTheDocument()
   })
 })

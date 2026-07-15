@@ -142,8 +142,10 @@ vi.mock('motion/react', () => {
         if (!motionCache.has(tag)) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           motionCache.set(tag, (props: any) => {
-            const { children, ...rest } = (props ?? {}) as Record<string, unknown>
-            const Tag = (tag as string) || 'div'
+            const { children, ...rest } = (props ?? {}) as {
+              children?: ReactNode
+            } & Record<string, unknown>
+            const Tag: any = (tag as string) || 'div'
             return <Tag {...rest}>{children}</Tag>
           })
         }

@@ -10,11 +10,13 @@ import type { PricingTierProps } from '@/Components/ui/pricing-tier'
 import { PlatformIcon } from '@/Components/ui/platform-icon'
 import { PricingComparison } from '@/Components/ui/pricing-comparison'
 import { useRevealStagger } from '@/lib/use-reveal-stagger'
+import { useVisitorMotion } from '@/lib/use-visitor-motion'
+import { MeshGradient } from '@/Components/motion/MeshGradient'
+import { SplitText } from '@/Components/motion/SplitText'
+import { GlowOrb, DotGridBg, CtaSpotlightGlow } from '@/Components/motion/visitor-decor'
 import { ROUTES } from '@/routes'
 import {
   CheckCircle2,
-  Check,
-  X,
   Send,
   CalendarClock,
   Sparkles,
@@ -228,8 +230,18 @@ const HIGHLIGHT_ROWS: ReadonlyArray<{
 
 function HeroSection() {
   return (
-    <section className="relative overflow-hidden border-b border-border/40">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,var(--background),transparent_70%)] opacity-60" aria-hidden />
+    <section
+      data-hero-section
+      className="relative overflow-hidden border-b border-border/40"
+    >
+      {/* Background stack — mirrors LandingPage HeroSection:
+            1. MeshGradient intensity="normal" — depth layer
+            2. GlowOrb — 600×600 breathing radial (data-glow-orb)
+            3. DotGridBg — subtle dot pattern
+          Same design-system grammar across /, /pricing, /about. */}
+      <MeshGradient intensity="normal" />
+      <GlowOrb />
+      <DotGridBg />
       <div className="relative mx-auto max-w-5xl px-6 py-20 text-center sm:py-24">
         <div className="flex items-center justify-center gap-3">
           <BrandMark size="lg" />
@@ -237,8 +249,31 @@ function HeroSection() {
             social-auto-upload
           </span>
         </div>
-        <h1 className="mx-auto mt-8 max-w-3xl text-balance text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl">
-          按你的运营规模 <span className="text-muted-foreground">选择套餐</span>
+        {/* Pulsing-dot badge — same `badge-dot-pulse` rhythm
+            LandingPage uses in its hero badge. Anchors the
+            design-system identity across visitor surfaces. */}
+        <div className="mt-8 flex justify-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-muted/30 px-3.5 py-1.5 text-[12px] font-medium text-muted-foreground backdrop-blur-sm">
+            <span
+              className="badge-dot-pulse h-1.5 w-1.5 rounded-full bg-primary"
+              aria-hidden
+            />
+            本地部署 · 14 天免费试用 · 免费版永久免费
+          </div>
+        </div>
+        {/* mt-6 (not mt-8) — the badge above accounts for the
+            gap between the brand lockup and the h1. Keeps the
+            badge→h1 rhythm tight. */}
+        <h1 className="mx-auto mt-6 max-w-3xl text-balance text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl">
+          {/* Manual `data-text-segment` spans (NOT `<SplitText>`)
+              — SplitText splits on whitespace, which gives 1
+              word for whitespace-less Chinese strings. Manual
+              spans work for both zh-CN (no whitespace) and
+              en-US (whitespace) translations without
+              tokenization cost. Same pattern is used in
+              AboutPage — see comment there. */}
+          <span data-text-segment className="inline-block">按你的运营规模</span>{' '}
+          <span data-text-segment className="inline-block text-muted-foreground">选择套餐</span>
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-balance text-base leading-relaxed text-muted-foreground sm:text-lg">
           从单兵创作者到大规模矩阵,都有合适的选择。所有版本均包含本地部署能力,数据始终归属您。
@@ -266,7 +301,14 @@ function HeroSection() {
 
 function TiersSection() {
   return (
-    <section className="border-b border-border/40 px-6 py-16 sm:py-20">
+    // `data-no-parallax` opts this section out of
+    // `useVisitorMotion`'s ambient section parallax. The tier
+    // cards are data-dense (prices, account counts, features)
+    // — a continuously scrubbing -24px translate would shift
+    // the prices as the user reads. Narrative sections
+    // (CommonFeatures, Highlight, Cta) keep the default
+    // ambient parallax.
+    <section data-no-parallax className="border-b border-border/40 px-6 py-16 sm:py-20">
       <div data-reveal-group className="mx-auto grid max-w-6xl grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2 xl:grid-cols-4">
         {TIERS.map((t) => (
           <div key={t.name} data-reveal-cell>
@@ -287,7 +329,19 @@ function CommonFeaturesSection() {
         <SectionHeading
           variant="landing"
           eyebrow="所有版本均包含"
-          title="一套能力 · 任选你的规模"
+          title={
+            // `<SplitText mode="char">` for char-level stagger
+            // reveal (round-unify-grammar tuning). A single
+            // `<span data-text-segment>` had no stagger because
+            // there's only 1 element; with 13 char spans, the
+            // 0.12s default stagger gives a ~1.4s cascading
+            // reveal. Trade-off: longer reveal than LandingPage's
+            // 0.24s 3-piece hero h1, but the section is mid-page
+            // so a slower reveal reads as more deliberate.
+            <SplitText dataAttr="data-text-segment" mode="char">
+              一套能力 · 任选你的规模
+            </SplitText>
+          }
           description="不论哪个版本,都包含产品核心 4 件套 (批量发布 / 定时 / AI 文案 / 账号组管理) 与本地部署能力。"
         />
         <div data-reveal-group className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -363,7 +417,8 @@ function HighlightSection() {
         eyebrow="版本亮点"
         title={
           <>
-            团队与企业 <span className="text-muted-foreground">专属能力</span>
+            <span data-text-segment className="inline-block">团队与企业</span>{' '}
+            <span data-text-segment className="inline-block text-muted-foreground">专属能力</span>
           </>
         }
         description="当你的运营规模成长,团队版和企业版提供更强大的协作与管理能力。"
@@ -383,16 +438,47 @@ function HighlightSection() {
 
 function CtaSection() {
   return (
-    <section className="px-6 py-20 sm:py-24">
-      <div className="mx-auto flex max-w-3xl flex-col items-center gap-8 text-center">
+    <section
+      data-cta-section
+      className="relative overflow-hidden px-6 py-20 sm:py-24"
+    >
+      {/* Background stack — mirrors LandingPage CtaSection:
+            1. MeshGradient intensity="dramatic" — 1.4× area,
+               +6% primary tint, faster cadence
+            2. CtaSpotlightGlow — 1100×1100 focused radial
+               centered on the h2 (data-cta-glow for 2.8s
+               yoyo pulse)
+            3. GlowOrb — soft top wash
+            4. DotGridBg — subtle texture */}
+      <MeshGradient intensity="dramatic" />
+      <CtaSpotlightGlow />
+      <GlowOrb />
+      <DotGridBg className="opacity-[0.03]" />
+      <div className="relative mx-auto flex max-w-3xl flex-col items-center gap-8 text-center">
         <SectionHeading
           variant="landing"
           eyebrow="开始使用"
-          title="现在就选一个方向"
+          title={
+            // `<SplitText mode="char">` for char-level stagger
+            // reveal (round-unify-grammar tuning). 8 char spans
+            // × 0.12s = ~0.84s cascading reveal. Sits inside the
+            // dramatic-CTA section so the extra reveal length
+            // matches the section's "Conversion Zone" pacing.
+            <SplitText dataAttr="data-text-segment" mode="char">
+              就现在选一个方向
+            </SplitText>
+          }
           description="我们会陪你把当前工作流梳理一遍,推荐最合适的版本。付费版均含 14 天免费试用,免费版永久可用。"
         />
         <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-          <Button asChild size="lg" className="h-11 px-6 text-sm font-medium">
+          {/* Primary CTA carries both `shimmer` (light sweep)
+              and `cta-ring` (animated box-shadow halo) — same
+              design-system affordance as LandingPage. */}
+          <Button
+            asChild
+            size="lg"
+            className="shimmer cta-ring h-11 px-6 text-sm font-medium"
+          >
             <Link to="/login/auth?intent=contact">联系销售 →</Link>
           </Button>
           <Button asChild variant="outline" size="lg" className="h-11 px-6 text-sm font-medium">
@@ -422,7 +508,17 @@ function CtaSection() {
 }
 
 export default function PricingPage() {
+  // Two motion hooks share the same root ref. useRevealStagger
+  // owns the entrance choreography (data-reveal-cell /
+  // data-reveal-group fade-up). useVisitorMotion owns the
+  // ambient + interactive layer on top (text-segment reveal,
+  // glow breathe, CTA pulse, section ambient parallax).
+  // Renamed from useLandingMotion → useVisitorMotion in
+  // round-unify-grammar: /pricing and /about now share the
+  // same hook so the 3 visitor surfaces feel like one design
+  // system.
   const motionRoot = useRevealStagger()
+  useVisitorMotion(motionRoot)
   return (
     <div ref={motionRoot} className="min-h-screen w-full bg-background text-foreground">
       <MarketingTopBar />

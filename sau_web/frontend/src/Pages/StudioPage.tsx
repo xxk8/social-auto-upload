@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Plus, Clapperboard } from 'lucide-react'
 import { Button } from '@/Components/ui/button'
+import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { ProjectList } from '@/Components/Studio/ProjectList'
 import {
   ProjectCreateDialog,
@@ -111,25 +113,22 @@ export default function StudioPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6 sm:p-8 max-w-7xl mx-auto w-full" data-testid="studio-page-root">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[24px] font-semibold tracking-tight text-foreground">
-            {t('studio.page.title', '剧本工坊')}
-          </h1>
-          <p className="mt-1 text-[13px] text-muted-foreground max-w-xl leading-relaxed">
-            {t('studio.page.description', '把一句话灵感变成多集剧本。先建项目,再让 AI 围绕 synopsis 持续生成候选分集,挑出值得拍的那几集一键导出 Seedance 2.0 分镜。')}
-          </p>
-        </div>
-        <Button
-          onClick={() => setCreateOpen(true)}
-          className="gap-1.5"
-          data-testid="studio-create-button"
-        >
-          <Plus className="h-4 w-4" strokeWidth={2.5} />
-          {t('studio.page.cta_create', '新建剧本题材')}
-        </Button>
-      </header>
+    <PageWrapper data-testid="studio-page-root">
+      <PageHeader
+        title={t('studio.page.title', '剧本工坊')}
+        description={t('studio.page.description', '把一句话灵感变成多集剧本。先建项目,再让 AI 围绕 synopsis 持续生成候选分集,挑出值得拍的那几集一键导出 Seedance 2.0 分镜。')}
+        icon={<Clapperboard className="h-5 w-5 text-muted-foreground" />}
+        actions={
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="gap-1.5"
+            data-testid="studio-create-button"
+          >
+            <Plus className="h-4 w-4" />
+            {t('studio.page.cta_create', '新建剧本题材')}
+          </Button>
+        }
+      />
 
       {errorBanner && (
         <div
@@ -170,6 +169,6 @@ export default function StudioPage() {
             : null
         }
       />
-    </div>
+    </PageWrapper>
   )
 }

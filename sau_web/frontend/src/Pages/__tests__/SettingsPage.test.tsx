@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { mockUseAuth } from '@/test/auth-router-spies'
+import { ToastProvider } from '@/Components/ui/toast'
 import SettingsPage from '../SettingsPage'
 
 // useAuth is mocked so SettingsPage reads `user.tier` directly
@@ -23,9 +24,11 @@ function makeQueryClient() {
 function mountSettings() {
   return render(
     <QueryClientProvider client={makeQueryClient()}>
-      <MemoryRouter initialEntries={['/dashboard/settings']}>
-        <SettingsPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/dashboard/settings']}>
+          <SettingsPage />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }

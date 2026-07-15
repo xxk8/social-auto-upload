@@ -1,35 +1,31 @@
 // ─────────────────────────────────────────────────────────────────────
-// AdminStat — premium stat card for the Admin Overview hero strip.
+// AdminStat v2 — premium stat card with motion + gradient glow.
 //
-// Visual contract:
-//   • Left-side chromatic accent (per Tone) gives each card an
-//     identity without a heavy filled chip — a single 2px bar that
-//     matches the icon stroke.
-//   • Eyebrow label is uppercase 11px tracking — reads like Linear/
-//     Vercel dashboard chrome rather than default shadcn.
-//   • Value is 32px tabular-nums semibold — the single eye-catching
-//     number on the surface.
-//   • Optional `<trend>` series (v3-mini):
-//     - renders a 24-height pure-SVG sparkline directly below the value
-//     - produces a tone-coloured +X.X% / -X.X% delta chip in the
-//       bottom row, with a 6-px arrow icon marking direction
-//     - loading state hides both (skeleton would reflow)
-//   • Optional explicit `<meta>` (absolute label like "/ 38 全部") and
-//     `<delta>` (caller-computed relative chip) slots. When both
-//     `trend` and `delta` are passed, `trend` wins so the chip stays
-//     consistent with the sparkline it sits next to.
+// Upgrades from v1:
+//   • Motion entrance (staggered via `delay` prop) + hover lift.
+//   • Top accent stripe (3px, tone-colored) replaces the left bar.
+//   • Radial gradient glow (tone-colored, top-center) adds depth.
+//   • Bigger icon container (h-10 w-10) with tone-colored bg + fg.
+//   • Bigger value font (34–38px) for more visual impact.
+//   • Taller sparkline (28px) for better trend readability.
+//   • Hover shadow ring for a tactile, elevated feel.
 //
-// Loading state: `loading` prop dims + removes the value text. We
-// render a non-collapsing placeholder with the same line-height so
-// the card doesn't reflow on data resolve — preserves the Overview
-// test contract that asserts the "总用户数" label is present even on
-// loading.
+// Test contract (locked — unchanged from v1):
+//   • data-testid="admin-stat-card" on the outer element.
+//   • data-testid="admin-stat-sparkline" on the sparkline wrapper.
+//   • data-testid="admin-stat-delta" on the delta chip.
+//   • role="group" + aria-label={label} on the outer element.
+//   • Delta chip className contains status-{tone}-bg (from toneChipClasses).
+//   • Label text rendered unconditionally (present during loading).
+//   • Value text rendered only when !loading.
+//   • Sparkline + delta suppressed during loading.
 //
 // Module exports ONLY the component (no helpers) so Fast Refresh
 // stays happy (`react-refresh/only-export-components`).
 // ─────────────────────────────────────────────────────────────────────
 
 import { useMemo, type ReactNode } from 'react'
+import { motion } from 'motion/react'
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toneChipClasses, toneStyleClasses, type Tone } from '@/lib/tone'
@@ -41,15 +37,14 @@ interface AdminStatProps {
   label: string
   /** Big value (a number / percent / formatted string). */
   value: ReactNode
-  /** Decorative icon — shown top-right. Should be stroke-only. */
+  /** Decorative icon — shown top-left. Should be stroke-only. */
   icon: ReactNode
-  /** Accent tone — drives the left bar AND the icon tint. */
+  /** Accent tone — drives the top stripe, icon tint, and glow. */
   tone: Tone
   /** Optional absolute ceiling (e.g. 全部 users) for context. */
   meta?: ReactNode
-  /** Optional caller-computed relative chip (e.g. "+ 12.4%"). Wins
-      only when `trend` is absent; otherwise the trend-derived chip
-      takes the slot. */
+  /** Optional caller-computed relative chip. Wins only when `trend`
+      is absent; otherwise the trend-derived chip takes the slot. */
   delta?: ReactNode
   /** Optional N-day series. Renders the sparkline + auto-derived
       colored delta chip on the bottom row. Suppressed on loading
@@ -60,6 +55,8 @@ interface AdminStatProps {
   sparkTone?: Tone
   /** Loading state — dims + removes the value text. */
   loading?: boolean
+  /** Animation delay in seconds for staggered entrance. Defaults to 0. */
+  delay?: number
   className?: string
 }
 
@@ -87,6 +84,7 @@ function AdminStat({
   trend,
   sparkTone,
   loading,
+  delay = 0,
   className,
 }: AdminStatProps) {
   // Self-contained delta computation. Caller passes `trend` and we
@@ -95,12 +93,23 @@ function AdminStat({
   // delta isn't series-bound (e.g. cross-system comparisons).
   const trendDelta = useMemo(() => computeDelta(trend ?? null), [trend])
 
+  // CSS variables for the tone's foreground + background colors.
+  // Used in inline styles for the top stripe and radial glow so we
+  // don't need to add new Tailwind JIT entries per tone — the tokens
+  // are already defined in index.css and handle light/dark switching.
+  const toneFg = `var(--status-${tone}-fg)`
+  const toneBg = `var(--status-${tone}-bg)`
+
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 14, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.4, delay, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -3, transition: { duration: 0.2 } }}
       className={cn(
         'group relative overflow-hidden rounded-xl bg-card/60 p-4 sm:p-5',
         'ring-1 ring-foreground/10',
-        'transition-colors duration-200 hover:ring-foreground/15',
+        'transition-shadow duration-200 hover:shadow-lg hover:shadow-foreground/5 hover:ring-foreground/20',
         className,
       )}
       data-tone={tone}
@@ -108,15 +117,35 @@ function AdminStat({
       aria-label={label}
       data-testid="admin-stat-card"
     >
-      {/* Header row — icon on the left, percentage badge on the right.
-          The badge is the primary visual signal; the icon is muted
-          so the number below owns the focal point. */}
-      <div className="flex items-start justify-between">
+      {/* Top accent stripe — 3px tone-colored bar that gives each
+          card an identity at a glance. Replaces the v1 left bar. */}
+      <div
+        aria-hidden
+        className="absolute top-0 left-0 right-0 h-[3px]"
+        style={{ background: toneFg }}
+      />
+
+      {/* Radial glow — a subtle tone-colored aura radiating from the
+          top center. Uses the tone's bg token so light/dark theme
+          switching is automatic. Pointer-events-none so it never
+          interferes with hover/click on the card content. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: `radial-gradient(ellipse 90% 70% at 50% -10%, ${toneBg}, transparent 70%)`,
+        }}
+      />
+
+      {/* Header row — tone-colored icon container (bigger: h-10 w-10)
+          + delta chip on the right. */}
+      <div className="relative flex items-start justify-between">
         <span
           aria-hidden
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-lg',
-            'bg-muted/40 text-muted-foreground',
+            'flex h-10 w-10 items-center justify-center rounded-xl',
+            toneStyleClasses[tone].bg,
+            toneStyleClasses[tone].fg,
           )}
         >
           {icon}
@@ -142,14 +171,15 @@ function AdminStat({
         )}
       </div>
 
-      {/* Value — big tabular-nums numeral. In loading state we render
+      {/* Value — big tabular-nums numeral. Bigger than v1 (34–38px vs
+          28–32px) for more visual impact. In loading state we render
           a non-collapsing placeholder with the same line-height so the
           card doesn't reflow on data resolve. */}
-      <div className="mt-3">
+      <div className="relative mt-3">
         {loading ? (
-          <span className="block h-8 w-20 rounded-md bg-muted/60 animate-pulse" />
+          <span className="block h-9 w-24 rounded-md bg-muted/60 animate-pulse" />
         ) : (
-          <span className="text-[28px] sm:text-[32px] font-semibold text-foreground tabular-nums tracking-[-0.01em] leading-none">
+          <span className="text-[34px] sm:text-[38px] font-semibold text-foreground tabular-nums tracking-[-0.01em] leading-none">
             {value}
           </span>
         )}
@@ -157,7 +187,7 @@ function AdminStat({
 
       {/* Eyebrow + meta — placed BELOW the value so the eye reads
           number-first (Linear / Vercel dashboard pattern). */}
-      <div className="mt-1.5 flex items-center gap-1.5">
+      <div className="relative mt-1.5 flex items-center gap-1.5">
         <span className="text-[11px] font-medium tracking-[0.16em] text-muted-foreground/80 uppercase">
           {label}
         </span>
@@ -168,23 +198,23 @@ function AdminStat({
         )}
       </div>
 
-      {/* Sparkline row (v3-mini). Renders only when `trend` has at
-          least 2 anchored points AND we're past the loading state.
-          Height reduced to 20px for a more compact strip. */}
+      {/* Sparkline row. Taller than v1 (28px vs 20px) for better
+          trend readability. Renders only when `trend` has at least
+          2 anchored points AND we're past the loading state. */}
       {trend && !loading && trend.length >= 2 && (
         <div
-          className="mt-2 h-[20px]"
+          className="relative mt-3 h-[28px]"
           data-testid="admin-stat-sparkline"
         >
           <Sparkline
             points={trend}
-            height={20}
+            height={28}
             tone={sparkTone ?? tone}
             ariaLabel={`${label} 趋势`}
           />
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 

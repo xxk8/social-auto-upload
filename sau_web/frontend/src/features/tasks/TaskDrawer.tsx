@@ -78,7 +78,7 @@ export const TaskDrawer = memo(function TaskDrawer({
 const TaskStatusBadge = memo(function TaskStatusBadge({ taskId }: { taskId: string }) {
   const task = useTaskFromCache(taskId)
   const meta = STATUS_META[task?.status ?? 'pending'] ?? STATUS_META.pending
-  return <Badge variant={meta.variant}>{meta.label}</Badge>
+  return <Badge variant={meta.variant}>{meta.labelFallback}</Badge>
 })
 
 const RetryButton = memo(function RetryButton({
@@ -175,7 +175,7 @@ const TaskDrawerBody = memo(function TaskDrawerBody({ taskId }: { taskId: string
         <Field label="账号" value={task.account} />
         <Separator />
         <Field label="状态" alignRight>
-          <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+          <Badge variant={statusMeta.variant}>{statusMeta.labelFallback}</Badge>
         </Field>
         <Separator />
         <Field label="创建时间" value={formatDateTime(task.created)} />
@@ -350,7 +350,7 @@ function useTaskFromCache(taskId: string | null): TaskItem | undefined {
     // its own; it stays a pure subscriber to list updates.
     staleTime: 1_000,
   })
-  return tasks?.find((t) => t.task_id === taskId)
+  return tasks?.find((t: TaskItem) => t.task_id === taskId)
 }
 
 // silence unused-import warning for the LiveBadge short-circuit shape above

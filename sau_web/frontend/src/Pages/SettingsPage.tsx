@@ -1,4 +1,5 @@
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 // Round-OPT-prefs-dialog v5 (barrel migration): collapsed
 // '@/features/preferences/tabs/SettingsTab' → '@/features/preferences'.
 import { SettingsTab } from '@/features/preferences'
@@ -16,13 +17,13 @@ import { Settings as SettingsIcon } from 'lucide-react'
 
 export default function SettingsPage() {
   return (
-    <div className="space-y-6 p-6">
+    <PageWrapper>
       <PageHeader
         title="设置"
         description="账号权限与套餐管理"
         icon={<SettingsIcon className="h-5 w-5 text-muted-foreground" />}
       />
       <SettingsTab />
-    </div>
+    </PageWrapper>
   )
 }

@@ -63,6 +63,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { useAiChat } from './useAiChat'
+import { type FormHandle } from '@/lib/chat/chatFormBridge'
 
 interface ControllableVariants {
   promise: Promise<void>
@@ -209,7 +210,7 @@ function controllableChatStream(): ControllableChatStream {
 }
 
 const baseHookParams = () => ({
-  formRef: { current: null } as unknown as React.MutableRefObject<unknown>,
+  formRef: { current: null } as React.MutableRefObject<FormHandle | null>,
   mode: 'video' as const,
   model: 'test-model',
 })

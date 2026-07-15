@@ -95,3 +95,21 @@ export function useReorderAuthorizations() {
     },
   })
 }
+
+export function useMoveAuthorization() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      fromGroupId,
+      toGroupId,
+      platform,
+    }: {
+      fromGroupId: number
+      toGroupId: number
+      platform: string
+    }) => api.moveAuthorization(fromGroupId, toGroupId, platform),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['account-groups'] })
+    },
+  })
+}

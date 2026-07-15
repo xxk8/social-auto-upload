@@ -9,6 +9,10 @@ import MarketingTopBar from '@/Components/MarketingTopBar'
 import { Stat } from '@/Components/ui/stat'
 import { PlatformIcon } from '@/Components/ui/platform-icon'
 import { useRevealStagger } from '@/lib/use-reveal-stagger'
+import { useVisitorMotion } from '@/lib/use-visitor-motion'
+import { MeshGradient } from '@/Components/motion/MeshGradient'
+import { SplitText } from '@/Components/motion/SplitText'
+import { GlowOrb, DotGridBg, CtaSpotlightGlow } from '@/Components/motion/visitor-decor'
 import { ROUTES } from '@/routes'
 import {
   Send,
@@ -44,45 +48,15 @@ import {
 //   • Footer contains "social-auto-upload" (wordmark, brand-literal)
 //   • Primary CTA link href="/dashboard"
 
-// ── Dot-grid background texture ───────────────────────────────────────────
-
-function DotGridBg({ className = '' }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={`pointer-events-none absolute inset-0 ${className}`}
-      style={{
-        backgroundImage:
-          'radial-gradient(circle, var(--foreground) 1px, transparent 1px)',
-        backgroundSize: '24px 24px',
-        opacity: 0.04,
-        maskImage:
-          'radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%)',
-        WebkitMaskImage:
-          'radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%)',
-      }}
-    />
-  )
-}
-
-// ── Gradient glow ─────────────────────────────────────────────────────────
-
-function GlowOrb() {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/3"
-      style={{
-        width: '600px',
-        height: '600px',
-        background:
-          'radial-gradient(circle, color-mix(in oklab, var(--primary) 25%, transparent) 0%, transparent 70%)',
-        filter: 'blur(80px)',
-        opacity: 0.5,
-      }}
-    />
-  )
-}
+// ── Visitor decor (shared with /pricing + /about) ────────────────────────
+//
+// `GlowOrb`, `DotGridBg`, and `CtaSpotlightGlow` were extracted to
+// `Components/motion/visitor-decor.tsx` in the round-unify-grammar
+// pass so all 3 visitor surfaces can compose the same background
+// stack without duplicating the JSX or losing the `data-*`
+// attribute contract that `useVisitorMotion` targets. See the
+// docstring at the top of `visitor-decor.tsx` for the per-element
+// rationale (color-mix blending, mask layering, mix-blend-mode).
 
 // ── Product Mockup ────────────────────────────────────────────────────────
 // The mockup represents the actual product UI, which is zh-CN-only.
@@ -99,7 +73,7 @@ function ProductMockup() {
   return (
     <div
       data-hero-mockup
-      className="relative mx-auto mt-16 max-w-4xl"
+      className="relative max-w-4xl"
     >
       <div
         aria-hidden
@@ -187,33 +161,53 @@ function ProductMockup() {
 function HeroSection() {
   const { t } = useTranslation()
   return (
-    <section className="relative overflow-hidden border-b border-border/30">
-      <DotGridBg />
+    <section
+      data-hero-section
+      className="relative overflow-hidden border-b border-border/30"
+    >
+      {/* Background stack: MeshGradient (depth) + GlowOrb
+          (centered radial pulse) + DotGridBg (subtle texture).
+          Three layers stays under the threshold where
+          backdrop-blur starts to feel busy — the mesh blobs
+          carry opacity-50 and the dot grid is opacity-4, so
+          the canvas reads as "alive" without being loud. */}
+      <MeshGradient intensity="normal" />
       <GlowOrb />
+      <DotGridBg />
 
       <div className="relative mx-auto max-w-5xl px-6 pt-20 pb-24 text-center sm:pt-28 sm:pb-32">
         <div className="mb-8 flex justify-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-muted/30 px-3.5 py-1.5 text-[12px] font-medium text-muted-foreground backdrop-blur-sm">
-            <span className="flex h-1.5 w-1.5 rounded-full bg-primary animate-pulse" aria-hidden />
+            <span
+              className="badge-dot-pulse h-1.5 w-1.5 rounded-full bg-primary"
+              aria-hidden
+            />
             {t('marketing.landing.hero.badge', '多平台分发 · 本地优先 · 私有部署')}
           </div>
         </div>
 
-        {/* Headline — 3-piece H1. The middle fragment carries the
-            gradient class. `{' '}` whitespace tokens are explicit
-            between pieces so translators can drop leading-space
-            separators from the JSON without breaking layout. */}
+        {/* Headline — 3-piece H1. Each piece carries
+            `data-text-segment` so useLandingMotion can stagger
+            the entrance (y + autoAlpha). The middle fragment
+            still carries the gradient class. `{' '}` whitespace
+            tokens are explicit between pieces so translators
+            can drop leading-space separators from the JSON
+            without breaking layout. */}
         <h1 className="mx-auto max-w-3xl text-balance text-4xl font-bold leading-[1.1] tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-          {t('marketing.landing.hero.headline_1', '一条视频')}
-          <span
-            className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent"
-          >
-            {' '}
-            {t('marketing.landing.hero.headline_2', '一键分发')}
-            {' '}
+          <span data-text-segment className="inline-block">
+            {t('marketing.landing.hero.headline_1', '一条视频')}
           </span>
           {' '}
-          {t('marketing.landing.hero.headline_3', '到全网平台')}
+          <span
+            data-text-segment
+            className="inline-block bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent"
+          >
+            {t('marketing.landing.hero.headline_2', '一键分发')}
+          </span>
+          {' '}
+          <span data-text-segment className="inline-block">
+            {t('marketing.landing.hero.headline_3', '到全网平台')}
+          </span>
         </h1>
 
         <p className="mx-auto mt-6 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground sm:text-xl">
@@ -221,7 +215,11 @@ function HeroSection() {
         </p>
 
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
-          <Button asChild size="lg" className="h-12 px-7 text-sm font-semibold shadow-lg shadow-primary/20">
+          <Button
+            asChild
+            size="lg"
+            className="shimmer h-12 px-7 text-sm font-semibold shadow-lg shadow-primary/20"
+          >
             <Link to={ROUTES.dashboard.root}>
               {t('marketing.landing.hero.cta_primary', '立即开始 →')}
             </Link>
@@ -255,7 +253,29 @@ function HeroSection() {
           </div>
         </div>
 
-        <ProductMockup />
+        {/* Three-layer DOM for the mockup:
+            • data-mockup-parallax (outermost): mouse-driven
+              x,y offset — the parallax hook writes here
+            • data-mockup-float (middle): continuous yoyo
+              y oscillation — the float hook writes here
+            • data-hero-mockup (innermost, on ProductMockup's
+              own root): entrance fade-up from useRevealStagger
+            Each layer writes to a DIFFERENT node, so GSAP
+            never has to merge two live tweens on the same
+            DOM element (which would cause the float's
+            `y: '+=12'` to fight the parallax's `y: y * 16`
+            on every mousemove). `mx-auto` + `mt-16` live on
+            the outermost wrapper to keep the previous
+            centering and the top spacing between the stat
+            row and the mockup. */}
+        <div
+          data-mockup-parallax
+          className="mx-auto mt-16 max-w-4xl"
+        >
+          <div data-mockup-float>
+            <ProductMockup />
+          </div>
+        </div>
       </div>
     </section>
   )
@@ -646,7 +666,9 @@ function FeaturesSection() {
             {t('marketing.landing.features.eyebrow', '核心能力')}
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            {t('marketing.landing.features.title_1', '4 件让人头疼的事')}
+            <SplitText dataAttr="data-text-segment">
+              {t('marketing.landing.features.title_1', '4 件让人头疼的事')}
+            </SplitText>
             <span className="text-muted-foreground/50">
               {t('marketing.landing.features.title_2', ',我们替你做了')}
             </span>
@@ -730,10 +752,25 @@ function HowItWorksSection() {
               data-reveal-cell
               className="group relative flex flex-col items-center rounded-2xl border border-border/30 bg-card/30 p-8 text-center transition-all duration-300 hover:border-primary/20 hover:bg-card/60"
             >
+              {/* Step number — `data-step-number` is the GSAP
+                  counter target. `data-value` carries the parsed
+                  integer (1, 2, 3) so the hook doesn't have to
+                  know about the i18n label set. The static
+                  `s.step` (e.g. "01") stays as the no-JS fallback
+                  so search engines + reduced-motion visitors see
+                  the canonical number, and the tween overwrites
+                  it on first scroll. */}
               <span
+                data-step-number
+                data-value={s.step}
                 className="bg-gradient-to-br from-primary/30 to-primary/10 bg-clip-text font-mono text-5xl font-bold tabular-nums text-transparent"
               >
-                {s.step}
+                {/* Initial value is "00" so the counter tween
+                    (0 → target) shows a smooth 00 → 01 / 02 / 03
+                    count-up without a flash back from the
+                    canonical step label. CSS `data-step-number`
+                    styling is unaffected. */}
+                00
               </span>
               <div className="mt-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-transform duration-300 group-hover:scale-110">
                 <s.icon className="h-6 w-6" aria-hidden />
@@ -764,9 +801,32 @@ const TRUST_ITEMS = [
 function CtaSection() {
   const { t } = useTranslation()
   return (
-    <section className="relative overflow-hidden px-6 py-24 sm:py-32">
-      <DotGridBg className="opacity-[0.03]" />
+    <section
+      data-cta-section
+      className="relative overflow-hidden border-b border-border/30 px-6 py-24 sm:py-32"
+    >
+      {/* Background stack tuned for maximum emphasis on the
+          conversion copy (the reviewer's "still reads as plain
+          text" feedback):
+            1. MeshGradient intensity="dramatic" — 1.4× the area,
+               +6% primary tint, 14s/18s/22s cadence vs the hero's
+               18s/24s/28s. The faster cadence reads as "more
+               active" without becoming visually noisy.
+            2. CtaSpotlightGlow — 1100×1100 focused radial centered
+               on the h2 via `top-1/2 -translate-y-1/2`. The
+               `data-cta-glow` attribute links it to the existing
+               GSAP CTA pulse (scale 1.08, opacity 0.75, 2.8s yoyo)
+               so the spotlight "breathes" with the section.
+            3. GlowOrb — the section-level soft top wash. Kept
+               because it adds a 3rd depth layer; without it the
+               section reads as "spotlight only" which feels
+               narrow.
+            4. DotGridBg — subtle texture (opacity 0.03) to
+               ground the mesh blobs in real space. */}
+      <MeshGradient intensity="dramatic" />
+      <CtaSpotlightGlow />
       <GlowOrb />
+      <DotGridBg className="opacity-[0.03]" />
 
       <div className="relative mx-auto flex max-w-4xl flex-col items-center gap-10 text-center">
         <div>
@@ -774,8 +834,13 @@ function CtaSection() {
             {t('marketing.landing.cta.eyebrow', '开始使用')}
           </p>
           <h2 className="mt-4 text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            {t('marketing.landing.cta.title_1', '现在就把发布流水线')}
-            <span className="block bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+            <span data-text-segment className="inline-block">
+              {t('marketing.landing.cta.title_1', '现在就把发布流水线')}
+            </span>
+            <span
+              data-text-segment
+              className="block bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent"
+            >
               {t('marketing.landing.cta.title_2', '交给工具')}
             </span>
           </h2>
@@ -785,7 +850,17 @@ function CtaSection() {
         </div>
 
         <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-          <Button asChild size="lg" className="h-12 px-8 text-sm font-semibold shadow-lg shadow-primary/20">
+          {/* Primary CTA carries BOTH `shimmer` (light sweep) and
+              `cta-ring` (animated box-shadow halo). The two
+              affordances stack on the same rendered <Link> via
+              className concatenation; the shimmer is a `::before`
+              overlay, the cta-ring is `box-shadow` — they paint
+              on different layers, no z-index fight. */}
+          <Button
+            asChild
+            size="lg"
+            className="shimmer cta-ring h-12 px-8 text-sm font-semibold"
+          >
             <Link to={ROUTES.dashboard.root}>
               {t('marketing.landing.cta.cta_primary', '立即开始使用 →')}
             </Link>
@@ -811,7 +886,20 @@ function CtaSection() {
 }
 
 export default function LandingPage() {
+  // Two motion hooks share the same root ref. useRevealStagger
+  // owns the entrance choreography (data-hero-cell /
+  // data-reveal-cell / data-hero-mockup fade-up). useVisitorMotion
+  // owns the ambient + interactive layer on top (text segment
+  // stagger, mockup float, mouse parallax, glow breathe, step
+  // counter, CTA pulse). Both register with the same `scope` ref
+  // via useGSAP, so order is irrelevant — useGSAP scopes by
+  // ref, not by registration order.
+  //
+  // Renamed from useLandingMotion → useVisitorMotion in
+  // round-unify-grammar: the hook is now also called from
+  // PricingPage and AboutPage so the name reflected that.
   const motionRoot = useRevealStagger()
+  useVisitorMotion(motionRoot)
   return (
     <div ref={motionRoot} className="min-h-screen w-full bg-background text-foreground">
       <MarketingTopBar />

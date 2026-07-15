@@ -1,4 +1,5 @@
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 // Round-OPT-prefs-dialog v5 (barrel migration): collapsed
 // '@/features/preferences/tabs/AccountTab' → '@/features/preferences'.
 // Keeps the Page import surface at the slice level so future
@@ -39,13 +40,13 @@ import { User } from 'lucide-react'
 
 export default function ProfilePage() {
   return (
-    <div className="space-y-6 p-6">
+    <PageWrapper variant="flush">
       <PageHeader
         title="账户"
         description="个人信息与账号管理"
         icon={<User className="h-5 w-5 text-muted-foreground" />}
       />
       <AccountTab />
-    </div>
+    </PageWrapper>
   )
 }

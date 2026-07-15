@@ -8,7 +8,7 @@
  *   publish.ts   — 上传/发布
  *   tasks.ts     — 任务管理
  *   ai.ts        — AI 生成
- *   inbox.ts     — 素材收件箱
+ *   inbox.ts     — 下载中心
  *   types.ts     — 共享类型与常量
  *   sse.ts       — SSE 流式读取
  *
@@ -19,6 +19,7 @@ import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestCo
 import type { PublishHistoryItem } from './types'
 import { createAuth401ResponseInterceptor } from './_createAuth401ResponseInterceptor'
 import { appendAuthPendingHeader } from './_appendAuthPendingHeader'
+import { appendIdempotencyKey } from './_idempotencyStore'
 
 const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
@@ -60,7 +61,7 @@ request.interceptors.request.use(
     // the noise with `has-response-header:X-SAU-Race-Window`.
     // See _appendAuthPendingHeader.ts for the rationale (shared
     // with request.ts to keep the two axios instances in lockstep).
-    return appendAuthPendingHeader(config)
+    return appendIdempotencyKey(appendAuthPendingHeader(config))
   },
   (error) => Promise.reject(error),
 )
@@ -118,6 +119,7 @@ import { tasksApi } from './tasks'
 import { aiApi } from './ai'
 import { inboxApi } from './inbox'
 import { calendarApi } from './calendar'
+import { crawlApi } from './crawl'
 
 /**
  * 统一 API 对象 — 所有领域方法聚合在这里。
@@ -206,6 +208,9 @@ export const api = {
   authorizeAccountGroup: accountsApi.authorizeAccountGroup,
   confirmAuthorizeAccountGroup: accountsApi.confirmAuthorizeAccountGroup,
   removeAuthorization: accountsApi.removeAuthorization,
+  moveAuthorization: accountsApi.moveAuthorization,
+  checkAuthorizationHealth: accountsApi.checkAuthorizationHealth,
+  sendTestNotification: accountsApi.sendTestNotification,
   reorderAccountGroups: accountsApi.reorderAccountGroups,
   reorderAuthorizations: accountsApi.reorderAuthorizations,
 
@@ -215,6 +220,7 @@ export const api = {
 
   // ── Tasks ──
   getTasks: tasksApi.getTasks,
+  streamTasks: tasksApi.streamTasks,
   retryTask: tasksApi.retryTask,
   deleteTask: tasksApi.deleteTask,
   clearTasks: tasksApi.clearTasks,
@@ -250,6 +256,7 @@ export const api = {
   deleteAiConfig: aiApi.deleteAiConfig,
   batchAddKeys: aiApi.batchAddKeys,
   generateMultiPlatformStream: aiApi.generateMultiPlatformStream,
+  generatePlatformVariantsStream: aiApi.generatePlatformVariantsStream,
   generateVariantsStream: aiApi.generateVariantsStream,
   searchWeb: aiApi.searchWeb,
   enhancePrompt: aiApi.enhancePrompt,
@@ -266,6 +273,13 @@ export const api = {
   inboxReveal: inboxApi.inboxReveal,
   inboxTranscribeStream: inboxApi.inboxTranscribeStream,
   inboxFetchFile: inboxApi.inboxFetchFile,
+
+  // ── Crawler (openspec/changes/mediacrawler-integration) ────────
+  // Read-only data-collection surface; 7 MediaCrawler-style
+  // platforms (xhs/dy/ks/bili/wb/tieba/zhihu) + AI sentiment + AI
+  // reply-suggestion. Action POSTs return 202 + Location →
+  // ``api.crawl.status(task_id)`` for polling.
+  crawl: crawlApi,
 
   // ── Analytics, License, Templates, Usage (内联 namespace) ──
   analytics: analyticsApi,

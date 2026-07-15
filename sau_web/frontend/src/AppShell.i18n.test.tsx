@@ -173,7 +173,7 @@ describe('AppShell · sidebar i18n flip', () => {
     expect(within(sidebar).getByText('任务列表')).toBeInTheDocument()
     expect(within(sidebar).getByText('数据分析')).toBeInTheDocument()
     expect(within(sidebar).getByText('运行日志')).toBeInTheDocument()
-    expect(within(sidebar).getByText('素材收件箱')).toBeInTheDocument()
+    expect(within(sidebar).getByText('下载中心')).toBeInTheDocument()
     expect(within(sidebar).getByText('内容日历')).toBeInTheDocument()
     expect(within(sidebar).getByText('剧本工坊')).toBeInTheDocument()
 

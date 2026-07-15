@@ -64,8 +64,10 @@ import {
   CalendarPlus,
 } from 'lucide-react'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
+import '../calendar-dark.css'
 
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { Button } from '@/Components/ui/button'
 import { Badge } from '@/Components/ui/badge'
 import { Checkbox } from '@/Components/ui/checkbox'
@@ -376,7 +378,7 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="space-y-4 p-6 max-w-[1600px] mx-auto w-full">
+    <PageWrapper spacing="sm">
       <PageHeader
         title="内容日历"
         description="按时间维度查看排期和发布节奏，支持周/月切换、平台筛选和统计摘要。"
@@ -430,7 +432,7 @@ export default function CalendarPage() {
           Border softened from `/40` to `/25` (round OPT-cal-dark-soften,
           2026-07-10) so the per-mode contrast over the dark canvas
           reads as a hairline panel edge rather than a hard frame. */}
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-md bg-muted/20 p-3" style={{ border: '1px solid oklch(0.22 0 0)' }}>
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-3 rounded-md border border-border/40 bg-muted/20 p-3">
         <FilterGroup
           title="平台"
           options={PLATFORMS as readonly PlatformOption[]}
@@ -465,7 +467,7 @@ export default function CalendarPage() {
         )}
       </div>
 
-      <div className="rounded-md bg-card overflow-hidden" style={{ border: '1px solid oklch(0.22 0 0)' }}>
+      <div className="rounded-md bg-card overflow-hidden border border-border">
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 p-12 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -553,7 +555,7 @@ export default function CalendarPage() {
           retrying={null}
         />
       </Suspense>
-    </div>
+    </PageWrapper>
   )
 }
 
@@ -567,8 +569,7 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => voi
     <div
       role="group"
       aria-label="视图切换"
-      className="inline-flex rounded-md p-0.5 bg-muted/30"
-      style={{ border: '1px solid oklch(0.22 0 0)' }}
+      className="inline-flex rounded-md p-0.5 bg-muted/30 border border-border/40"
     >
       <ViewButton active={view === Views.WEEK} onClick={() => onChange(Views.WEEK)}>
         周
@@ -749,8 +750,8 @@ function EventContextMenu({
     <div
       ref={ref}
       role="menu"
-      className="fixed z-50 w-48 rounded-md border bg-popover p-1 shadow-lg"
-      style={{ left, top, borderColor: 'oklch(0.22 0 0)' }}
+      className="fixed z-50 w-48 rounded-md border border-border/40 bg-popover p-1 shadow-lg"
+      style={{ left, top }}
     >
       <div className="px-2 py-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/70">
         复制到另一天
@@ -776,7 +777,7 @@ function EventContextMenu({
           }}
         />
       </label>
-      <div className="mt-1 border-t px-2 pt-1 text-[10px] text-muted-foreground/60" style={{ borderColor: 'oklch(0.22 0 0)' }}>
+      <div className="mt-1 border-t border-border/40 px-2 pt-1 text-[10px] text-muted-foreground/60">
         任务 {taskId.slice(-6)}
       </div>
     </div>
@@ -800,7 +801,7 @@ function CalendarSummary({
   const platformEntries = Object.entries(summary?.by_platform ?? {}).sort((a, b) => b[1] - a[1])
   const statusEntries = Object.entries(summary?.by_status ?? {}).sort((a, b) => b[1] - a[1])
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-md bg-muted/20 px-4 py-3 text-xs" style={{ border: '1px solid oklch(0.22 0 0)' }}>
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-md border border-border/40 bg-muted/20 px-4 py-3 text-xs">
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground">共</span>
         <span className="font-mono font-semibold text-foreground tabular-nums" data-testid="calendar-summary-total">

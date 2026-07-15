@@ -7,6 +7,7 @@ import { Input } from '@/Components/ui/input'
 import { Badge } from '@/Components/ui/badge'
 import { BrandGlyph } from '@/Components/ui/brand-glyph'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { PlatformChipStrip, type PlatformKey } from '@/Components/ui/platform-chip-strip'
 import { PLATFORMS } from '@/Components/ui/platform-chip-strip.constants'
 import { useToast } from '@/Components/ui/toast.helpers'
@@ -690,9 +691,9 @@ export default function InboxPage() {
   )
 
   return (
-    <div className="space-y-6 p-6 max-w-[1600px] mx-auto w-full">
+    <PageWrapper>
       <PageHeader
-        title="素材收件箱"
+        title="下载中心"
         description="从分享链接下载到本地，再转写音视频文案"
         icon={<BrandGlyph className="h-5 w-5 text-[14px]" />}
       />
@@ -1048,7 +1049,7 @@ export default function InboxPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageWrapper>
   )
 }
 

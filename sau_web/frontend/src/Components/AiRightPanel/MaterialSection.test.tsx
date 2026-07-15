@@ -280,6 +280,7 @@ describe('manual + recommend coexistence — §11.2 scenario 3', () => {
     vi.mocked(aiApi.searchImages).mockResolvedValue({
       success: false,
       message: 'boom',
+      data: [],
     })
     const input = screen.getByTestId('material-search-input') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'fail' } })

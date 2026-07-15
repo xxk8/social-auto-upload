@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/Components/ui/button'
 import { EmptyState } from '@/Components/ui/empty-state'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import {
   AccountsBodyCtx,
   useAccountsBody,
@@ -17,6 +18,7 @@ import { HomepageOverview } from '@/features/accounts/HomepageOverview'
 import { DialogHost } from '@/features/accounts/dialogs'
 import { Loader2, Plus, RefreshCw, Search, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toneChipClasses, toneFillBgClass } from '@/lib/tone'
 
 import { ROUTES } from '@/routes'
 const BatchRefreshDialog = lazy(() => import('./BatchRefreshDialog'))
@@ -92,7 +94,7 @@ export function AccountsBody() {
   )
 
   return (
-    <div className="space-y-6 p-6 max-w-[1600px] mx-auto w-full">
+    <PageWrapper>
       <PageHeader
         title="账号管理"
         description="管理账号分组和平台授权"
@@ -112,7 +114,7 @@ export function AccountsBody() {
       <BodyArea />
 
       <DialogHost />
-    </div>
+    </PageWrapper>
   )
 }
 
@@ -127,6 +129,16 @@ function HeaderActions() {
 
   const staleCount = useMemo(() => {
     return state.localGroups.flatMap((g) => g.authorizations).filter((a) => !a.valid || a.stale).length
+  }, [state.localGroups])
+
+  const healthSummary = useMemo(() => {
+    const auths = state.localGroups.flatMap((g) => g.authorizations)
+    const total = auths.length
+    const valid = auths.filter((a) => a.health === 'valid').length
+    const expiring = auths.filter((a) => a.health === 'expiring_soon').length
+    const invalid = auths.filter((a) => a.health === 'invalid').length
+    const unknown = auths.filter((a) => !a.health || a.health === 'unknown').length
+    return { total, valid, expiring, invalid, unknown }
   }, [state.localGroups])
 
   return (
@@ -144,6 +156,52 @@ function HeaderActions() {
         />
         {state.isCheckingStatus ? '检测中…' : '一键检测'}
       </Button>
+       {healthSummary.total > 0 && (
+         <div className="hidden sm:flex items-center gap-1.5">
+           <span
+             className={cn(
+               'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium tabular-nums',
+               toneChipClasses('success'),
+             )}
+           >
+             <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', toneFillBgClass('success'))} />
+             健康 {healthSummary.valid}/{healthSummary.total}
+           </span>
+           {healthSummary.expiring > 0 && (
+             <span
+               className={cn(
+                 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium tabular-nums',
+                 toneChipClasses('warning'),
+               )}
+             >
+               <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', toneFillBgClass('warning'))} />
+               即将过期 {healthSummary.expiring}
+             </span>
+           )}
+           {healthSummary.invalid > 0 && (
+             <span
+               className={cn(
+                 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium tabular-nums',
+                 toneChipClasses('error'),
+               )}
+             >
+               <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', toneFillBgClass('error'))} />
+               已失效 {healthSummary.invalid}
+             </span>
+           )}
+           {healthSummary.unknown > 0 && (
+             <span
+               className={cn(
+                 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium tabular-nums',
+                 toneChipClasses('info'),
+               )}
+             >
+               <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', toneFillBgClass('info'))} />
+               未检查 {healthSummary.unknown}
+             </span>
+           )}
+         </div>
+       )}
       {staleCount > 0 && (
         <Button
           variant="outline"

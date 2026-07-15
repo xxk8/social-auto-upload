@@ -37,7 +37,6 @@
 //   • Each entry: <kbd> shortcut + description
 // ──────────────────────────────────────────────────────────────────────────
 
-import { useMemo } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/Components/ui/dialog'
 import { Keyboard } from 'lucide-react'
 
@@ -77,7 +76,7 @@ function buildGroups(): ShortcutGroup[] {
         { keys: `${m}3`, description: '任务列表' },
         { keys: `${m}4`, description: '数据分析' },
         { keys: `${m}5`, description: '运行日志' },
-        { keys: `${m}6`, description: '素材收件箱' },
+        { keys: `${m}6`, description: '下载中心' },
       ],
     },
     {

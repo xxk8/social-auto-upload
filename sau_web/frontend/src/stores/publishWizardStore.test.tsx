@@ -40,17 +40,17 @@ describe('publishWizardStore · content.tags (post-Path-C string[] shape)', () =
     })
 
     it('parses legacy comma-joined string wire form', () => {
-      usePublishWizardStore.getState().setContent({ tags: '#foo,#bar' })
+      usePublishWizardStore.getState().setContent({ tags: ['#foo,#bar'] })
       expect(usePublishWizardStore.getState().content.tags).toEqual(['#foo', '#bar'])
     })
 
     it('parses legacy full-width comma 「，」 wire form', () => {
-      usePublishWizardStore.getState().setContent({ tags: '#foo，#bar，#baz' })
+      usePublishWizardStore.getState().setContent({ tags: ['#foo，#bar，#baz'] })
       expect(usePublishWizardStore.getState().content.tags).toEqual(['#foo', '#bar', '#baz'])
     })
 
     it('drops empty tokens from legacy mixed string', () => {
-      usePublishWizardStore.getState().setContent({ tags: '#foo,  ,#bar,,' })
+      usePublishWizardStore.getState().setContent({ tags: ['#foo,  ,#bar,,'] })
       expect(usePublishWizardStore.getState().content.tags).toEqual(['#foo', '#bar'])
     })
 
@@ -62,7 +62,7 @@ describe('publishWizardStore · content.tags (post-Path-C string[] shape)', () =
 
     it('setContent({ tags: [""] }) clears (parsed empty)', () => {
       usePublishWizardStore.getState().addTag('foo')
-      usePublishWizardStore.getState().setContent({ tags: '' })
+      usePublishWizardStore.getState().setContent({ tags: [''] })
       expect(usePublishWizardStore.getState().content.tags).toEqual([])
     })
   })

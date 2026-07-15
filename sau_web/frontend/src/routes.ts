@@ -85,6 +85,10 @@ export const ROUTES = {
     account: '/dashboard/account',
     settings: '/dashboard/settings',
     personalization: '/dashboard/personalization',
+    // ── Crawler (openspec/changes/mediacrawler-integration) ────────
+    // Read-only data-collection surface — research/monitoring,
+    // NOT a publish / authoring surface.
+    crawl: '/dashboard/crawl',
     // ── Admin sub-routes (admin role only) ────────────────────────────
     admin: {
       root: '/dashboard/admin',
@@ -161,6 +165,7 @@ export const RELATIVE_DASHBOARD_ROUTES = {
   account: '/account',
   settings: '/settings',
   personalization: '/personalization',
+  crawl: '/crawl',
   studio: '/studio',
   /** React Router path pattern (NOT a template literal) — `:id` is extracted
    *  via `useParams()` in StudioDetailPage. Mirrors ROUTES.dashboard.studioDetail

@@ -126,7 +126,7 @@
         "tasks": "任务列表",
         "analytics": "数据分析",
         "logs": "运行日志",
-        "inbox": "素材收件箱",
+        "inbox": "下载中心",
         "calendar": "内容日历",
         "studio": "剧本工坊"
       },
@@ -186,7 +186,7 @@
       "description": "查看和管理所有上传任务",
       "new_task_button": "新建任务",
       "search_placeholder": "搜索任务 ID、平台、账号（按 / 聚焦）",
-      "polling_chip": "轮询中",
+      "live_chip": "实时",
       "refresh_button": "刷新",
       "refresh_aria": "刷新任务列表",
       "clear_button": "清理",

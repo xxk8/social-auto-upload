@@ -88,6 +88,9 @@ export type AccountAuthorization = {
   reason?: string
   age_hours?: number | null
   stale?: boolean
+  health?: 'valid' | 'expiring_soon' | 'invalid' | 'unknown'
+  last_check_at?: string | null
+  consecutive_failures?: number
 }
 
 export type TaskItem = {

@@ -21,6 +21,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { type ComponentType } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -47,6 +48,7 @@ try {
 }
 const hasStudioPage = typeof studioModule.default === 'function'
 const describeIf = hasStudioPage ? describe : describe.skip
+const StudioPageComp = studioModule.default as ComponentType
 
 // ── API client mock ─────────────────────────────────────────────────
 // The page imports `studioApi from '@/api/studio'` (see
@@ -101,9 +103,9 @@ function mountStudioPage(initialPath = '/dashboard/studio') {
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={qc}>
         <TooltipProvider>
-          <MemoryRouter initialEntries={[initialPath]}>
-            <studioModule.default />
-          </MemoryRouter>
+            <MemoryRouter initialEntries={[initialPath]}>
+              <StudioPageComp />
+            </MemoryRouter>
         </TooltipProvider>
       </QueryClientProvider>
     </I18nextProvider>,
@@ -186,7 +188,7 @@ describeIf('StudioPage · Phase 1 page contract', () => {
         <QueryClientProvider client={new QueryClient()}>
           <TooltipProvider>
             <MemoryRouter initialEntries={['/dashboard/studio']}>
-              <studioModule.default />
+              <StudioPageComp />
             </MemoryRouter>
           </TooltipProvider>
         </QueryClientProvider>

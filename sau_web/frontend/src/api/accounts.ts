@@ -39,6 +39,11 @@ export const accountsApi = {
   removeAuthorization(groupId: number, platform: string) {
     return request.delete(`/api/account-groups/${groupId}/authorize/${platform}`).then((res) => res.data)
   },
+  moveAuthorization(fromGroupId: number, toGroupId: number, platform: string) {
+    return request
+      .post(`/api/account-groups/move-authorization`, { fromGroupId, toGroupId, platform })
+      .then((res) => res.data)
+  },
   reorderAccountGroups(groupIds: number[]) {
     return request.post('/api/account-groups/reorder', { group_ids: groupIds }).then((res) => res.data)
   },
@@ -49,5 +54,15 @@ export const accountsApi = {
     const baseUrl = request.defaults.baseURL || ''
     const url = `${baseUrl}/api/accounts/refresh-stale`
     return new EventSource(url, { withCredentials: true } as EventSourceInit)
+  },
+  getAuthorizationHealth(authId: number) {
+    return request.get(`/api/account-authorizations/${authId}/health`).then((res) => res.data)
+  },
+  checkAuthorizationHealth(authId: number) {
+    return request.post(`/api/account-authorizations/${authId}/health-check`).then((res) => res.data)
+  },
+  /** Send a test health notification — used by SettingsTab "测试通知" button. */
+  sendTestNotification(channel: 'email' | 'webhook') {
+    return request.post('/api/notifications/test-health', { channel }).then((res) => res.data)
   },
 }

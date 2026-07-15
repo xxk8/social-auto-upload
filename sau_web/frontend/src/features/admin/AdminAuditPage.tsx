@@ -35,6 +35,7 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { adminApi, type AuditLogItem } from './adminApi'
 import { useTimeRangeFilter, TIME_RANGE_OPTIONS, type PresetRange } from './useTimeRangeFilter'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { AdminNavTabs } from './components/AdminNavTabs'
 import { Card, CardContent } from '@/Components/ui/card'
 import { Skeleton } from '@/Components/ui/skeleton'
@@ -263,16 +264,14 @@ export default function AdminAuditPage() {
   ], [])
 
   return (
-    <div className="p-6">
-      <AdminNavTabs />
+    <PageWrapper topNav={<AdminNavTabs />}>
       <PageHeader
-        title="操作日志"
-        description="管理员操作审计记录"
-        icon={<FileText className="h-5 w-5 text-[var(--status-info-fg)]" />}
-      />
-
-      <Card className="mt-5 border-border/60 bg-card/60 shadow-[0_1px_0_0_color-mix(in_oklab,var(--foreground)_4%,transparent)]">
-        <CardContent className="p-0">
+          title="操作日志"
+          description="管理员操作审计记录"
+          icon={<FileText className="h-5 w-5 text-[var(--status-info-fg)]" />}
+        />
+        <Card className="border-border/60 bg-card/60 shadow-[0_1px_0_0_color-mix(in_oklab,var(--foreground)_4%,transparent)]">
+          <CardContent className="p-0">
           <div className="flex flex-col gap-3 border-b border-border/40 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <div className="flex items-center gap-3">
               <SegmentedTimeRange
@@ -390,8 +389,8 @@ export default function AdminAuditPage() {
               )}
             </>
           )}
-        </CardContent>
-      </Card>
-    </div>
+          </CardContent>
+        </Card>
+    </PageWrapper>
   )
 }

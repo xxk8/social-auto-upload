@@ -6,6 +6,14 @@ import type { LucideIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Button } from '@/Components/ui/button'
 import { ScrollArea } from '@/Components/ui/scroll-area'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/Components/ui/breadcrumb'
 import { ThemeToggle } from './Components/ThemeToggle'
 import { UserMenu } from './Components/UserMenu'
 import { CommandPalette } from './Components/CommandPalette'
@@ -57,6 +65,7 @@ const AdminAuditPage = lazy(() => import('./features/admin/AdminAuditPage'))
 // `Components/Studio/`.
 const StudioPage = lazy(() => import('./Pages/StudioPage'))
 const StudioDetailPage = lazy(() => import('./Pages/StudioDetailPage'))
+const CrawlPage = lazy(() => import('./Pages/CrawlPage'))
 
 const APP_NAME =
   (import.meta.env.VITE_APP_NAME && import.meta.env.VITE_APP_NAME.trim()) || 'sau'
@@ -160,7 +169,7 @@ interface AdminNavItemDef {
   { path: ROUTES.dashboard.tasks, labelKey: 'dashboard.sidebar.nav.tasks', labelFallback: '任务列表', icon: BarChart3, shortcut: '3' },
   { path: ROUTES.dashboard.analytics, labelKey: 'dashboard.sidebar.nav.analytics', labelFallback: '数据分析', icon: LineChart, shortcut: '4' },
   { path: ROUTES.dashboard.logs, labelKey: 'dashboard.sidebar.nav.logs', labelFallback: '运行日志', icon: FileText, shortcut: '5' },
-  { path: ROUTES.dashboard.inbox, labelKey: 'dashboard.sidebar.nav.inbox', labelFallback: '素材收件箱', icon: Inbox, shortcut: '6' },
+  { path: ROUTES.dashboard.inbox, labelKey: 'dashboard.sidebar.nav.inbox', labelFallback: '下载中心', icon: Inbox, shortcut: '6' },
   { path: ROUTES.dashboard.calendar, labelKey: 'dashboard.sidebar.nav.calendar', labelFallback: '内容日历', icon: Calendar, shortcut: '7' },
   // Studio (Script Studio) — Phase 1 of openspec/changes/script-studio.
   // Shortcut '8' lands cleanly because no existing navItemDef claims '8';
@@ -169,6 +178,11 @@ interface AdminNavItemDef {
   // will add the detail-route subpath `/dashboard/studio/:id` once
   // ScriptViewer ships.
   { path: ROUTES.dashboard.studio, labelKey: 'dashboard.sidebar.nav.studio', labelFallback: '剧本工坊', icon: Clapperboard, shortcut: '8' },
+  // Crawler (openspec/changes/mediacrawler-integration, 13.4) — navigation
+  // entry for the 7-platform data-collection dashboard.
+  // Shortcut '9' lands after Studio's '8'. The `Search` icon evokes
+  // "searching / crawling" semantic rather than a nav arrow.
+  { path: ROUTES.dashboard.crawl, labelKey: 'dashboard.sidebar.nav.crawl', labelFallback: '数据采集', icon: Search, shortcut: '9' },
 ]
 
 const ADMIN_NAV_DEFS: readonly AdminNavItemDef[] = [
@@ -215,10 +229,7 @@ export function AppShell() {
   const adminNavItems: readonly AdminNavItem[] = ADMIN_NAV_DEFS.map((d): AdminNavItem => ({
     ...d,
     label: t(d.labelKey, d.labelFallback),
-    children: d.children?.map((c): AdminNavItem => ({
-      ...c,
-      label: t(c.labelKey, c.labelFallback),
-    })),
+    children: d.children?.map((c) => ({ ...c, label: t(c.labelKey, c.labelFallback) }) as AdminNavItem),
   } as AdminNavItem))
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -404,6 +415,7 @@ export function AppShell() {
               <Route path={RELATIVE_DASHBOARD_ROUTES.admin.audit} element={<AuthGuard><AdminAuditPage /></AuthGuard>} />
               <Route path={RELATIVE_DASHBOARD_ROUTES.studio} element={<AuthGuard><StudioPage /></AuthGuard>} />
               <Route path={RELATIVE_DASHBOARD_ROUTES.studioDetail} element={<AuthGuard><StudioDetailPage /></AuthGuard>} />
+              <Route path={RELATIVE_DASHBOARD_ROUTES.crawl} element={<AuthGuard><CrawlPage /></AuthGuard>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
@@ -582,22 +594,47 @@ export function AppShell() {
       {/* Main Content */}
       <div className="flex flex-1 flex-col min-w-0">
         <header className="flex h-14 items-center justify-between gap-3 border-b border-border/50 bg-background/80 backdrop-blur-xl px-6">
-          <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground/80 tabular-nums select-none">
-            <span className="text-foreground/90">{APP_NAME}</span>
-            <span className="text-muted-foreground/40">·</span>
-            <span>build {APP_GIT_SHA}</span>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: 'var(--status-success-fg)' }}
-              />
-              ws ok
-            </span>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="text-foreground/90">mainline</span>
-          </div>
+          <Breadcrumb>
+            <BreadcrumbList className="font-mono text-[11px]">
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link to={ROUTES.dashboard.root} className="text-foreground/90">{APP_NAME}</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>build {APP_GIT_SHA}</BreadcrumbPage>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ background: 'var(--status-success-fg)' }}
+                  />
+                  ws ok
+                </span>
+              </BreadcrumbItem>
+              {(() => {
+                const currentPage = navItems.find((n) => n.path === location.pathname)
+                const isAdminPage = location.pathname.startsWith(ROUTES.dashboard.admin.root)
+                const adminPage = isAdminPage
+                  ? adminNavItems[0]?.children?.find((c) => c.path === location.pathname)
+                  : undefined
+                const label = currentPage?.label ?? adminPage?.label
+                if (!label) return null
+                return (
+                  <>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{label}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </>
+                )
+              })()}
+            </BreadcrumbList>
+          </Breadcrumb>
           <div className="flex items-center gap-2">
             {isTabletMode && (
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleSidebar} aria-label={t('dashboard.sidebar.toggle_sidebar', '切换侧边栏')}>
@@ -655,6 +692,7 @@ export function AppShell() {
                   <Route path={RELATIVE_DASHBOARD_ROUTES.admin.audit} element={<AuthGuard><AdminAuditPage /></AuthGuard>} />
                   <Route path={RELATIVE_DASHBOARD_ROUTES.studio} element={<AuthGuard><StudioPage /></AuthGuard>} />
                   <Route path={RELATIVE_DASHBOARD_ROUTES.studioDetail} element={<AuthGuard><StudioDetailPage /></AuthGuard>} />
+                  <Route path={RELATIVE_DASHBOARD_ROUTES.crawl} element={<AuthGuard><CrawlPage /></AuthGuard>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>

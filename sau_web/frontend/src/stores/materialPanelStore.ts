@@ -30,19 +30,6 @@ import type { RefObject } from 'react'
 const STORAGE_KEY = 'sau-material-panel-recent-queries'
 const MAX_RECENT_QUERIES = 3
 
-interface EnvelopeSuccess {
-  success: true
-  data: NormalizedImage[]
-  debug?: { pexels_count?: number; pixabay_count?: number; merged_count?: number; errors?: string[] }
-}
-interface EnvelopeFailure {
-  success: false
-  message: string
-  code?: string
-  retry_after_sec?: number
-}
-type _SearchEnvelope = EnvelopeSuccess | EnvelopeFailure
-
 interface MaterialPanelState {
   // ── Manual search slot ──
   imageQuery: string

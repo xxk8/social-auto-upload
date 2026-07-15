@@ -88,7 +88,7 @@ export function mountLoginPage(
   // accepts any React element, so this is a no-op at runtime.
   render(createElement(MemoryRouter, null, createElement(LoginPage)))
 
-  async function clickEmailSubmit(email: string): Promise<void> {
+  async function clickEmailSubmit(_email: string): Promise<void> {
     // LoginPage now shows a mockup form (no real inputs). Find the mockup
     // text and click the send-code area to progress the flow.
     await act(async () => {
@@ -96,7 +96,7 @@ export function mountLoginPage(
     })
   }
 
-  async function clickCodeSubmit(code: string): Promise<void> {
+  async function clickCodeSubmit(_code: string): Promise<void> {
     // LoginPage mockup routes visitors to /login/auth for real auth.
     // Click the CTA link to simulate navigating to the real auth form.
     await act(async () => {

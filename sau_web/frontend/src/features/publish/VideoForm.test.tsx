@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
+import type { HTMLAttributes, ReactNode } from 'react'
 // ── shared mock prop shapes (see TaskTableRow.test.tsx for rationale) ──
 //
 // `MockProps` is the common denominator: HTMLAttributes + children + an open
@@ -93,10 +94,18 @@ vi.mock('motion/react', () => {
 })
 
 vi.mock('@/Components/ui/index', () => {
-  const Tag = (tag: string) => (props: MockProps) => {
+  const makeTag = (tag: string) => (props: MockProps) => {
     const { children, className, ...rest } = props
     return (
       <div data-tag={tag} className={className} {...rest}>
+        {children}
+      </div>
+    )
+  }
+  function Tag(props: MockProps) {
+    const { children, className, ...rest } = props
+    return (
+      <div className={className} {...rest}>
         {children}
       </div>
     )
@@ -153,8 +162,8 @@ vi.mock('@/Components/ui/index', () => {
     )
   }
   return {
-    Alert: Tag('alert'),
-    AlertDescription: Tag('alert-description'),
+    Alert: makeTag('alert'),
+    AlertDescription: makeTag('alert-description'),
     // OPT-followup-3-c: AlertDialog surface wasn't exported from the prior
     // mock, so VideoForm.tsx's `import { AlertDialog, AlertDialogAction, …}`
     // resolved to `undefined` and the form crashed on render with
@@ -175,7 +184,7 @@ vi.mock('@/Components/ui/index', () => {
     AlertDialogHeader: ({ children }: MockProps) => <div data-tag="alert-header">{children}</div>,
     AlertDialogTitle: ({ children }: MockProps) => <div data-tag="alert-title">{children}</div>,
     AlertDialogTrigger: ({ children }: MockProps) => <>{children}</>,
-    Badge: Tag('badge'),
+    Badge: makeTag('badge'),
     Button: ({ children, className, ...rest }: MockProps) => (
       <button className={className} {...rest}>
         {children}
@@ -187,24 +196,24 @@ vi.mock('@/Components/ui/index', () => {
       cardRenderSpy()
       return <Tag data-tag="card" {...props} />
     },
-    CardContent: Tag('card-content'),
-    CardHeader: Tag('card-header'),
-    CardTitle: Tag('card-title'),
+    CardContent: makeTag('card-content'),
+    CardHeader: makeTag('card-header'),
+    CardTitle: makeTag('card-title'),
     Checkbox,
     Input,
-    Label: Tag('label'),
+    Label: makeTag('label'),
     MultiSelect,
     Select,
     SelectContent: ({ children }: MockProps) => <>{children}</>,
     SelectItem: ({ value, children }: MockSelectItemProps) => <option value={value}>{children}</option>,
-    SelectTrigger: Tag('select-trigger'),
-    SelectValue: Tag('select-value'),
+    SelectTrigger: makeTag('select-trigger'),
+    SelectValue: makeTag('select-value'),
     Separator: () => <hr />,
     Textarea,
-    Accordion: Tag('accordion'),
-    AccordionContent: Tag('accordion-content'),
-    AccordionItem: Tag('accordion-item'),
-    AccordionTrigger: Tag('accordion-trigger'),
+    Accordion: makeTag('accordion'),
+    AccordionContent: makeTag('accordion-content'),
+    AccordionItem: makeTag('accordion-item'),
+    AccordionTrigger: makeTag('accordion-trigger'),
   }
 })
 
@@ -254,7 +263,6 @@ vi.mock('@/api/client', () => ({
 // ── imports (post-mock) ────────────────────────────────────────────────
 
 import { VideoForm, type VideoFormHandle } from './VideoForm'
-import { sampleAccounts } from '@/test/fixtures'
 import { TestProviders } from '@/test/render-harness'
 import { makeQueryClient } from '@/test/render-harness.helpers'
 
@@ -274,7 +282,6 @@ describe('VideoForm — imperative handle', () => {
       <TestProviders client={qc}>
         <VideoForm
           ref={refCallback}
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -289,7 +296,7 @@ describe('VideoForm — imperative handle', () => {
       ref.current!.applyAiResult({
         title: 'AI 标题',
         desc: 'AI 描述',
-        tags: 'ai, video',
+        tags: ['ai, video'],
       } as AiGenerationResult)
     })
 
@@ -309,7 +316,6 @@ describe('VideoForm — imperative handle', () => {
           ref={(r) => {
             ref.current = r
           }}
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -322,7 +328,7 @@ describe('VideoForm — imperative handle', () => {
         ref.current!.applyAiResult({
           title: '',
           desc: '',
-          tags: '',
+          tags: [],
         } as AiGenerationResult)
       })
     }).not.toThrow()
@@ -343,7 +349,6 @@ describe('VideoForm — imperative handle', () => {
           ref={(r) => {
             ref.current = r
           }}
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -383,7 +388,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -397,7 +401,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -416,7 +419,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={stableOnSuccess}
           onError={onError}
         />
@@ -427,7 +429,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={freshOnSuccess} // identity change → memo miss
           onError={onError}
         />
@@ -446,7 +447,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={stableOnError}
         />
@@ -457,7 +457,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={freshOnError}
         />
@@ -468,7 +467,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
   })
 
   it('memo HIT: same accountOptions array reference → spy not called', () => {
-    const accounts = sampleAccounts
     const onSuccess = vi.fn()
     const onError = vi.fn()
     const qc = makeQueryClient()
@@ -476,7 +474,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={accounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -487,7 +484,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={accounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -497,7 +493,7 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     expect(cardRenderSpy).not.toHaveBeenCalled()
   })
 
-  it('memo MISS: fresh accountOptions array identity → spy called', () => {
+  it('memo MISS: fresh groupSelection identity → spy called', () => {
     const onSuccess = vi.fn()
     const onError = vi.fn()
     const qc = makeQueryClient()
@@ -505,7 +501,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -516,9 +511,9 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={[...sampleAccounts]} // fresh array identity
           onSuccess={onSuccess}
           onError={onError}
+          groupSelection={{ groupId: 1, groupName: 'g1', platforms: ['douyin'], mappings: [{ platform: 'douyin', cookieFile: 'c1', authId: 1 }] }}
         />
       </TestProviders>,
     )

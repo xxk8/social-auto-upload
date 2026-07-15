@@ -13,7 +13,17 @@
     "e2e": "playwright test --config ../../tests/playwright.config.ts",
     "e2e:install": "playwright install --with-deps chromium",
     "e2e:ui": "playwright test --ui --config ../../tests/playwright.config.ts",
-    "test:e2e": "playwright test --config ../../tests/playwright.config.ts"
+    "test:e2e": "playwright test --config ../../tests/playwright.config.ts",
+    "e2e:visual": "playwright test --config ../../tests/playwright.config.ts tests/e2e/pagewrapper-visual-regression.spec.ts",
+    "e2e:visual:update": "playwright test --config ../../tests/playwright.config.ts tests/e2e/pagewrapper-visual-regression.spec.ts --update-snapshots",
+    "e2e:visual:landing-motion": "playwright test --config ../../tests/playwright.config.ts tests/e2e/landing-motion-layer.spec.ts",
+    "e2e:visual:landing-motion:update": "playwright test --config ../../tests/playwright.config.ts tests/e2e/landing-motion-layer.spec.ts --update-snapshots",
+    "e2e:visual:pricing-motion": "playwright test --config ../../tests/playwright.config.ts tests/e2e/pricing-motion-layer.spec.ts",
+    "e2e:visual:pricing-motion:update": "playwright test --config ../../tests/playwright.config.ts tests/e2e/pricing-motion-layer.spec.ts --update-snapshots",
+    "e2e:visual:about-motion": "playwright test --config ../../tests/playwright.config.ts tests/e2e/about-motion-layer.spec.ts",
+    "e2e:visual:about-motion:update": "playwright test --config ../../tests/playwright.config.ts tests/e2e/about-motion-layer.spec.ts --update-snapshots",
+    "e2e:visual:visitor-motion": "playwright test --config ../../tests/playwright.config.ts tests/e2e/landing-motion-layer.spec.ts tests/e2e/pricing-motion-layer.spec.ts tests/e2e/about-motion-layer.spec.ts",
+    "e2e:visual:visitor-motion:update": "playwright test --config ../../tests/playwright.config.ts tests/e2e/landing-motion-layer.spec.ts tests/e2e/pricing-motion-layer.spec.ts tests/e2e/about-motion-layer.spec.ts --update-snapshots"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.14.24",
@@ -71,6 +81,7 @@
     "@remotion/renderer": "^4.0.486",
     "@tailwindcss/vite": "^4.3.1",
     "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-big-calendar": "^1.16.3",

@@ -27,6 +27,8 @@ export type AuthUser = {
   last_login?: string
   is_founder?: boolean
   has_password?: boolean
+  notify_health_email?: boolean
+  notify_health_webhook?: boolean
 }
 
 // Wire payload for PATCH /api/auth/me. Both fields optional; supply
@@ -35,6 +37,8 @@ export type AuthUser = {
 export type UpdateMePayload = {
   name?: string | null
   avatar?: string | null
+  notify_health_email?: boolean
+  notify_health_webhook?: boolean
 }
 
 export const authApi = {

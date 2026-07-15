@@ -37,8 +37,8 @@ export function DialogHost() {
           boundary point — the dumb body only reads `id` +
           `name` + `authorizations.length`. */}
       <BatchDeleteGroupConfirm
-        selectedIds={state.selectedIds}
-        groups={state.groups as ReadonlyArray<GroupSummary>}
+        selectedIds={state.selectedIds as unknown as ReadonlySet<string>}
+        groups={state.groups as unknown as ReadonlyArray<GroupSummary>}
         open={state.batchDeleteOpen}
         onOpenChange={dispatch.setBatchDeleteOpen}
         onConfirm={() => void dispatch.handleBatchDelete()}

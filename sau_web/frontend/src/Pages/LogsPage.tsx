@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion } from 'motion/react'
 import { Button } from '@/Components/ui/button'
 import { Card, CardContent } from '@/Components/ui/card'
 import { Input } from '@/Components/ui/input'
@@ -7,9 +8,11 @@ import { Label } from '@/Components/ui/label'
 import { Checkbox } from '@/Components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select'
 import { PageHeader } from '@/Components/ui/page-header'
+import { PageWrapper } from '@/Components/layout/PageWrapper'
 import { cn } from '@/lib/utils'
 import { api, type LogEntry } from '../api/client'
-import {useToast} from '@/Components/ui/toast.helpers';import {
+import { useToast } from '@/Components/ui/toast'
+import {
   AlertCircle,
   Download,
   Info,
@@ -18,6 +21,7 @@ import {useToast} from '@/Components/ui/toast.helpers';import {
   Search,
   AlertTriangle,
   FileText,
+  Activity,
 } from 'lucide-react'
 import { ChipBar, type ChipBarVariant } from '@/Components/ui/chip-bar'
 import { toneFillBgClass, toneTextClass, type Tone } from '@/lib/tone'
@@ -57,6 +61,25 @@ const LEVEL_TEXT_CLASS: Record<ResolvedLevel, string> = {
   info: 'text-foreground',
   warn: toneTextClass(levelToTone('warn')),
   error: toneTextClass(levelToTone('error')),
+}
+
+/** Left-side color bar width (px) for warn / error rows.
+ *  Info rows get no bar — they're the baseline and would be noisy
+ *  if every line carried a stripe. */
+const LEVEL_BORDER_L: Record<ResolvedLevel, string> = {
+  info: '',
+  warn: 'border-l-[3px] border-l-amber-500/70',
+  error: 'border-l-[3px] border-l-rose-500/80',
+}
+
+/** Gradient background per level — error gets the strongest wash so it
+ *  jumps out when scanning a dense log pane. Warn gets a subtler amber
+ *  tint. Info stays transparent. Opacity kept low (5–8%) so the
+ *  monospace text contrast isn't degraded. */
+const LEVEL_ROW_BG: Record<ResolvedLevel, string> = {
+  info: '',
+  warn: 'bg-gradient-to-r from-amber-500/8 to-transparent',
+  error: 'bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent',
 }
 
 const LEVEL_CHIPS: ReadonlyArray<{
@@ -178,18 +201,68 @@ function LogsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-[1600px] mx-auto w-full">
+    <PageWrapper spacing="sm">
       <PageHeader
         title="运行日志"
         description="实时查看系统运行日志"
         icon={<FileText className="h-5 w-5 text-muted-foreground" />}
         actions={
-          <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredLogs.length === 0}>
-            <Download className="h-4 w-4 mr-1" />
-            导出日志
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Live indicator — pulse dot + text */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              <span className="hidden sm:inline">实时</span>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredLogs.length === 0}>
+              <Download className="h-4 w-4 mr-1" />
+              导出日志
+            </Button>
+          </div>
         }
       />
+
+      {/* ── Summary stats strip — 4 mini stat cards ─────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <LogStatCard
+          label="总条目"
+          value={summary.all}
+          icon={Activity}
+          color="text-blue-500"
+          bg="bg-blue-500/10"
+          active={level === 'all'}
+          onClick={() => setLevel('all')}
+        />
+        <LogStatCard
+          label="信息"
+          value={summary.info}
+          icon={Info}
+          color="text-sky-500"
+          bg="bg-sky-500/10"
+          active={level === 'info'}
+          onClick={() => setLevel('info')}
+        />
+        <LogStatCard
+          label="警告"
+          value={summary.warn}
+          icon={AlertTriangle}
+          color="text-amber-500"
+          bg="bg-amber-500/10"
+          active={level === 'warn'}
+          onClick={() => setLevel('warn')}
+        />
+        <LogStatCard
+          label="错误"
+          value={summary.error}
+          icon={AlertCircle}
+          color="text-rose-500"
+          bg="bg-rose-500/10"
+          active={level === 'error'}
+          onClick={() => setLevel('error')}
+        />
+      </div>
 
       <ChipBar
         options={LEVEL_CHIPS.map((c) => ({ ...c, count: summary[c.value] }))}
@@ -259,7 +332,15 @@ function LogsPage() {
               {filteredLogs.map((entry, idx) => {
                 const lv = classifyLevel(entry.message)
                 return (
-                  <div key={`${entry.ts}-${idx}`} className="flex items-start gap-2 mb-0.5">
+                  <div
+                    key={`${entry.ts}-${idx}`}
+                    className={cn(
+                      'flex items-start gap-2 mb-0.5 rounded-sm px-2 py-0.5 transition-colors',
+                      LEVEL_BORDER_L[lv],
+                      LEVEL_ROW_BG[lv],
+                      lv !== 'info' && 'hover:bg-foreground/[0.03]',
+                    )}
+                  >
                     <span
                       className={cn(
                         'mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full',
@@ -282,7 +363,49 @@ function LogsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageWrapper>
+  )
+}
+
+/** Mini stat card for the summary strip — clickable to filter by level. */
+function LogStatCard({
+  label,
+  value,
+  icon: Icon,
+  color,
+  bg,
+  active,
+  onClick,
+}: {
+  label: string
+  value: number
+  icon: typeof Activity
+  color: string
+  bg: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClick}
+      className={cn(
+        'text-left rounded-xl bg-card ring-1 transition-all overflow-hidden',
+        active ? 'ring-foreground/20 shadow-sm' : 'ring-foreground/5 hover:ring-foreground/10',
+      )}
+    >
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg shrink-0', bg)}>
+          <Icon className={cn('h-4 w-4', color)} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xl font-bold leading-none tabular-nums">{value}</p>
+          <p className="text-[11px] text-muted-foreground mt-1 truncate">{label}</p>
+        </div>
+      </div>
+    </motion.button>
   )
 }
 
