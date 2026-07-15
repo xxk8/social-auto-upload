@@ -44,11 +44,3 @@ not yet exposed in the current codebase. Deleting them unconditionally could
 represent silent data loss of in-progress work that the developer hadn't yet
 committed. Since the project was already in cleanup-recovery mode, "move first,
 decide later" was the safer default.
-
-
-## Filename history
-
-This doc living at `docs/dev/sau-recovery-tmp-2026.md` was previously named
-`sau_recovery-tmp-2026.md` (underscores). Renamed in commit after 8fed76ae
-to align with the discoverability contract (kebab-case rule 4). Use
-`git log --follow -- docs/dev/sau-recovery-tmp-2026.md` to trace history.
