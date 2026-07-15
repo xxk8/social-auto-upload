@@ -45,6 +45,7 @@ You're planning a PR. You want to know **what not to redo**, **what trade-offs w
 | [FRONTEND-UI-UPGRADE](FRONTEND-UI-UPGRADE.md) | Ant Design → shadcn/ui migration record; component inventory + theme variables; read before touching shared UI primitives |
 | [VALUE-UPGRADE](VALUE-UPGRADE.md) | Quick-win product-value uplift proposals (confetti, brand color, content preview) — pick low-effort-high-perceived-value PRs here |
 | [skill-distribution](skill-distribution.md) | How Claude skills get distributed (PyPI vs. standalone repo vs. Docker); read before adding a new skill to `skills/` |
+| [sau-recovery-tmp-2026](sau-recovery-tmp-2026.md) | `/tmp/sau_recovery/` backup contents from round-OPT-3F-e2e cleanup (malformed-parser drafts); read before discarding the recovery dir |
 
 If your PR is going to touch **anything** in the Web Shell publish surface, start at `optimization-checklist.md` (it groups by ID and tracks ✅/⏳ per item).
 
@@ -88,6 +89,7 @@ If you already know the document name and just want to know who reads it:
 | `VALUE-UPGRADE.md` | — | ✅ | ✅ |
 | `VALUE-STRATEGY.md` | — | — | ✅ |
 | `skill-distribution.md` | — | ✅ | — |
+| `sau-recovery-tmp-2026.md` | — | ✅ | — |
 
 A doc that fits **two** audiences appears in both table rows and in both audience sections above — that's by design (e.g. `postgres-getting-started.md` is on-call-relevant AND onboarding-essential).
 
