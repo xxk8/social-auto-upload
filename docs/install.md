@@ -157,7 +157,55 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 - Bilibili 登录建议由用户自己在本地真实终端里执行；如果终端里的二维码显示不完整，**不要**打开 `qrcode.png`（该文件已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`），或在本地终端去掉 `--headless` 让浏览器里直接展示平台自己的二维码
 - 如果国内网络访问下载较慢，可先用 `https://gh-proxy.com/` 或 `https://gh-proxy.org/` 辅助访问对应 release 地址排障
 
-### 11. 可选：一键启动（推荐用于 Web Shell / Studio 联调）
+### 11. 账号健康监控（Account Health Monitoring）
+
+账号授权完成后，系统会自动在后台检查每个账号的 cookie 健康状态，并在 Web Shell 的账号管理页面展示。
+
+#### 检查机制
+
+- **Quick check**：每次检查都会读取 cookie 文件，校验文件存在、非空、JSON 合法、以及文件新鲜度。
+- **Real check**：通过 `patchright` 启动真实浏览器，调用平台自带的 `cookie_auth()` 校验登录态。真实检查比较消耗资源，默认每 24 小时只执行一次。
+- **后台轮询**：`web_runner/health_monitor.py` 启动一个 daemon 线程，默认每 6 小时对所有账号串行检查一次。
+- **手动触发**：在 Web Shell 账号管理页面，每个授权卡片都有「立即检查」按钮，可以立即触发一次检查（202 Accepted，后台异步执行）。
+
+#### 健康状态
+
+| 状态 | 含义 | 视觉提示 |
+|---|---|---|
+| `valid` | 健康 | 绿色 |
+| `expiring_soon` | cookie 文件超过 24 小时未刷新，或上次真实检查超过 7 天 | 黄色 |
+| `invalid` | quick check 失败或真实浏览器校验失败 | 红色 |
+| `unknown` | 尚未完成首次检查 | 灰色 |
+
+#### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `SAU_HEALTH_MONITOR_INTERVAL` | `21600`（6 小时） | 后台健康检查轮询间隔，单位秒 |
+| `SAU_HEALTH_REAL_CHECK_INTERVAL` | `86400`（24 小时） | 两次真实浏览器检查之间的最小间隔，单位秒 |
+| `SAU_HEALTH_TIMEOUT` | `30` | 单次真实检查超时时间，单位秒 |
+| `SAU_HEALTH_EXPIRING_DAYS` | `7` | 上次真实检查超过多少天即标记为 `expiring_soon` |
+
+#### 告警通知
+
+当某个账号的健康状态从 `valid` 降级为 `expiring_soon` 或 `invalid` 时，系统会：
+
+1. 触发 `cookie.expiring_soon` 或 `cookie.expired` 事件，通过现有的通知工人（notification worker）投递 webhook / 站内通知。
+2. 向该账号分组所属**所有者**的邮箱发送一封告警邮件（24 小时内同一账号只通知一次，避免刷屏）。
+
+通知对象按 `account_groups.owner_user_id` 确定：
+
+- 新创建的账号分组会自动记录创建者为所有者（`owner_user_id`）。
+- 升级部署时，历史分组会在 `init_db()` 中自动回填为数据库中第一个用户。
+- 如果某分组的所有者为空（例如关闭登录的纯 CLI / 无用户部署）：
+  - 邮件发送会依次回退到第一个管理员邮箱、第一个用户邮箱。
+  - 通知偏好（是否发邮件 / webhook）直接读取第一个用户的 `notify_health_email` / `notify_health_webhook`。
+- 邮件与 webhook 通道分别受所有者（或 fallback 用户）的 `users.notify_health_email` / `users.notify_health_webhook` 偏好控制。
+- 升级部署时的历史分组回填是一次性迁移，仅在 `users` 表非空时执行。
+
+通知依赖 `SAU_WEBHOOK_URL` / SMTP 配置，具体见 `web_runner/notifications.py` 与 `web_runner/routes/auth.py`。
+
+### 12. 可选：一键启动（推荐用于 Web Shell / Studio 联调）
 
 如果不想手动 `source .venv/bin/activate`，可以直接跑：
 

@@ -1,0 +1,15 @@
+{
+  "name": "phase2b-media-production",
+  "created": "2026-07-12",
+  "status": "proposed",
+  "parent": "product-roadmap-2026q3",
+  "artifacts": {
+    "proposal": "Phase 2b 落地：长视频自动切片（video-clipping）+ 自动字幕（auto-subtitle）+ 智能封面（thumbnail-generation）",
+    "design": "scenedetect + moviepy 场景切片 / faster-whisper 字幕 / opencv-python + Pillow 封面",
+    "tasks": { "total": 35, "completed": 0 }
+  },
+  "capabilities": ["video-clipping", "auto-subtitle", "thumbnail-generation"],
+  "layers": ["api", "frontend", "worker"],
+  "platforms": [],
+  "applyReady": true
+}

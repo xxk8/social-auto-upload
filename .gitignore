@@ -14,23 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-# Anchor `lib/` + `lib64/` to the project root. The unanchored form
-# `lib/` is basename-matched at EVERY directory level, so it silently
-# swallows `sau_web/frontend/src/lib/` (utils.ts, tone.ts,
-# chatFormBridge.ts, etc.) which is hand-written source code that the
-# Vite build imports via `@/lib/...` aliases. Without the leading
-# `/`, `git add -A` skips the whole `src/lib/` tree and remote builds
-# fail with "Cannot find module @/lib/chat/chatFormBridge" until
-# someone force-adds the file with `git add -f`.
-#
-# Anchoring to project root preserves the original intent (ignore the
-# top-level `lib/` + `lib64/` that `pip install --user` or virtualenvs
-# create) while letting the frontend's `src/lib/` participate in git
-# as ordinary source.
-#
-# Tracked in the chore(tsc-debt) round — the chatFormBridge.ts
-# re-export fix that resolves 1 of the 12 pre-existing tsc errors
-# requires this rule to be in place.
+# Anchor to project root — unanchored form swallows `sau_web/frontend/src/lib/` (hand-written source).
 /lib/
 /lib64/
 parts/

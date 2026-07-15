@@ -1,3 +1,4 @@
+"""
 Locks the property that the script's verdict is byte-equivalent across the
 pre-PR-A (no public-inbox tables in the DB) and post-PR-A (tables exist
 but empty) boundary. The in-memory schema bootstrap in

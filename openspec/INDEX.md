@@ -74,17 +74,17 @@
 
 > 本节追踪上一轮 wholesale `## 概述 → ## ADDED Requirements` 迁移遗留的 stub 规格，状态为「待回填」。
 
-上一轮 openspec delta-format 迁移后，`openspec/changes/*/specs/*/spec.md`（不含 archive/）下有 **52** 个文件包含 `openspec delta-format stub` 标记。这些是占位符，不是正式规格。CI 在 `.github/workflows/ci.yml::openspec-stub-gate` 中以 `docs/openspec-stub-baseline.txt` 为 baseline，冻结 stub 总数禁止净增长（仅允许随 backfill 同步递减）。
+上一轮 openspec delta-format 迁移后，`openspec/changes/*/specs/*/spec.md`（不含 archive/）下有 **49** 个文件包含 `openspec delta-format stub` 标记。这些是占位符，不是正式规格。CI 在 `.github/workflows/ci.yml::openspec-stub-gate` 中以 `docs/openspec-stub-baseline.txt` 为 baseline，冻结 stub 总数禁止净增长（仅允许随 backfill 同步递减）。
 
 **回填顺序（优先级从高到低，与 GitHub Issue 一致）**：
 
-**Tier 1 — 高频功能（用户优先点）**（3 条，已回填 3 条）
+**Tier 1 — 高频功能（用户优先点）**（0 条，已回填 6 条 — 全部完成 ✅）
 - ~~`openspec/specs/web-shell/spec.md`~~ ✅ **已回填**（13 requirements / 40 scenarios，覆盖双面 Vite 前端、账号管理 API、202+Location 上传合约、任务管理端点、幂等键协议、健康监控、平台配置、日志保留等）
 - ~~`openspec/changes/admin-dashboard-social-login/specs/admin-dashboard/spec.md`~~ ✅ **已回填**（11 requirements / 35 scenarios，覆盖 admin 路由+权限控制、用户列表+角色变更+审计日志、概览统计、趋势序列+CSV 导出、adminApi 前端客户端）
-- `openspec/changes/admin-dashboard-social-login/specs/social-login/spec.md`
+- ~~`openspec/changes/admin-dashboard-social-login/specs/social-login/spec.md`~~ ✅ **已回填**（8 requirements / 28 scenarios，覆盖 Authlib OAuth 注册、Google/GitHub 登录+回调、查找或创建用户、session 创建、前端重定向到绝对 origin、前端社交登录按钮、OAuth 环境变量）
 - ~~`openspec/changes/platform-value-upgrade-2026-q3/specs/publish-wizard/spec.md`~~ ✅ **已回填**（8 requirements / 31 scenarios，覆盖三步导航+URL 深链、逐步校验门+proceedReason、Zustand store 状态管理、Upload/Content/Review 三步组件、WizardNav 按钮状态、模式切换 group 重置）
-- `openspec/changes/platform-value-upgrade-2026-q3/specs/license-system/spec.md`
-- `openspec/changes/platform-value-upgrade-2026-q3/specs/content-preview/spec.md`
+- ~~`openspec/changes/platform-value-upgrade-2026-q3/specs/license-system/spec.md`~~ ✅ **已回填**（7 requirements / 30 scenarios，覆盖 license key 格式校验+激活+状态+停用+管理员生成+数据库列+使用计量层级强制）
+- ~~`openspec/changes/platform-value-upgrade-2026-q3/specs/content-preview/spec.md`~~ ✅ **已回填**（8 requirements / 20 scenarios，覆盖 FormPreviewData 类型、Video/Note 预览卡片、tag chip 显示、定时徽章、目标平台显示、实时数据流、空状态占位符）
 
 **Tier 2 — 核心平台 / 基础设施**（24 条）
 - `platform-value-upgrade-2026-q3` 余下 7 条（`analytics-dashboard` · `api-reliability` · `draft-templates` · `frontend-polish` · `multi-turn-chat` · `scheduled-timeline` · `usage-metering`）

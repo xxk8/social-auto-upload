@@ -1,3 +1,4 @@
+"""
 Coverage:
   * _evaluate: per-metric threshold rule + min_sample_size floor + NOT_IMPLEMENTED
   * _cascade_overall: CRUISE / WATCHFUL / STOP-SHIP / INSUFFICIENT_DATA verdict cascade

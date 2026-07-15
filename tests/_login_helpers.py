@@ -58,7 +58,7 @@ def _login_as(client, email):
 
     row = db.fetch_one(
         "SELECT code FROM verification_codes WHERE email = ? "
-        "AND purpose = 'login' AND used = 0 "
+        "AND purpose = 'login' AND used = FALSE "
         "ORDER BY created_at DESC LIMIT 1",
         (email,),
     )

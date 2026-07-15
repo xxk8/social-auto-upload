@@ -505,6 +505,41 @@ class TestPatchMe:
         assert resp.status_code == 200
         assert resp.get_json()["data"]["user"]["name"] == "valid"
 
+    def test_notification_preferences_shape(self, app):
+        """GET /api/auth/me exposes health notification preferences."""
+        _login_as(app, "patch_notify_shape@test.com")
+        resp = app.get("/api/auth/me")
+        assert resp.status_code == 200
+        user = resp.get_json()["data"]["user"]
+        assert "notify_health_email" in user
+        assert "notify_health_webhook" in user
+        assert user["notify_health_email"] is True
+        assert user["notify_health_webhook"] is True
+
+    def test_patch_notification_preferences(self, app):
+        """PATCH /api/auth/me can toggle health notification channels."""
+        _login_as(app, "patch_notify@test.com")
+        resp = app.patch(
+            "/api/auth/me",
+            json={"notify_health_email": False, "notify_health_webhook": False},
+        )
+        assert resp.status_code == 200
+        user = resp.get_json()["data"]["user"]
+        assert user["notify_health_email"] is False
+        assert user["notify_health_webhook"] is False
+
+        # Round-trip through GET
+        resp = app.get("/api/auth/me")
+        assert resp.get_json()["data"]["user"]["notify_health_email"] is False
+        assert resp.get_json()["data"]["user"]["notify_health_webhook"] is False
+
+    def test_notification_preferences_non_boolean_rejected(self, app):
+        """Notification preferences must be booleans."""
+        _login_as(app, "patch_notify_bad@test.com")
+        resp = app.patch("/api/auth/me", json={"notify_health_email": "yes"})
+        assert resp.status_code == 422
+        assert "布尔值" in resp.get_json()["message"]
+
     def test_only_patches_own_row(self, app):
         """PATCH only mutates the session's own uid — no horizontal-priv.
 

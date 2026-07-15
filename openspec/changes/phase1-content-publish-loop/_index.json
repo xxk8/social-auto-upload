@@ -1,0 +1,15 @@
+{
+  "name": "phase1-content-publish-loop",
+  "created": "2026-07-12",
+  "status": "proposed",
+  "parent": "product-roadmap-2026q3",
+  "artifacts": {
+    "proposal": "Phase 1 落地：发布效果数据闭环（content-metrics）+ CSV 批量导入（batch-import）",
+    "design": "独立 content_metrics 表 + 平台 API 定时轮询 + AnalyticsPage 效果 Tab + /api/tasks/batch CSV 批量创建 + TasksPage 批量导入 UI",
+    "tasks": { "total": 34, "completed": 0 }
+  },
+  "capabilities": ["content-metrics", "batch-import"],
+  "layers": ["api", "frontend", "db", "scheduler"],
+  "platforms": ["douyin", "bilibili", "xiaohongshu"],
+  "applyReady": true
+}

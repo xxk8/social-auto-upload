@@ -190,3 +190,70 @@ Bilibili 额外要求：
 - 小红书：支持多张图片，正文 `--note` 可选，但 `--title` 建议始终显式传入
 
 后续维护 CLI 时，优先看 `sau_cli.py`、`uploader/` 和 `skills/`。
+
+## Crawler CLI（数据采集 / 评论监控）
+
+`openspec/changes/mediacrawler-integration` 增增 `sau crawl <action>` 名字空间，支持 7 个平台（xhs/douyin/ks/bili/weibo/tieba/zhihu）的关键词搜索、帖子详情、评论树采集，以及 AI 情感分析 + 自动回复建议。采集是**只读**的——从来不写平台，只写本项目自己的 PostgreSQL ``crawled_*`` 表。
+
+### 搜索
+
+```bash
+sau crawl search --platform xhs --keywords "美食，旅游"
+sau crawl search --platform dy --keywords "火锅" --max-count 50
+sau crawl search --platform bili --keywords "Python 教程" --detach
+```
+
+### 帖子详情
+
+```bash
+sau crawl detail --platform xhs --post-ids "abc123,def456"
+sau crawl detail --platform dy --post-ids "v1234567890"
+```
+
+### 评论树（二级评论）
+
+```bash
+sau crawl comments --platform bili --post-ids "BV1abc" --max-count 200
+sau crawl comments --platform weibo --post-ids "mid123"
+```
+
+### 平台简称 / 全称
+
+CLI 的 ``--platform`` 同时接受 短名字 (MediaCrawler 原生) 和 长名字 (与发布侧对齐)：
+
+| 短 | 长 |
+|---|---|
+| `xhs` | `xiaohongshu` |
+| `dy` | `douyin` |
+| `ks` | `kuaishou` |
+| `bili` | `bilibili` |
+| `wb` | `weibo` |
+| `tieba` | `tieba` |
+| `zhihu` | `zhihu` |
+
+### 轮询 / detach
+
+默认情况下 CLI 会同步轮询任务状态（``--poll-timeout`` 秒后超时返回错误码 1）。加 ``--detach`` 可让 CLI 只打印 ``task_id`` 后立即退出 0——后续可通过轮询 `GET /api/crawl/status?task_id=<task_id>` 接口或查询 ``tasks`` 表来跟踪进度。
+
+### 调用流程
+
+1. CLI 调用 `crawler.create_crawl_task()` 插入一行到 ``tasks`` 表 (`status='pending'`)
+2. 同一会话里，CLI 轮询 task_id 直到状态离开 `pending/running` （种设轮询上限）
+3. 任务进程（`PlatformExecutor`）后台拉起对应平台的 ``AbstractCrawler`` 子类
+4. 采集结果写入 ``crawled_content`` / ``crawled_comments``；评论表异步触发 AI 情感分析 + 回复建议（详见 `crawler/ai/`）
+
+### 环境变量
+
+参见 `.env.example` 中 ``SAU_CRAWLER_*`` 部分。重点项目：
+
+- `SAU_CRAWLER_ENABLE_IP_PROXY` — 启用代理池（默认 false）
+- `SAU_CRAWLER_STATIC_PROXY_URL` — static 模式代理 URL
+- `SAU_CRAWLER_OPENROUTER_API_KEY` — AI 情感/回复建议的 LLM 密钥（未设时仍可工作，使用关键词启发式回退）
+
+### 后续维护该 CLI 时，优先看
+
+- `cli/platforms/crawl.py` — 三个顶层 action 的实现
+- `crawler/platforms/<平台>/core.py` — 不同平台的爬取逻辑（当前为 scaffold）
+- `web_runner/routes/crawl.py` — Web API 路由
+- `crawler/ai/` — OpenRouter 调用
+

@@ -236,5 +236,5 @@ oauth.register(
 - [x] 是否需要支持更多社交登录（Apple、Discord、微信）？→ Google/GitHub 已满足 MVP 需求，后续按需扩展
 - [ ] 审计日志是否需要支持时间范围筛选（v1.0+ 考虑）？→ 已实现 server-side 分页，时间筛选为可选增强
 - [ ] 概览页是否需要图表（v1.0+ 考虑）？→ 当前为数字卡片 + 表格，图表为可选增强
-- [ ] `.env.example` 是否需要补充 OAuth 配置说明？→ 待补充文档
-- [ ] `README.md` 是否需要更新 Admin Dashboard + 社交登录使用说明？→ 待补充文档
+- [x] `.env.example` 是否需要补充 OAuth 配置说明？→ `.env.example` Section 3 已补充完整
+- [x] `README.md` 是否需要更新 Admin Dashboard + 社交登录使用说明？→ `docs/oauth-setup.md` + README 已补充完整

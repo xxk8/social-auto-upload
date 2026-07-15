@@ -1,0 +1,15 @@
+{
+  "name": "phase4-collab-and-monetization",
+  "created": "2026-07-12",
+  "status": "proposed",
+  "parent": "product-roadmap-2026q3",
+  "artifacts": {
+    "proposal": "Phase 4 落地：审批流（approval-workflow）+ 开放 REST API（rest-api-open）+ Webhook 回调（webhook-callbacks）",
+    "design": "tasks.approval_status 字段 + API Key 鉴权 + Webhooks 表 + 签名 + 重试",
+    "tasks": { "total": 13, "completed": 0 }
+  },
+  "capabilities": ["approval-workflow", "rest-api-open", "webhook-callbacks"],
+  "layers": ["api", "db", "auth"],
+  "platforms": [],
+  "applyReady": true
+}

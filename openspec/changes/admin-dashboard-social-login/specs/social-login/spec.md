@@ -1,296 +1,211 @@
 ## ADDED Requirements
 
-### Requirement: Social Login (openspec delta-format stub — see archived content below)
-The `Social Login` capability is added by openspec change `admin-dashboard-social-login`. This file is currently a delta-format stub created during a wholesale `## 概述 → ## ADDED Requirements` migration; the authoritative pre-migration specification is preserved verbatim as an indented code block at the bottom of this file. Domain experts should backfill proper Requirement / Scenario entries by reading that archived content. The system MUST satisfy this contract per the change's proposal.md and design.md.
+### Requirement: OAuth provider registration via Authlib
 
-#### Scenario: Standard execution path (stub)
-- **WHEN** the `Social Login` workflow is invoked per `openspec/changes/admin-dashboard-social-login/design.md`
-- **THEN** the system MUST satisfy the behavioral contract documented in the archived pre-migration specification below
+The system SHALL use Authlib's `FlaskOAuth2App` integration for OAuth provider registration. Google SHALL be registered with OpenID Connect discovery (`server_metadata_url`) and scopes `openid email profile`. GitHub SHALL be registered with explicit `access_token_url`, `authorize_url`, `api_base_url`, and scope `user:email`. Providers SHALL be registered lazily in `_register_providers()` called from `create_app()` only when the corresponding environment variables are set and non-empty.
 
-<Archived pre-migration specification; preserved as a 4-space-indented code block so `## headings` inside it do NOT re-trigger the openspec delta detector>
+#### Scenario: Google provider registered when env vars set
 
-    # Social Login 规范
-    
-    ## 概述
-    
-    社交登录功能允许用户使用 Google/GitHub 账号一键登录，无需记忆密码，提升用户体验。
-    
-    ## 技术选型
-    
-    选择 **Authlib** 作为 OAuth 库：
-    
-    | 因素 | Authlib | Flask-OAuthlib | authlib-limiter |
-    |---|---|---|---|
-    | 维护状态 | 活跃（v1.7.2） | 已废弃 | 不活跃 |
-    | Flask 集成 | ✅ 原生支持 | ✅ | ❌ |
-    | OpenID Connect | ✅ | ❌ | ❌ |
-    | 文档完善度 | 高 | 中 | 低 |
-    | 社区支持 | 强 | 弱 | 弱 |
-    
-    ## 流程
-    
-    ```
-    用户点击 "Google 登录"
-            ↓
-    前端调用 window.location.href = '/api/auth/google/login'
-            ↓
-    后端重定向到 Google 授权页面
-            ↓
-    用户在 Google 页面授权
-            ↓
-    Google 回调到 /api/auth/google/callback
-            ↓
-    后端获取用户信息（email, name, avatar）
-            ↓
-    查找或创建用户（写入 users 表）
-            ↓
-    创建 session（user_id, role）
-            ↓
-    重定向到 /app（前端）
-    ```
-    
-    ## API 端点
-    
-    ### GET /api/auth/google/login
-    
-    **权限**：公开
-    **Response**：重定向到 Google 授权页面
-    
-    ### GET /api/auth/google/callback
-    
-    **权限**：公开
-    **Response**：重定向到 `/app`（成功）或 `/login?error=google_failed`（失败）
-    
-    ### GET /api/auth/github/login
-    
-    **权限**：公开
-    **Response**：重定向到 GitHub 授权页面
-    
-    ### GET /api/auth/github/callback
-    
-    **权限**：公开
-    **Response**：重定向到 `/app`（成功）或 `/login?error=github_failed`（失败）
-    
-    ## 后端实现
-    
-    ### OAuth 配置
-    
-    ```python
-    # web_runner/oauth.py
-    from authlib.integrations.flask_client import OAuth
-    
-    oauth = OAuth()
-    
-    # Google 配置
-    oauth.register(
-        name='google',
-        client_id='your-google-client-id',
-        client_secret='your-google-client-secret',
-        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-        client_kwargs={'scope': 'openid email profile'},
-    )
-    
-    # GitHub 配置
-    oauth.register(
-        name='github',
-        client_id='your-github-client-id',
-        client_secret='your-github-client-secret',
-        access_token_url='https://github.com/login/oauth/access_token',
-        access_token_params=None,
-        authorize_url='https://github.com/login/oauth/authorize',
-        authorize_params=None,
-        api_base_url='https://api.github.com/',
-        client_kwargs={'scope': 'user:email'},
-    )
-    ```
-    
-    ### 登录路由
-    
-    ```python
-    # web_runner/routes/oauth.py
-    from flask import Blueprint, redirect, url_for, session
-    from web_runner.oauth import oauth
-    from web_runner.db import get_database
-    from datetime import datetime, timezone
-    
-    bp = Blueprint('oauth', __name__)
-    
-    
-    def _find_or_create_user(email: str, name: str | None = None, avatar: str | None = None) -> dict:
-        """查找或创建用户"""
-        db = get_database()
-        user = db.fetch_one("SELECT * FROM users WHERE email = ?", (email,))
-    
-        if not user:
-            now = datetime.now(timezone.utc).isoformat()
-            count_row = db.fetch_one("SELECT COUNT(*) as cnt FROM users")
-            role = "admin" if (count_row and count_row["cnt"] == 0) else "user"
-            db.execute(
-                "INSERT INTO users (email, role, created_at, last_login, name, avatar) VALUES (?, ?, ?, ?, ?, ?)",
-                (email, role, now, now, name, avatar),
-            )
-            user = db.fetch_one("SELECT * FROM users WHERE email = ?", (email,))
-        else:
-            now = datetime.now(timezone.utc).isoformat()
-            db.execute(
-                "UPDATE users SET last_login = ?, name = COALESCE(?, name), avatar = COALESCE(?, avatar) WHERE id = ?",
-                (now, name, avatar, user["id"]),
-            )
-            user = db.fetch_one("SELECT * FROM users WHERE id = ?", (user["id"],))
-    
-        return user
-    
-    
-    def _create_session(user: dict) -> None:
-        """创建用户 session"""
-        session.clear()
-        session["user_id"] = user["id"]
-        session["role"] = user["role"]
-        session.permanent = True
-    
-    
-    @bp.get('/api/auth/google/login')
-    def google_login():
-        redirect_uri = url_for('oauth.google_callback', _external=True)
-        return oauth.google.authorize_redirect(redirect_uri)
-    
-    
-    @bp.get('/api/auth/google/callback')
-    def google_callback():
-        try:
-            token = oauth.google.authorize_access_token()
-            userinfo = token['userinfo']
-            user = _find_or_create_user(
-                email=userinfo['email'],
-                name=userinfo.get('name'),
-                avatar=userinfo.get('picture'),
-            )
-            _create_session(user)
-            return redirect('/app')
-        except Exception:
-            return redirect('/login?error=google_failed')
-    
-    
-    @bp.get('/api/auth/github/login')
-    def github_login():
-        redirect_uri = url_for('oauth.github_callback', _external=True)
-        return oauth.github.authorize_redirect(redirect_uri)
-    
-    
-    @bp.get('/api/auth/github/callback')
-    def github_callback():
-        try:
-            token = oauth.github.authorize_access_token()
-            resp = oauth.github.get('user', token=token)
-            profile = resp.json()
-    
-            email_resp = oauth.github.get('user/emails', token=token)
-            emails = email_resp.json()
-            email = next((e['email'] for e in emails if e['primary']), None)
-    
-            if not email:
-                return redirect('/login?error=no_email')
-    
-            user = _find_or_create_user(
-                email=email,
-                name=profile.get('name'),
-                avatar=profile.get('avatar_url'),
-            )
-            _create_session(user)
-            return redirect('/app')
-        except Exception:
-            return redirect('/login?error=github_failed')
-    ```
-    
-    ## 前端实现
-    
-    ### 登录页面
-    
-    ```tsx
-    // sau_web/frontend/src/Pages/LoginPage.tsx
-    import { Button } from '@/Components/ui/button'
-    import { Separator } from '@/Components/ui/separator'
-    import { authApi } from '@/features/auth/authApi'
-    
-    export function LoginPage() {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-background">
-          <div className="w-full max-w-md space-y-6 p-8">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold">登录</h1>
-              <p className="text-muted-foreground mt-2">选择登录方式继续</p>
-            </div>
-    
-            {/* 社交登录按钮 */}
-            <div className="space-y-3">
-              <Button variant="outline" className="w-full" onClick={() => authApi.googleLogin()}>
-                <GoogleIcon className="mr-2 h-4 w-4" />
-                Google 登录
-              </Button>
-              <Button variant="outline" className="w-full" onClick={() => authApi.githubLogin()}>
-                <GitHubIcon className="mr-2 h-4 w-4" />
-                GitHub 登录
-              </Button>
-            </div>
-    
-            {/* 分割线 */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <Separator className="w-full" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">或者使用</span>
-              </div>
-            </div>
-    
-            {/* 邮箱验证码登录 */}
-            <EmailLoginForm />
-          </div>
-        </div>
-      )
-    }
-    ```
-    
-    ## 环境变量
-    
-    ```bash
-    # .env 文件
-    
-    # Google OAuth（需要在 Google Cloud Console 创建）
-    GOOGLE_CLIENT_ID=xxx
-    GOOGLE_CLIENT_SECRET=xxx
-    
-    # GitHub OAuth（需要在 GitHub Settings → Developer settings 创建）
-    GITHUB_CLIENT_ID=xxx
-    GITHUB_CLIENT_SECRET=xxx
-    ```
-    
-    ## OAuth 应用配置
-    
-    ### Google Cloud Console
-    
-    1. 访问 https://console.cloud.google.com
-    2. 创建新项目或选择现有项目
-    3. 导航到「API 和服务」→「凭据」
-    4. 点击「创建凭据」→「OAuth 客户端 ID」
-    5. 配置 OAuth 同意屏幕
-    6. 创建 OAuth 2.0 客户端 ID
-    7. 添加重定向 URI：`http://localhost:6001/api/auth/google/callback`
-    
-    ### GitHub Settings
-    
-    1. 访问 https://github.com/settings/developers
-    2. 点击「New OAuth App」
-    3. 填写应用信息：
-       - Application name: `social-auto-upload`
-       - Homepage URL: `http://localhost:5180`
-       - Authorization callback URL: `http://localhost:6001/api/auth/github/callback`
-    4. 保存 Client ID 和 Client Secret
-    
-    ## 安全考量
-    
-    1. **CSRF 防护**：OAuth 库自动处理 state 参数
-    2. **Token 存储**：使用 Flask session（服务端存储）
-    3. **邮箱验证**：使用 Google/GitHub 已验证的邮箱
-    4. **最小权限**：只请求必要的 scope（email, profile）
-    
+- **GIVEN** `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set and non-empty
+- **WHEN** `_register_providers()` is called during `create_app()`
+- **THEN** the Google provider SHALL be registered with `server_metadata_url="https://accounts.google.com/.well-known/openid-configuration"` and `client_kwargs={'scope': 'openid email profile'}`
+
+#### Scenario: GitHub provider registered when env vars set
+
+- **GIVEN** `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set and non-empty
+- **WHEN** `_register_providers()` is called
+- **THEN** the GitHub provider SHALL be registered with `access_token_url="https://github.com/login/oauth/access_token"`, `authorize_url="https://github.com/login/oauth/authorize"`, `api_base_url="https://api.github.com/"`, and `client_kwargs={'scope': 'user:email'}`
+
+#### Scenario: Provider skipped when env vars missing
+
+- **GIVEN** `GOOGLE_CLIENT_ID` is empty or unset
+- **WHEN** `_register_providers()` is called
+- **THEN** the Google provider SHALL NOT be registered
+- **AND** `oauth.create_client("google")` SHALL return `None` at request time
+
+### Requirement: Google OAuth login and callback
+
+The system SHALL provide `GET /api/auth/google/login` (public, no auth required) that redirects to Google's authorization page, and `GET /api/auth/google/callback` (public) that handles the OAuth callback. The callback SHALL extract the user's email from the `userinfo` token, find or create the user, create a Flask session, and redirect to the frontend dashboard.
+
+#### Scenario: Initiate Google login
+
+- **WHEN** `GET /api/auth/google/login` is called
+- **AND** the Google provider is registered
+- **THEN** the system SHALL redirect to Google's authorization page with the callback URL
+
+#### Scenario: Google login when provider not configured
+
+- **GIVEN** `GOOGLE_CLIENT_ID` is unset
+- **WHEN** `GET /api/auth/google/login` is called
+- **THEN** the system SHALL redirect to `/login?error=oauth_not_configured` on the frontend origin
+
+#### Scenario: Successful Google callback
+
+- **GIVEN** Google returns a valid token with `userinfo.email`
+- **WHEN** `GET /api/auth/google/callback` processes the callback
+- **THEN** the system SHALL call `_find_or_create_user(email, name, avatar)` with the userinfo fields
+- **AND** SHALL create a Flask session with `user_id` and `role`
+- **AND** SHALL redirect to `/dashboard` on the frontend origin
+
+#### Scenario: Google callback with no email
+
+- **GIVEN** Google returns a token but `userinfo.email` is missing
+- **WHEN** the callback processes the token
+- **THEN** the system SHALL redirect to `/login?error=no_email` on the frontend origin
+
+#### Scenario: Google callback exception
+
+- **GIVEN** the `authorize_access_token()` call raises an exception
+- **WHEN** the callback catches the exception
+- **THEN** the system SHALL log a warning and redirect to `/login?error=google_failed` on the frontend origin
+
+### Requirement: GitHub OAuth login and callback
+
+The system SHALL provide `GET /api/auth/github/login` (public) and `GET /api/auth/github/callback` (public). The GitHub callback SHALL fetch the user profile and emails (separate API calls), extract the primary email, find or create the user, create a session, and redirect to the frontend dashboard.
+
+#### Scenario: Initiate GitHub login
+
+- **WHEN** `GET /api/auth/github/login` is called
+- **AND** the GitHub provider is registered
+- **THEN** the system SHALL redirect to GitHub's authorization page
+
+#### Scenario: Successful GitHub callback
+
+- **GIVEN** GitHub returns a valid token
+- **WHEN** `GET /api/auth/github/callback` processes the callback
+- **THEN** the system SHALL fetch the user profile via `client.get("user")`
+- **AND** SHALL fetch emails via `client.get("user/emails")`
+- **AND** SHALL select the primary email (falling back to first verified, then first available)
+- **AND** SHALL call `_find_or_create_user(email, name, avatar)` with `name=profile.get("name") or profile.get("login")` and `avatar=profile.get("avatar_url")`
+- **AND** SHALL redirect to `/dashboard` on the frontend origin
+
+#### Scenario: GitHub callback with no email at all
+
+- **GIVEN** the GitHub emails API returns an empty list or all email fields are missing
+- **WHEN** the callback exhausts the 3-level fallback (primary → verified → first available)
+- **THEN** the system SHALL redirect to `/login?error=no_email` on the frontend origin
+
+#### Scenario: GitHub callback exception
+
+- **GIVEN** the token or profile fetch raises an exception
+- **WHEN** the callback catches the exception
+- **THEN** the system SHALL log a warning and redirect to `/login?error=github_failed` on the frontend origin
+
+### Requirement: Find or create user on first OAuth login
+
+The `_find_or_create_user()` function SHALL look up a user by email. If not found, the system SHALL create a new user with the first user becoming `admin` and all subsequent users becoming `user`. If found, the system SHALL update `last_login` and optionally update `name` and `avatar` via `COALESCE`.
+
+#### Scenario: First OAuth user becomes admin
+
+- **GIVEN** no users exist in the `users` table
+- **WHEN** `_find_or_create_user("new@example.com", "New User", "https://avatar.url")` is called
+- **THEN** the system SHALL insert a new user with `role='admin'`, `created_at=now`, `last_login=now`, `name="New User"`, `avatar="https://avatar.url"`
+- **AND** SHALL return the new user record
+
+#### Scenario: Subsequent OAuth user gets user role
+
+- **GIVEN** at least one user exists
+- **WHEN** `_find_or_create_user("another@example.com")` is called
+- **THEN** the system SHALL insert a new user with `role='user'`
+
+#### Scenario: Existing user updates last_login and profile
+
+- **GIVEN** a user exists with `email="existing@example.com"`, `name="Old Name"`
+- **WHEN** `_find_or_create_user("existing@example.com", "New Name", "https://new.avatar")` is called
+- **THEN** the system SHALL update `last_login` to current ISO timestamp
+- **AND** SHALL update `name` to "New Name" via `COALESCE(?, name)`
+- **AND** SHALL update `avatar` to "https://new.avatar" via `COALESCE(?, avatar)`
+- **AND** SHALL return the updated user record
+
+#### Scenario: Existing user with null name keeps old name
+
+- **GIVEN** a user exists with `name="Old Name"`
+- **WHEN** `_find_or_create_user("existing@example.com", None, None)` is called
+- **THEN** `COALESCE(NULL, name)` SHALL preserve the existing `name="Old Name"`
+
+### Requirement: Session creation after OAuth login
+
+The `_create_session()` function SHALL clear any existing session, set `user_id` and `role` from the user record, and mark the session as permanent.
+
+#### Scenario: Session created with user_id and role
+
+- **GIVEN** a user record with `id=5, role='user'`
+- **WHEN** `_create_session(user)` is called
+- **THEN** the Flask session SHALL be cleared
+- **AND** `session["user_id"]` SHALL be set to 5
+- **AND** `session["role"]` SHALL be set to "user"
+- **AND** `session.permanent` SHALL be `True`
+
+### Requirement: Frontend redirect to absolute frontend origin
+
+All OAuth callback redirects SHALL use the `_frontend_url()` helper to construct absolute URLs pointing to the frontend origin (default `http://localhost:5180`), not the backend origin (`http://localhost:6001`). The `SAU_FRONTEND_URL` environment variable SHALL override the default.
+
+#### Scenario: Default frontend URL
+
+- **GIVEN** `SAU_FRONTEND_URL` is not set
+- **WHEN** `_frontend_url("/dashboard")` is called
+- **THEN** the result SHALL be `http://localhost:5180/dashboard`
+
+#### Scenario: Custom frontend URL
+
+- **GIVEN** `SAU_FRONTEND_URL="https://my-app.example.com"`
+- **WHEN** `_frontend_url("/login?error=google_failed")` is called
+- **THEN** the result SHALL be `https://my-app.example.com/login?error=google_failed`
+
+#### Scenario: Empty SAU_FRONTEND_URL falls back to default
+
+- **GIVEN** `SAU_FRONTEND_URL=""` (set but empty)
+- **WHEN** `_frontend_url("/dashboard")` is called
+- **THEN** the result SHALL be `http://localhost:5180/dashboard` (uses `or` operator, not `get` default)
+
+#### Scenario: Path with leading slash is handled
+
+- **WHEN** `_frontend_url("/dashboard")` or `_frontend_url("dashboard")` is called
+- **THEN** both SHALL produce the same result (leading slash stripped via `lstrip("/")`)
+
+### Requirement: Frontend social login buttons
+
+The frontend `LoginAuthPage.tsx` SHALL render "Google 登录" and "GitHub 登录" buttons that redirect to the backend OAuth login endpoints via `window.location.href`. The page SHALL display OAuth error messages when redirected back with `?error=` query parameters.
+
+#### Scenario: Google login button
+
+- **WHEN** the user clicks the "Google 登录" button on the login page
+- **THEN** `authApi.googleLogin()` SHALL set `window.location.href` to `/api/auth/google/login`
+
+#### Scenario: GitHub login button
+
+- **WHEN** the user clicks the "GitHub 登录" button
+- **THEN** `authApi.githubLogin()` SHALL set `window.location.href` to `/api/auth/github/login`
+
+#### Scenario: OAuth error display
+
+- **GIVEN** the user is redirected back to `/login?error=google_failed`
+- **WHEN** the LoginAuthPage renders
+- **THEN** the page SHALL display "Google 登录失败，请重试"
+
+#### Scenario: GitHub error display
+
+- **GIVEN** the user is redirected back to `/login?error=github_failed`
+- **WHEN** the LoginAuthPage renders
+- **THEN** the page SHALL display "GitHub 登录失败，请重试"
+
+### Requirement: OAuth environment variables
+
+The system SHALL read OAuth configuration from environment variables: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. These SHALL be documented in `.env.example` with setup instructions for Google Cloud Console and GitHub Developer Settings.
+
+#### Scenario: Google OAuth env vars documented
+
+- **WHEN** a developer reads `.env.example`
+- **THEN** they SHALL find `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` entries
+- **AND** a comment SHALL reference the Google Cloud Console setup URL
+
+#### Scenario: GitHub OAuth env vars documented
+
+- **WHEN** a developer reads `.env.example`
+- **THEN** they SHALL find `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` entries
+- **AND** a comment SHALL reference the GitHub Developer Settings URL
+
+#### Scenario: OAuth redirect URIs documented
+
+- **WHEN** a developer reads `.env.example`
+- **THEN** they SHALL find the callback URLs documented: `http://localhost:6001/api/auth/google/callback` and `http://localhost:6001/api/auth/github/callback`

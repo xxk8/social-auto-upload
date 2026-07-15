@@ -1,0 +1,20 @@
+{
+  "name": "tsc-drift-sweep-2026-q3",
+  "created": "2026-Q3",
+  "status": "proposed",
+  "applyReady": false,
+  "artifacts": {
+    "proposal": "proposal.md",
+    "design": "design.md",
+    "tasks": {
+      "total": 15,
+      "completed": 1
+    }
+  },
+  "layers": [
+    "frontend"
+  ],
+  "platforms": [
+    "web"
+  ]
+}

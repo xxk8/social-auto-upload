@@ -1,14 +1,5 @@
 """Tests for ``web_runner.routes.studio`` — Script Studio Phase 1 backend.
 
-import pytest  # noqa: E402
-
-# Post-SQLite-removal: this suite was a SQLite-specific test. Skipped pending
-# a rewrite to use the production PG backend (requires a live PG in CI).
-# See openspec/changes/migrate-sqlite-to-postgresql-19/tasks.md for the
-# deferred rewrite plan.
-
-"""Tests for ``web_runner.routes.studio`` — Script Studio Phase 1 backend.
-
 OpenSpec ref: ``openspec/changes/script-studio/tasks.md §1`` (v0.1 看到项目).
 
 Coverage map (test name → spec anchor). Each ``test_*`` name embeds the

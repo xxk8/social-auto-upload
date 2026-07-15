@@ -200,8 +200,8 @@
   oauth.register(name='google', ...)
   oauth.register(name='github', ...)
   ```
-- [ ] 5.1.3 在 `.env.example` 中添加 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` 说明
-  > 注：OAuth 配置通过环境变量读取，`.env.example` 待补充。
+- [x] 5.1.3 在 `.env.example` 中添加 `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` 说明
+  > `.env.example` Section 3 已包含完整的 OAuth 配置指南与变量占位符。
 
 ### 5.2 后端 — 社交登录路由（Web API 层）
 
@@ -239,7 +239,11 @@
 
 ## 6. 文档与配置（Cross-layer）
 
-- [ ] 6.1 更新 `README.md`，添加 Admin Dashboard 和社交登录说明
-- [ ] 6.2 更新 `.env.example`，添加 OAuth 配置说明
-- [ ] 6.3 编写 Google Cloud Console 配置指南
-- [ ] 6.4 编写 GitHub OAuth App 配置指南
+- [x] 6.1 更新 `README.md`，添加 Admin Dashboard 和社交登录说明
+  > README.md 已包含完整的管理后台 3 页面说明与社交登录配置段落。
+- [x] 6.2 更新 `.env.example`，添加 OAuth 配置说明
+  > `.env.example` Section 3 已有详细的 Google/GitHub 配置步骤。
+- [x] 6.3 编写 Google Cloud Console 配置指南
+  > `docs/oauth-setup.md` §1 Google OAuth 2.0 完整覆盖（创建凭据 → 重定向 URI → 环境变量）。
+- [x] 6.4 编写 GitHub OAuth App 配置指南
+  > `docs/oauth-setup.md` §2 GitHub OAuth App 完整覆盖（创建 App → 生成 Secret → 环境变量）。
