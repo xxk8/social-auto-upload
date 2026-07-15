@@ -236,3 +236,15 @@ media/
 #    every `=<digits>.<digits>` leftover and any other
 #    `=`-prefixed scratch file.)
 =*
+
+# ── Session-start dev/debug artifacts (round-OPT-3F-e2e cleanup) ──
+# These were untracked artifacts from session-start work; committing
+# them would pollute the repo. Add to ignore list:
+db/*.sqlite3
+db/*.db
+debug_sse_test.py
+tmp_verify_silence.py
+captions.ass
+captions.srt
+captions.ass
+captions.srt
