@@ -248,3 +248,13 @@ captions.ass
 captions.srt
 captions.ass
 captions.srt
+
+# ── SQLite WAL/SHM artifacts + Flask secret keys (round-OPT-3F-e2e audit) ──
+# Per reviewer feedback + security audit: a future db/ directory or `.secret_key`
+# file at any path must NEVER accidentally be committed (Flask session secret
+# files are production secrets, SQLite WAL/SHM are runtime artifacts that
+# belong in the working tree only). Unanchored rules since macOS dev vs Linux CI
+# difference in case-sensitivity is non-issue here — the rule names are exact.
+*.db-shm
+*.db-wal
+.secret_key
