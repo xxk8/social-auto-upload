@@ -335,6 +335,7 @@ def _title(event: UploadEvent) -> str:
         "upload.success": "上传成功",
         "upload.failed": "上传失败",
         "cookie.expired": "Cookie 过期",
+        "cookie.expiring_soon": "Cookie 即将过期",
         "system.webhook_failed": "Webhook 投递失败",
     }.get(event.event_type, event.event_type)
     return f"{icon} {event.platform or ''}{kind}"

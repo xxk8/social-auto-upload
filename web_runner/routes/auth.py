@@ -797,6 +797,11 @@ def _serialize_user(user: dict) -> dict:
     # the key's presence.
     out["is_founder"] = bool(user.get("is_founder"))
     out["has_password"] = bool(user.get("password_hash"))
+    # Notification preferences for account health monitoring.
+    # Stored as booleans; default TRUE so existing users keep
+    # receiving alerts until they explicitly opt out.
+    out["notify_health_email"] = bool(user.get("notify_health_email", True))
+    out["notify_health_webhook"] = bool(user.get("notify_health_webhook", True))
     return out
 
 
@@ -830,7 +835,7 @@ def _serialize_user(user: dict) -> dict:
 # own uid (no path param), so a user can only PATCH their own
 # record — no horizontal-privilege surface.
 
-_ALLOWED_PATCH_FIELDS = frozenset({"name", "avatar"})
+_ALLOWED_PATCH_FIELDS = frozenset({"name", "avatar", "notify_health_email", "notify_health_webhook"})
 
 _FORBIDDEN_PATCH_FIELDS = frozenset({
     "role", "tier", "license_tier", "license_key",
@@ -923,6 +928,17 @@ def update_me():
             }), 422
         else:
             fields["avatar"] = raw.strip()
+
+    # Boolean notification preferences. Accepts only true/false booleans;
+    # rejects strings/numbers so PostgreSQL BOOLEAN casts never surprise us.
+    for bool_key in ("notify_health_email", "notify_health_webhook"):
+        if bool_key in fields:
+            raw = fields[bool_key]
+            if not isinstance(raw, bool):
+                return jsonify({
+                    "success": False,
+                    "message": f"{bool_key} 必须是布尔值",
+                }), 422
 
     db = get_database()
     uid = _current_user_id()

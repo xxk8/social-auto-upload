@@ -83,6 +83,7 @@ def create_app() -> Flask:
     from web_runner.routes.ai import bp as ai_bp
     from web_runner.routes.analytics import bp as analytics_bp
     from web_runner.routes.auth import bp as auth_bp
+    from web_runner.routes.crawl import bp as crawl_bp
     from web_runner.routes.founder import bp as founder_bp
     from web_runner.routes.inbox import bp as inbox_bp
     from web_runner.routes.license import bp as license_bp
@@ -109,6 +110,13 @@ def create_app() -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(oauth_bp)
     app.register_blueprint(admin_bp)
+    # Crawler (openspec/changes/mediacrawler-integration): research
+    # surface — comment monitoring, sentiment analysis, reply
+    # suggestions. Goes BEFORE the auth gate so unauthenticated
+    # callers get the standard 401 from ``_check_auth`` (NOT a 200
+    # blind-dispatch that would let a unauthenticated caller
+    # enqueue a crawl task).
+    app.register_blueprint(crawl_bp)
     # Founder blueprint (ai-api-keys-founder feature): the
     # founder-transfer endpoint intentionally authenticates via
     # inline founder check inside the route (not
@@ -235,6 +243,15 @@ def create_app() -> Flask:
         _task_logger.info("[startup] webhook notification worker started")
     except Exception as exc:
         _task_logger.warning(f"[startup] notification worker failed: {type(exc).__name__}")
+
+    # ── Startup: account health monitor (idempotent) ────────────────
+    try:
+        from web_runner.health_monitor import start_health_monitor
+
+        start_health_monitor()
+        _task_logger.info("[startup] account health monitor started")
+    except Exception as exc:
+        _task_logger.warning(f"[startup] health monitor failed: {type(exc).__name__}")
 
     @app.get("/health")
     def health():

@@ -39,6 +39,7 @@ Public-API exclusions:
   * psycopg + psycopg-pool must be installed; absent either, the
     PostgresDatabase.__init__ raises with install-instruction text.
 """
+
 from __future__ import annotations
 
 import json
@@ -105,17 +106,39 @@ def _translate_placeholders(sql: str) -> str:
 # ``SAVEPOINT`` entry half-opened).
 _SAVEPOINT_NAME_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 _SAVEPOINT_NAME_MAX_LEN: int = 63  # PG identifier NAMEDATALEN-1.
-_RESERVED_SAVEPOINT_NAMES: frozenset = frozenset({
-    # SQL keywords that would parse-error at the BACKEND when used as
-    # a savepoint identifier. Identifier regex blocks numeric-literal
-    # lookalikes and SQL injection vectors already; this deny-list
-    # adds the keyword callers are most likely to reach for without
-    # quoting.
-    "savepoint", "transaction", "release", "rollback", "begin", "commit", "end",
-    "select", "insert", "update", "delete", "drop", "create", "alter",
-    "table", "into", "values", "from", "where",
-    "primary", "foreign", "key", "unique", "check",
-})
+_RESERVED_SAVEPOINT_NAMES: frozenset = frozenset(
+    {
+        # SQL keywords that would parse-error at the BACKEND when used as
+        # a savepoint identifier. Identifier regex blocks numeric-literal
+        # lookalikes and SQL injection vectors already; this deny-list
+        # adds the keyword callers are most likely to reach for without
+        # quoting.
+        "savepoint",
+        "transaction",
+        "release",
+        "rollback",
+        "begin",
+        "commit",
+        "end",
+        "select",
+        "insert",
+        "update",
+        "delete",
+        "drop",
+        "create",
+        "alter",
+        "table",
+        "into",
+        "values",
+        "from",
+        "where",
+        "primary",
+        "foreign",
+        "key",
+        "unique",
+        "check",
+    }
+)
 
 
 def _validate_savepoint_name(name: str) -> None:
@@ -134,26 +157,18 @@ def _validate_savepoint_name(name: str) -> None:
     the identifier directly.
     """
     if not isinstance(name, str):
-        raise ValueError(
-            f"Savepoint name must be str, got {type(name).__name__}"
-        )
+        raise ValueError(f"Savepoint name must be str, got {type(name).__name__}")
     if not name:
         raise ValueError("Savepoint name must be non-empty")
     if len(name) > _SAVEPOINT_NAME_MAX_LEN:
-        raise ValueError(
-            f"Savepoint name too long ({len(name)} chars; "
-            f"max is {_SAVEPOINT_NAME_MAX_LEN})"
-        )
+        raise ValueError(f"Savepoint name too long ({len(name)} chars; " f"max is {_SAVEPOINT_NAME_MAX_LEN})")
     if not _SAVEPOINT_NAME_RE.match(name):
         raise ValueError(
             f"Savepoint name {name!r} must match SQL identifier pattern "
             f"^[a-zA-Z_][a-zA-Z0-9_]*$ (SQL injection guard)"
         )
     if name.lower() in _RESERVED_SAVEPOINT_NAMES:
-        raise ValueError(
-            f"Savepoint name {name!r} is a reserved SQL keyword "
-            f"(case-insensitive)"
-        )
+        raise ValueError(f"Savepoint name {name!r} is a reserved SQL keyword " f"(case-insensitive)")
 
 
 # ── psycopg ConnectionPool tuning ────────────────────────────────────────
@@ -213,6 +228,7 @@ def _pool_kwargs_from_env() -> tuple[int, int, float, dict]:
     clears the cache) so test runs using ``monkeypatch.setenv`` /
     ``delenv`` see a fresh env without module-import caching.
     """
+
     def _env_int(name: str, default: int) -> int:
         raw = os.environ.get(name, "").strip()
         if not raw:
@@ -220,14 +236,9 @@ def _pool_kwargs_from_env() -> tuple[int, int, float, dict]:
         try:
             v = int(raw)
         except ValueError as exc:
-            raise RuntimeError(
-                f"Env var {name}={raw!r} is not a valid integer "
-                f"(ValueError: {exc})."
-            ) from exc
+            raise RuntimeError(f"Env var {name}={raw!r} is not a valid integer " f"(ValueError: {exc}).") from exc
         if v <= 0:
-            raise RuntimeError(
-                f"Env var {name}={v} must be > 0 (got non-positive value)."
-            )
+            raise RuntimeError(f"Env var {name}={v} must be > 0 (got non-positive value).")
         return v
 
     def _env_float(name: str, default: float) -> float:
@@ -237,14 +248,9 @@ def _pool_kwargs_from_env() -> tuple[int, int, float, dict]:
         try:
             v = float(raw)
         except ValueError as exc:
-            raise RuntimeError(
-                f"Env var {name}={raw!r} is not a valid float "
-                f"(ValueError: {exc})."
-            ) from exc
+            raise RuntimeError(f"Env var {name}={raw!r} is not a valid float " f"(ValueError: {exc}).") from exc
         if v <= 0:
-            raise RuntimeError(
-                f"Env var {name}={v} must be > 0 (got non-positive value)."
-            )
+            raise RuntimeError(f"Env var {name}={v} must be > 0 (got non-positive value).")
         return v
 
     min_size = _env_int("SAU_DB_POOL_MIN", 2)
@@ -268,12 +274,11 @@ def _pool_kwargs_from_env() -> tuple[int, int, float, dict]:
         raise RuntimeError(
             f"SAU_DB_POOL_KWARGS={raw_kwargs!r} is not valid JSON: "
             f"{exc}. Use a JSON dict, e.g. "
-            f"'{{\"application_name\":\"sau\"}}'."
+            f'\'{{"application_name":"sau"}}\'.'
         ) from exc
     if not isinstance(parsed, dict):
         raise RuntimeError(
-            f"SAU_DB_POOL_KWARGS={raw_kwargs!r} must parse to a JSON "
-            f"dict, got {type(parsed).__name__}."
+            f"SAU_DB_POOL_KWARGS={raw_kwargs!r} must parse to a JSON " f"dict, got {type(parsed).__name__}."
         )
     # Forbidden-key gating lives in PostgresDatabase.__init__ next
     # to the merge site; we just pass the parsed dict through.
@@ -474,7 +479,7 @@ class PostgresDatabase:
             raise RuntimeError(
                 "PostgresDatabase requires psycopg[binary]>=3.2 and "
                 "psycopg-pool>=3.2. Install via "
-                "`uv pip install -e \\\".[web-pg]\\\"`."
+                '`uv pip install -e \\".[web-pg]\\"`.'
             ) from exc
         merged_kwargs = {
             **user_kwargs,
@@ -554,9 +559,7 @@ class PostgresDatabase:
         stripping whitespace and a single trailing semicolon.
         """
         sql_pg = _translate_placeholders(sql)
-        sql_with_returning = (
-            sql_pg.rstrip().rstrip(";").strip() + " RETURNING id"
-        )
+        sql_with_returning = sql_pg.rstrip().rstrip(";").strip() + " RETURNING id"
         with self._conn() as conn:
             row = conn.execute(sql_with_returning, params).fetchone()
             self._lastid = int(row["id"]) if row and "id" in row.keys() else 0
@@ -682,11 +685,23 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
             ts TEXT NOT NULL,
             message TEXT NOT NULL
         )""",
+        # users must be created before account_groups because
+        # account_groups.owner_user_id references users(id).
+        """CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL,
+            last_login TEXT,
+            login_attempts INTEGER NOT NULL DEFAULT 0,
+            locked_until TEXT
+        )""",
         """CREATE TABLE IF NOT EXISTS account_groups (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             created TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            owner_user_id INTEGER REFERENCES users(id)
         )""",
         """CREATE TABLE IF NOT EXISTS account_authorizations (
             id SERIAL PRIMARY KEY,
@@ -727,15 +742,6 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
             retry_count INTEGER,
             status_code INTEGER
         )""",
-        """CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            email TEXT NOT NULL UNIQUE,
-            role TEXT NOT NULL DEFAULT 'user',
-            created_at TEXT NOT NULL,
-            last_login TEXT,
-            login_attempts INTEGER NOT NULL DEFAULT 0,
-            locked_until TEXT
-        )""",
         """CREATE TABLE IF NOT EXISTS verification_codes (
             id SERIAL PRIMARY KEY,
             email TEXT NOT NULL,
@@ -767,7 +773,8 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
             snapshot TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",        """CREATE TABLE IF NOT EXISTS admin_audit_log (
+        )""",
+        """CREATE TABLE IF NOT EXISTS admin_audit_log (
             id SERIAL PRIMARY KEY,
             admin_user_id INTEGER NOT NULL REFERENCES users(id),
             target_user_id INTEGER REFERENCES users(id),
@@ -840,7 +847,71 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
             created_at TEXT NOT NULL,
             UNIQUE (project_id, kind, code)
         )""",
+        # Idempotency-key cache (round-OPT-idem-keys). See
+        # `web_runner/utils.py::_idempotency_get_or_409` for the
+        # read/write contract and `tests/test_idempotency_contract.py`
+        # for the behavioral contract. A retry with the same
+        # (user_id, route, key) returns the cached response if
+        # `state='completed'`, or 409 with Retry-After if
+        # `state='processing'`.
+        """CREATE TABLE IF NOT EXISTS idempotency_keys (
+            user_id INTEGER NOT NULL,
+            route TEXT NOT NULL,
+            key TEXT NOT NULL,
+            payload_hash TEXT NOT NULL,
+            response_status INTEGER,
+            response_body TEXT,
+            response_headers TEXT,
+            task_id TEXT,
+            state TEXT NOT NULL DEFAULT 'processing',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            PRIMARY KEY (user_id, route, key)
+        )""",
+        # ── Crawler (openspec/changes/mediacrawler-integration) ─────
+        # Two-table shape: ``crawled_content`` holds the post/video
+        # row, ``crawled_comments`` holds each comment (one row per
+        # top-level + sub-comment). Both use JSONB ``raw_payload`` so
+        # per-platform schema divergence doesn't require ALTER TABLE.
+        #
+        # AI augmentation columns live ON ``crawled_comments``:
+        # - ``ai_sentiment``              — 'positive' | 'negative' |
+        #                                   'neutral' | NULL (pending
+        #                                   or OpenRouter-failed).
+        # - ``ai_sentiment_confidence``   — REAL in [0.0, 1.0]; 0.0
+        #                                   when sentiment is pending.
+        # - ``ai_reply_suggestion``       — TEXT; empty string when
+        #                                   the LLM call hasn't
+        #                                   returned yet, or when the
+        #                                   call failed (UI hides the
+        #                                   copy button on empty).
+        #
+        # ``post_id`` is plain TEXT (not FK) because the upstream
+        # platforms return inconsistent id shapes (BV /note-ids /
+        # mid / wb-mid). We don't enforce referential integrity;
+        # the Left-Join at read-time is the lookup.
+        """CREATE TABLE IF NOT EXISTS crawled_content (
+            id SERIAL PRIMARY KEY,
+            platform TEXT NOT NULL,
+            post_id TEXT,
+            raw_payload JSONB,
+            crawled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS crawled_comments (
+            id SERIAL PRIMARY KEY,
+            platform TEXT NOT NULL,
+            post_id TEXT,
+            raw_payload JSONB,
+            ai_sentiment TEXT,
+            ai_sentiment_confidence REAL DEFAULT 0.0,
+            ai_reply_suggestion TEXT,
+            crawled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
     ]
+    # Schema-bump migration for pre-existing deployments
+    # (idempotent — ALTER ADD COLUMN IF NOT EXISTS is a no-op on
+    # a fresh DB). Covers the case where the rounded-PR landed
+    # half-complete and a fresh DB needs the columns anyway.
     index_statements = [
         "CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)",
         "CREATE INDEX IF NOT EXISTS idx_logs_message ON logs (message)",
@@ -865,8 +936,7 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         # planner can walk the index in order without a separate sort
         # node. One extra btree column (8 bytes/row) for the
         # no-sort guarantee on the common path.
-        "CREATE INDEX IF NOT EXISTS idx_error_events_task_id "
-        "ON error_events (task_id, ts DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_error_events_task_id " "ON error_events (task_id, ts DESC)",
         "CREATE INDEX IF NOT EXISTS idx_auth_group_id ON account_authorizations (group_id)",
         "CREATE INDEX IF NOT EXISTS idx_verification_email ON verification_codes (email)",
         # Partial index for the login hot path
@@ -904,7 +974,43 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         "CREATE INDEX IF NOT EXISTS idx_notifications_event_type ON notifications (event_type)",
         "CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (delivered, final_failed)",
         "CREATE INDEX IF NOT EXISTS idx_webhooks_config_route ON webhooks_config (platform, account)",
-    ]
+        # Round-OPT-idem-keys: cleanup-sweep index for the
+        # ``idempotency_keys`` table. The ``DELETE FROM idempotency_keys
+        # WHERE expires_at < ?`` janitor runs every ~6h and must NOT
+        # seq-scan a multi-thousand-row table on each pass. Partial
+        # predicate on ``state='completed'`` keeps the index small
+        # (in-flight rows are short-lived and self-cleaned via
+        # the same janitor; pending rows under processing are
+        # excluded so a stuck processing row doesn't survive forever
+        # under this index — a separate ALERT path covers that).
+        "CREATE INDEX IF NOT EXISTS idx_idempotency_keys_expires "
+        "ON idempotency_keys (expires_at) WHERE state = 'completed'",
+        # Crawler indexes (openspec/changes/mediacrawler-integration
+        # Tasks 5.3):
+        # - ``idx_crawled_content_platform``: drill-down
+        #   ``GET /api/crawl/data?platform=xhs`` and the per-platform
+        #   sentiment summary card. Without it the platform filter
+        #   does a seq-scan once the table passes ~10k rows.
+        # - ``idx_crawled_content_crawled_at``: reverse-chronological
+        #   default list. Covers ORDER BY crawled_at DESC without a
+        #   sort step.
+        # - ``idx_crawled_comments_post``: drill-down
+        #   ``/api/crawl/comments?post_id=...`` — common UX flow
+        #   (operator clicks a post, sees its comments).
+        # - ``idx_crawled_comments_platform_sentiment``: partial
+        #   index covering the sentiment summary breakdown; the
+        #   ``WHERE ai_sentiment IS NOT NULL`` predicate keeps it
+        #   small because pending rows (the majority early in a
+        #   crawl) are excluded.
+        "CREATE INDEX IF NOT EXISTS idx_crawled_content_platform "
+        "ON crawled_content (platform, crawled_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_crawled_content_crawled_at "
+        "ON crawled_content (crawled_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_crawled_comments_post "
+        "ON crawled_comments (post_id, crawled_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_crawled_comments_platform_sentiment "
+        "ON crawled_comments (platform, ai_sentiment)",
+    ]   
     alteration_statements = [
         "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0",
         "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP",
@@ -927,13 +1033,18 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         # web_runner/routes/founder.py::transfer_founder.
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_founder BOOLEAN NOT NULL DEFAULT FALSE",
         # At most one founder at a time (PG partial UNIQUE).
-        "CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_one_founder "
-        "ON users (is_founder) WHERE is_founder = TRUE",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_one_founder " "ON users (is_founder) WHERE is_founder = TRUE",
         # Password authentication: bcrypt hash of user-set password.
         # NULL means the user has only used email-code / OAuth login
         # and has not yet set a password. When set, enables password
         # login via POST /api/auth/login-by-password.
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT",
+        # Account health monitoring notification preferences.
+        # Both default to TRUE so existing users keep receiving
+        # cookie.expiring_soon / cookie.expired alerts via email
+        # and webhook until they explicitly opt out.
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_health_email BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_health_webhook BOOLEAN NOT NULL DEFAULT TRUE",
         # Index for reset-password code lookups (mirrors
         # idx_verification_login_active for the 'reset_password'
         # purpose).
@@ -950,8 +1061,7 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         # legible regardless of Pexels output brightness without
         # making the background look like a black rectangle. NOT
         # NULL so legacy rows still have a sane value.
-        "ALTER TABLE studio_projects "
-        "ADD COLUMN IF NOT EXISTS overlay_opacity REAL NOT NULL DEFAULT 0.5",
+        "ALTER TABLE studio_projects " "ADD COLUMN IF NOT EXISTS overlay_opacity REAL NOT NULL DEFAULT 0.5",
         # ── Visual Style Presets (round-OPT-presets-v1) ─────────────
         # Catalyst for this column: ship 3 named visual presets
         # (Noir / Vibrant / Minimalist) selectable from a dropdown
@@ -973,8 +1083,7 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         # appended on writes so future migrations have a forward-
         # compat hook. Reads are version-tolerant (UI falls back to
         # Classic on any non-1 version once we ship v2).
-        "ALTER TABLE studio_projects "
-        "ADD COLUMN IF NOT EXISTS render_config JSONB",
+        "ALTER TABLE studio_projects " "ADD COLUMN IF NOT EXISTS render_config JSONB",
         # round-OPT-MONETIZE-v1 — widen the `usage_logs.action`
         # CHECK whitelist to include 'studio_render'. The original
         # whitelist ('publish','ai_generate','account_add') was
@@ -995,7 +1104,52 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
         "ALTER TABLE usage_logs DROP CONSTRAINT IF EXISTS usage_logs_action_check",
         "ALTER TABLE usage_logs ADD CONSTRAINT usage_logs_action_check "
         "CHECK(action IN ('publish','ai_generate','account_add','studio_render'))",
-
+        # ── Account health monitoring (openspec/changes/account-health-monitoring) ──
+        "ALTER TABLE account_authorizations ADD COLUMN IF NOT EXISTS last_check_at TIMESTAMP",
+        "ALTER TABLE account_authorizations ADD COLUMN IF NOT EXISTS last_real_check_at TIMESTAMP",
+        "ALTER TABLE account_authorizations ADD COLUMN IF NOT EXISTS last_health TEXT DEFAULT 'unknown'",
+        "ALTER TABLE account_authorizations ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER DEFAULT 0",
+        "ALTER TABLE account_authorizations ADD COLUMN IF NOT EXISTS next_check_at TIMESTAMP",
+        "ALTER TABLE account_authorizations ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMP",
+        # owner_user_id is already present in the CREATE TABLE for fresh
+        # deploys; this ALTER remains for deployments that upgraded from
+        # the pre-account-health-monitoring schema.
+        "ALTER TABLE account_groups ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id)",
+        # ── Idempotency keys (openspec/changes/idempotency-keys) ──────
+        # Stores the cached response for an in-flight or completed
+        # POST so a retry with the same `Idempotency-Key` header
+        # returns the original 202 + Location + body without
+        # re-executing the side effect (publishing a duplicate
+        # upload, creating a duplicate task row, etc.).
+        #
+        # Composite primary key (user_id, route, key) gives us
+        # automatic per-(user, route) scoping with no extra index
+        # (PG's PK index already covers the hot lookup path). The
+        # ``user_id`` component is the auth-gate's session user
+        # id (or 0 for the pre-auth whitelist); ``route`` is the
+        # Flask endpoint path (e.g. ``/api/upload/video``); ``key``
+        # is the client-supplied UUID.
+        #
+        # `state` distinguishes a still-processing request
+        # (``'processing'``) from a completed one
+        # (``'completed'``). A retry against a ``processing`` row
+        # returns 409 + Retry-After (the first request is still
+        # working); a retry against a ``completed`` row returns
+        # the cached response verbatim with an
+        # ``Idempotency-Replayed: true`` marker header.
+        #
+        # `payload_hash` is the SHA-256 of the route-specific
+        # signature (platform + account + title + file-size +
+        # file-name for multipart, or the JSON body for JSON
+        # routes). A retry with a different hash returns 422
+        # "key reused with different payload" — this is the
+        # client-side bug signal that the same UUID was reused
+        # for a genuinely different operation.
+        #
+        # `expires_at` is set to 24h after creation; cleanup runs
+        # in the same opportunistic-sweep hook as the other
+        # background jobs (see _cleanup_old_uploads sibling
+        # call) so a separate cron is unnecessary.
         # ── Autovacuum tuning for high-churn tables ──
         # Per docs/perf-indexes.md §4.2: default PG autovacuum
         # (autovacuum_vacuum_scale_factor=0.2 = 20% dead rows) is too
@@ -1057,12 +1211,50 @@ def _init_db_postgres(db: PostgresDatabase) -> None:
             # a side channel — callers don't read this return
             # value.
             pass
-        # Partial index for scheduled task lookup (PG-only syntax)
+
+        # Backfill account group owners: legacy groups created
+        # before the owner column get attached to the first user.
+        # This is a one-time migration; new groups set the owner
+        # at creation time.
+        try:
+            conn.execute(
+                "UPDATE account_groups SET owner_user_id = ("
+                "  SELECT id FROM users ORDER BY id ASC LIMIT 1"
+                ") WHERE owner_user_id IS NULL "
+                "AND EXISTS (SELECT 1 FROM users)"
+            )
+        except Exception:
+            pass
+        # Partial index for scheduled task lookup (PG-only syntax).
+        # Renamed + broadened in round-OPT-async-202: the old
+        # ``idx_tasks_pending_scheduled`` only covered
+        # ``scheduled_at IS NOT NULL`` (the scheduled slice) and
+        # therefore missed the much larger class of unscheduled
+        # ``status='pending'`` rows created by the 202-enqueue path.
+        # The new partial index covers BOTH the unscheduled slice
+        # (used by ``PlatformExecutor.load_pending_tasks`` to recover
+        # work on restart) and the due-scheduled slice (used by the
+        # same query's ``scheduled_at <= now`` range), in a single
+        # index. The old name is kept as a no-op shadow for one
+        # release so any external code pointing at it doesn't break.
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tasks_pending_scheduled "
-            "ON tasks (status, scheduled_at) "
-            "WHERE status = 'pending' AND scheduled_at IS NOT NULL"
+            "CREATE INDEX IF NOT EXISTS idx_tasks_pending_recovery "
+            "ON tasks (scheduled_at) "
+            "WHERE status = 'pending'"
         )
+        # The pre-OPT-async-202 partial index
+        # ``idx_tasks_pending_scheduled`` was dropped in this round.
+        # Rationale: it was a strict subset of
+        # ``idx_tasks_pending_recovery`` above (same predicate minus
+        # the ``scheduled_at IS NOT NULL`` half) and added write
+        # overhead + storage for zero query benefit. The two could
+        # coexist safely (PG allows overlapping partial indexes) but
+        # there was no real reason to keep the dead one. A fresh
+        # DB no longer creates the old index; a DB upgraded from
+        # the pre-OPT schema keeps the old index until a manual
+        # ``DROP INDEX idx_tasks_pending_scheduled`` is run (intentional
+        # — we don't want a runtime migration to drop an index some
+        # operator might be relying on for their own ad-hoc queries).
 
 
 def parse_date_param(
@@ -1127,8 +1319,94 @@ def parse_date_param(
         #
         # rather than learning about it from a 500 traceback.
         _db_logger.warning(
-            "parse_date_param: malformed input %r (%s: %s); "
-            "falling back to default offset",
-            s, type(exc).__name__, exc,
+            "parse_date_param: malformed input %r (%s: %s); " "falling back to default offset",
+            s,
+            type(exc).__name__,
+            exc,
         )
     return (datetime.now(timezone.utc) - timedelta(days=default_days_ago)).strftime("%Y-%m-%d")
+
+
+# ── Account health monitoring helpers ───────────────────────────────────
+#
+# Three functions at the module level so ``web_runner/health_monitor.py``
+# and ``web_runner/routes/account_groups.py`` don't inline SQL.
+# Openspec: openspec/changes/account-health-monitoring (Tasks 1.3-1.5).
+
+
+def db_update_account_health(
+    auth_id: int,
+    health: str,
+    consecutive_failures: int,
+    *,
+    real_check: bool = False,
+) -> None:
+    """Update health fields on an ``account_authorizations`` row.
+
+    ``real_check=True`` also updates ``last_real_check_at``.
+    """
+    db = get_database()
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if real_check:
+        db.execute(
+            "UPDATE account_authorizations SET last_health = ?, last_check_at = ?, "
+            "last_real_check_at = ?, consecutive_failures = ? WHERE id = ?",
+            (health, now_iso, now_iso, consecutive_failures, auth_id),
+        )
+    else:
+        db.execute(
+            "UPDATE account_authorizations SET last_health = ?, last_check_at = ?, "
+            "consecutive_failures = ? WHERE id = ?",
+            (health, now_iso, consecutive_failures, auth_id),
+        )
+
+
+def db_get_account_health(auth_id: int) -> dict | None:
+    """Return health fields for a single authorization, or None if not found."""
+    db = get_database()
+    row = db.fetch_one(
+        "SELECT id, last_health, last_check_at, last_real_check_at, "
+        "consecutive_failures, next_check_at, last_notified_at "
+        "FROM account_authorizations WHERE id = ?",
+        (auth_id,),
+    )
+    if not row:
+        return None
+    return {
+        "health": row.get("last_health") or "unknown",
+        "last_check_at": row.get("last_check_at"),
+        "last_real_check_at": row.get("last_real_check_at"),
+        "consecutive_failures": row.get("consecutive_failures") or 0,
+        "next_check_at": row.get("next_check_at"),
+        "last_notified_at": row.get("last_notified_at"),
+    }
+
+
+def db_list_accounts_with_health() -> list[dict]:
+    """Return all account authorizations joined with their health fields.
+
+    Returns a list of dicts, each containing at least:
+        id, platform, account_name, last_health, last_check_at,
+        consecutive_failures, owner_user_id.
+    """
+    db = get_database()
+    rows = db.fetch_all(
+        "SELECT aa.id, aa.platform, aa.last_health, aa.last_check_at, "
+        "aa.consecutive_failures, aa.last_notified_at, aa.next_check_at, "
+        "ag.name AS account_name, ag.owner_user_id "
+        "FROM account_authorizations aa "
+        "JOIN account_groups ag ON aa.group_id = ag.id "
+        "ORDER BY ag.sort_order, aa.sort_order"
+    )
+    out: list[dict] = []
+    for row in rows or []:
+        out.append({
+            "id": row["id"],
+            "platform": row["platform"],
+            "account_name": row["account_name"],
+            "health": row.get("last_health") or "unknown",
+            "last_check_at": row.get("last_check_at"),
+            "consecutive_failures": row.get("consecutive_failures") or 0,
+            "owner_user_id": row.get("owner_user_id"),
+        })
+    return out

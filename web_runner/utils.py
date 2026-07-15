@@ -1,8 +1,10 @@
 """Shared utilities for web_runner routes (post-SQLite-removal: PG-only Database)."""
+
 from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import os
 import re
@@ -14,6 +16,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+
+from flask import Response, jsonify
 
 from utils.log import logger as _task_logger
 from web_runner.db import get_database
@@ -61,10 +65,21 @@ MIN_UPLOAD_BYTES = 10240
 # still routes the value through `db.json_dump` for contract symmetry.
 _JSON_COLUMNS = frozenset({"argv", "result", "publish_detail"})
 
-_TASK_COLUMNS = frozenset({
-    "status", "platform", "action", "account", "code", "error",
-    "argv", "result", "publish_detail", "priority", "scheduled_at",
-})
+_TASK_COLUMNS = frozenset(
+    {
+        "status",
+        "platform",
+        "action",
+        "account",
+        "code",
+        "error",
+        "argv",
+        "result",
+        "publish_detail",
+        "priority",
+        "scheduled_at",
+    }
+)
 
 
 class _LogCapture:
@@ -141,7 +156,15 @@ def _download_url(url: str) -> Path | None:
                 return None
         ext = Path(url.split("?")[0]).suffix or ".jpg"
         return _write_upload(raw, ext)
-    except (http.client.HTTPException, urllib.error.HTTPError, urllib.error.URLError, OSError, TimeoutError, ValueError, TypeError) as exc:
+    except (
+        http.client.HTTPException,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        ValueError,
+        TypeError,
+    ) as exc:
         log(f"[upload] failed to download url {url[:60]}: {type(exc).__name__}")
         return None
 
@@ -166,10 +189,32 @@ def _db_insert_task(
     created: str,
     argv: list[str] | None = None,
 ) -> None:
+    # ``argv`` is stored in a TEXT column but the round-OPT-async-202
+    # contract requires it round-trip through ``_parse_stored_argv``
+    # which uses ``json.loads``-style parsing. Pre-hotfix this called
+    # ``db.json_dump(argv)`` which is identity on PG, so psycopg's
+    # default TEXT adaptation stringified the list to its Python
+    # repr (``['a', 'b']``) rather than JSON (``["a", "b"]``). The
+    # parse side then returned ``None`` → 400 on every retry /
+    # reschedule / copy.
+    #
+    # Three-value contract (round-OPT-async-202 final):
+    #   * ``None`` → stored as SQL NULL (no encode)
+    #   * ``str``  → pass through as-is (caller already JSON-encoded;
+    #     we must NOT double-encode, or the read side will see a
+    #     string-of-JSON-string and the parse falls through to dict/list
+    #     check that returns None)
+    #   * other   → ``json.dumps`` (dict / list → JSON string)
     db = dbi()
+    if argv is None:
+        argv_payload = None
+    elif isinstance(argv, str):
+        argv_payload = argv
+    else:
+        argv_payload = json.dumps(argv)
     db.execute(
         "INSERT INTO tasks (task_id, status, platform, action, account, created, argv) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (task_id, status, platform, action, account, created, db.json_dump(argv)),
+        (task_id, status, platform, action, account, created, argv_payload),
     )
 
 
@@ -188,22 +233,57 @@ def _db_update_task(task_id: str, **kwargs: str | int | None) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     payload: list = []
     for k, v in kwargs.items():
+        # Same TEXT-column / JSON round-trip trap as _db_insert_task.
+        # Round-OPT-async-202 final-pass contract:
+        #   * JSON column + ``None``  → stored as SQL NULL
+        #   * JSON column + ``str``   → pass through (caller is
+        #     responsible for having already JSON-encoded; e.g.
+        #     ``_store_result`` passes the raw ``[UPLOAD_RESULT]``
+        #     payload string). Double-encoding would store
+        #     ``'"{\\"url\\":...}"'`` and the read side's
+        #     ``json.loads`` would peel only the outer quotes,
+        #     leaving an inner string that fails the dict check
+        #     in ``_url_from_row``.
+        #   * JSON column + other   → ``json.dumps`` (dict / list)
+        #   * non-JSON column       → pass through unchanged
         if k in _JSON_COLUMNS:
-            payload.append(db.json_dump(v))
+            if v is None:
+                payload.append(None)
+            elif isinstance(v, str):
+                payload.append(v)
+            else:
+                payload.append(json.dumps(v))
         else:
             payload.append(v)
     values = payload + [task_id]
     db.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = ?", tuple(values))
 
 
-def _db_get_all_tasks(limit: int | None = None, offset: int = 0) -> list[dict]:
+def _db_get_all_tasks(
+    limit: int | None = None,
+    offset: int = 0,
+    task_id: str | None = None,
+) -> list[dict]:
     """Return tasks ordered by newest-first; tiebreaker on task_id DESC so
     pagination is deterministic when multiple tasks share the same
     `created` ISO string (e.g. scheduled jobs appended in the same second).
+
+    `task_id` is an exact-match filter (NOT LIKE/prefix). Added in
+    round-OPT-async-202 to support ``GET /api/tasks?task_id=<id>`` —
+    the canonical polling URL advertised in the 202 response's
+    ``Location`` header. When set, ``limit``/``offset`` are still
+    honored but in practice clients pass neither (single-row lookups).
     """
     db = dbi()
-    query = "SELECT * FROM tasks ORDER BY created DESC, task_id DESC"
+    query = "SELECT * FROM tasks"
+    conditions: list[str] = []
     params: list = []
+    if task_id:
+        conditions.append("task_id = ?")
+        params.append(task_id)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY created DESC, task_id DESC"
     if limit is not None:
         query += " LIMIT ?"
         params.append(limit)
@@ -211,6 +291,77 @@ def _db_get_all_tasks(limit: int | None = None, offset: int = 0) -> list[dict]:
         query += " OFFSET ?"
         params.append(offset)
     return db.fetch_all(query, tuple(params))
+
+
+def _make_accepted_response(
+    task_id: str,
+    retry_after: int = 2,
+    extra_data: dict | None = None,
+) -> Response:
+    """Build a 202 Accepted response for fire-and-forget task endpoints.
+
+    Contract (round-OPT-async-202): all task-spawning routes
+    (``/api/upload/*`` + ``/api/tasks/{add,retry,copy,reschedule}``)
+    return this exact response shape so the client can rely on:
+
+      * HTTP **202 Accepted** — server has received the request and
+        queued the work; the client does NOT need to keep the
+        connection open. Closing the tab does NOT lose the task:
+        the file is already on disk and the task row is already
+        committed before this response is sent.
+
+      * ``Location: /api/tasks?task_id=<id>`` — the canonical
+        "watch this task" URL. Polling that URL is the same code
+        path the in-app TasksPage already uses (``useTasks`` polls
+        every 3s while running tasks exist; ``useTaskLogs`` polls
+        per-task every 2s). The existing ``/api/upload/progress``
+        SSE stream also still works for in-flight log tailing.
+
+      * ``Retry-After: 2`` — soft hint matching the useTasks
+        3-second poll cadence. Slight overlap so a polite client
+        honoring Retry-After won't drift apart from the server's
+        own poll interval under 1s of network jitter.
+
+      * Body ``{success, data: {task_id, status: "pending", ...}}`` —
+        additive over the pre-202 shape
+        ``{success, data: {task_id}}``; the extra ``status`` field
+        costs nothing for axios consumers (the response is still
+        JSON-parseable) and gives a defensive client a single
+        GET-free confirmation that the task did enter the queue.
+        The optional ``extra_data`` dict is merged into ``data``
+        for routes that need to surface additional fields
+        (e.g. ``reschedule`` adds ``scheduled_at``, ``copy`` adds
+        ``source_task_id`` + ``scheduled_at``) without paying the
+        fragility tax of re-encoding the response body via
+        ``resp.set_data(...)`` (the pre-OPT-async-202 pattern).
+
+    Failure-mode contract: if the request body is malformed or the
+    task row insert fails, the route still returns 4xx/5xx — this
+    helper is ONLY for the happy "queued" path. The 202 guarantee
+    is conditional on the call site having successfully committed
+    the file + task row before invoking this helper.
+    """
+    data: dict = {"task_id": task_id, "status": "pending"}
+    if extra_data:
+        # Defense against caller bugs: ``extra_data`` must NOT clobber
+        # the contract fields ``task_id`` or ``status``. A future
+        # caller that passed ``extra_data={"task_id": "WRONG"}`` would
+        # silently produce a body whose ``task_id`` disagreed with
+        # the ``Location`` header and the actual DB row. Silently
+        # dropping the override is the safe failure mode (the
+        # response is still correct) — we just don't surface the
+        # typo. A stricter implementation could ``raise`` here; the
+        # silent-drop is the right call for a fire-and-forget
+        # surface where the operator wants the request to succeed
+        # even if their caller-side field is wrong.
+        for guarded_key in ("task_id", "status"):
+            extra_data.pop(guarded_key, None)
+        data.update(extra_data)
+    response = jsonify({"success": True, "data": data})
+    response.status_code = 202
+    response.headers["Location"] = f"/api/tasks?task_id={task_id}"
+    response.headers["Retry-After"] = str(retry_after)
+    return response
 
 
 def _new_task_id(prefix: str) -> str:
@@ -231,19 +382,20 @@ def _db_insert_log(ts: str, message: str) -> None:
         #
         # post-cutover.
         db.execute(
-            "DELETE FROM logs WHERE id < (SELECT id FROM logs "
-            "ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            "DELETE FROM logs WHERE id < (SELECT id FROM logs " "ORDER BY id DESC LIMIT 1 OFFSET ?)",
             (LOG_MAX_ROWS,),
         )
 
 
-def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0) -> list[dict]:
+def _db_get_logs(
+    after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0
+) -> list[dict]:
     """Return log rows. Filters:
-      - `after`: ISO ts; keeps rows strictly newer.
-      - `task_id`: prefix match `[{task_id}]`, leveraging the canonical
-        log message format used by `_run_sau(...)`. The `[...]` braces
-        prevent `run-1` from accidentally matching `[run-12] ...`. Tied
-        with `ORDER BY ts ASC, id ASC` for deterministic pagination.
+    - `after`: ISO ts; keeps rows strictly newer.
+    - `task_id`: prefix match `[{task_id}]`, leveraging the canonical
+      log message format used by `_run_sau(...)`. The `[...]` braces
+      prevent `run-1` from accidentally matching `[run-12] ...`. Tied
+      with `ORDER BY ts ASC, id ASC` for deterministic pagination.
     """
     db = dbi()
     query = "SELECT ts, message FROM logs"
@@ -300,18 +452,26 @@ def _log_error_event(
             exc_type, exc_message, traceback, argv, attempt_no, retry_count, status_code)
            VALUES (?, ?, 'error', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            now, task_id, phase, platform, account, action,
-            exc_type, exc_message, tb,
+            now,
+            task_id,
+            phase,
+            platform,
+            account,
+            action,
+            exc_type,
+            exc_message,
+            tb,
             db.json_dump(argv),
-            attempt_no, retry_count, status_code,
+            attempt_no,
+            retry_count,
+            status_code,
         ),
     )
     _error_event_trim_counter += 1
     if _error_event_trim_counter >= 100:
         _error_event_trim_counter = 0
         db.execute(
-            "DELETE FROM error_events WHERE id < "
-            "(SELECT id FROM error_events ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            "DELETE FROM error_events WHERE id < " "(SELECT id FROM error_events ORDER BY id DESC LIMIT 1 OFFSET ?)",
             (LOG_MAX_ROWS,),
         )
 
@@ -454,8 +614,7 @@ def _sync_cookie_files_to_db() -> None:
             # DO-UPDATE pattern artificially bumped ``created`` on
             # every reconciliation pass which obscured the audit trail.
             db.execute(
-                "INSERT INTO account_groups (name, created) VALUES (?, ?) "
-                "ON CONFLICT (name) DO NOTHING",
+                "INSERT INTO account_groups (name, created) VALUES (?, ?) " "ON CONFLICT (name) DO NOTHING",
                 (account_name, datetime.now().isoformat(timespec="microseconds")),
             )
             group = db.fetch_one(
@@ -510,14 +669,32 @@ def _quick_check_cookie(platform: str, account: str) -> dict:
         age_hours = (time.time() - stat.st_mtime) / 3600
         file_size = stat.st_size
         if file_size < 10:
-            return {"valid": False, "reason": "empty_file", "age_hours": round(age_hours, 1), "file_size": file_size, "stale": False}
+            return {
+                "valid": False,
+                "reason": "empty_file",
+                "age_hours": round(age_hours, 1),
+                "file_size": file_size,
+                "stale": False,
+            }
         with open(cookie_path) as f:
             data = json.load(f)
         if not data:
-            return {"valid": False, "reason": "empty_json", "age_hours": round(age_hours, 1), "file_size": file_size, "stale": False}
+            return {
+                "valid": False,
+                "reason": "empty_json",
+                "age_hours": round(age_hours, 1),
+                "file_size": file_size,
+                "stale": False,
+            }
         stale = age_hours > _COOKIE_STALE_HOURS
         reason = "stale" if stale else "ok"
-        return {"valid": True, "reason": reason, "age_hours": round(age_hours, 1), "file_size": file_size, "stale": stale}
+        return {
+            "valid": True,
+            "reason": reason,
+            "age_hours": round(age_hours, 1),
+            "file_size": file_size,
+            "stale": stale,
+        }
     except (json.JSONDecodeError, OSError):
         return {"valid": False, "reason": "invalid_json", "age_hours": None, "file_size": None, "stale": False}
 
@@ -525,7 +702,7 @@ def _quick_check_cookie(platform: str, account: str) -> dict:
 def _parse_upload_result(stdout: str) -> str | None:
     for line in stdout.splitlines():
         if line.startswith("[UPLOAD_RESULT]"):
-            return line[len("[UPLOAD_RESULT]"):]
+            return line[len("[UPLOAD_RESULT]") :]
     return None
 
 
@@ -567,9 +744,7 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             _db_update_task(task_id, status="failed", code=result.returncode, error=error_msg)
             log(f"[{task_id}] failed with code {result.returncode}: {error_msg[:200]}")
-            emit_event(
-                build_event_from_result(task_id, "upload.failed", result.stdout)
-            )
+            emit_event(build_event_from_result(task_id, "upload.failed", result.stdout))
             _log_error_event(
                 phase="cli",
                 task_id=task_id,
@@ -582,9 +757,7 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
     except subprocess.TimeoutExpired:
         _db_update_task(task_id, status="error", error="Task timed out after 600 seconds")
         log(f"[{task_id}] timed out")
-        emit_event(
-            build_event_from_result(task_id, "upload.failed", "", status="error")
-        )
+        emit_event(build_event_from_result(task_id, "upload.failed", "", status="error"))
         _log_error_event(
             phase="cli",
             task_id=task_id,
@@ -595,15 +768,305 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
     except (OSError, ValueError) as exc:
         _db_update_task(task_id, status="error", error=str(exc))
         log(f"[{task_id}] error: {exc}")
-        emit_event(
-            build_event_from_result(task_id, "upload.failed", "", status="error")
-        )
+        emit_event(build_event_from_result(task_id, "upload.failed", "", status="error"))
         _log_error_event(
             phase="cli",
             task_id=task_id,
             exc=exc,
             argv=argv,
         )
+
+
+def _run_crawl(task_id: str, argv_payload) -> None:
+    """Dispatch a crawler ``action LIKE 'crawl_%'`` task end-to-end.
+
+    Mirrors ``_run_sau`` for status bookkeeping (pending → running →
+    success/failed/error) but dispatches Python-direct on a
+    :class:`crawler.base.base_crawler.AbstractCrawler` subclass
+    instead of a CLI subprocess. The argv payload is JSON-encoded
+    (a ``dict``) — produced by :func:`crawler.create_crawl_task`
+    which stores ``{"kind": "crawl", "platform": "xhs", "action":
+    "search", "keyword": "...", ...}`` in ``tasks.argv``.
+
+    Why here (not in :mod:`crawler`): the executor imports
+    ``_run_sau`` lazily to avoid a circular import
+    (``web_runner.utils`` ↔ ``web_runner.notifications``). Putting
+    ``_run_crawl`` here keeps the same idiom — the executor's
+    ``load_pending_tasks`` does ``from web_runner.utils import
+    _run_sau`` and we'd add ``_run_crawl`` to the same import.
+
+    Failure-mode contract:
+      * Algorithm works → status='success', ``result`` written as
+        JSON '{"platform", "action", "crawled_content_count",
+        "crawled_comments_count", "sentiment_breakdown",
+        "meta": {"status": "completed"}}'.
+      * Stub core.py returns empty list (current state for all 7
+        platforms) → status='success', ``meta.status='stub-not-
+        implemented'`` so an operator scraping an empty result
+        still sees the row transition out of ``pending`` (Task 13.2
+        follow-up adds real Playwright).
+      * Real exception (network timeout, JSONB-encode failure,
+        psycopg Error) → status='failed' / 'error' with
+        ``error`` column populated. ``_log_error_event`` records
+        the traceback; ``emit_event`` notifies the existing
+        notification worker.
+
+    Hardcap rationale (thinker-with-files-gemini flag C): the
+    underlying :meth:`crawler.store.saulite_store.SauliteStore.
+    store_comment` spawns one daemon thread per comment row to
+    call OpenRouter sentiment+reply in parallel. A 10k-comment
+    crawl would create 10k threads instantly, blowing the OS
+    thread limit (~1000-2000 on Linux defaults) and triggering
+    EAGAIN on :func:`threading.Thread.start`. We hardcap
+    ``max_count`` to 100 in this PR; Section 13.5 (tasks.md)
+    tracks the broader ThreadPoolExecutor migration as a follow-up.
+
+    post_ids plurality justification (thinker-with-files-gemini
+    flag D): the CLI (``cli.platforms.crawl.comments``) can pass
+    ``--post-ids `` as a comma-separated string OR as a
+    pre-split list. ``_run_crawl`` normalises both forms here
+    so the executor doesn't have to know about CLI parsing.
+    """
+    import json as _json
+
+    from crawler import PLATFORM_REGISTRY
+    from crawler.store.saulite_store import SauliteStore
+
+    # ── Decode argv payload ─────────────────────────────────────────────────
+    if isinstance(argv_payload, str):
+        try:
+            params = _json.loads(argv_payload)
+        except (TypeError, ValueError):
+            _db_update_task(
+                task_id,
+                status="error",
+                error="argv not JSON-decodable (not a crawl payload?)",
+            )
+            log(f"[{task_id}] error: argv not JSON-decodable")
+            return
+    elif isinstance(argv_payload, dict):
+        params = argv_payload
+    else:
+        _db_update_task(
+            task_id,
+            status="error",
+            error=f"unexpected argv type: {type(argv_payload).__name__}",
+        )
+        return
+
+    # MUST-HAVE invariant: ``params`` MUST be a JSON object after
+    # decode — fields like ``platform`` / ``action`` / ``keyword``
+    # / ``post_ids`` / ``max_count`` are accessed via ``.get(...)``.
+    # Anything else (e.g. a JSON list like ``[]``, or ``"true"``, or
+    # a number) would raise ``AttributeError`` mid-flight, NOT be
+    # caught by the exception clause below (which excludes
+    # ``AttributeError``), and leave ``tasks.status='running'``
+    # stranded until the orphan watchdog reaps it on restart.
+    # Round-MC-2024-postreview MUST-HAVE #1.
+    if not isinstance(params, dict):
+        _db_update_task(
+            task_id,
+            status="error",
+            error=f"argv JSON is not an object: {type(params).__name__}",
+        )
+        log(f"[{task_id}] error: argv JSON is not an object ({type(params).__name__})")
+        return
+
+    platform = (params.get("platform") or "").strip()
+    # NOTE: ``action`` here is the verb (``search``/``detail``/``comments``),
+    # NOT the ``crawl_<verb>`` prefix on ``tasks.action``. ``tasks.action``
+    # has the prefix so executor load_pending_tasks can branch on it; the
+    # JSON argv's nested ``action`` is the clean verb.
+    action = (params.get("action") or "").strip()
+    if not platform or not action:
+        _db_update_task(
+            task_id,
+            status="error",
+            error=f"missing platform / action in argv: {params}",
+        )
+        log(f"[{task_id}] error: missing platform/action")
+        return
+
+    # ── Mark running + lookup crawler class ────────────────────────────────────
+    _db_update_task(task_id, status="running")
+    log(f"[{task_id}] starting: crawl {platform} action={action}")
+
+    CrawlerClass = PLATFORM_REGISTRY.get(platform.lower())
+    if CrawlerClass is None:
+        _db_update_task(
+            task_id,
+            status="failed",
+            error=f"unknown crawler platform: {platform!r}",
+        )
+        log(f"[{task_id}] failed: unknown platform {platform!r}")
+        return
+
+    # ── Run the crawl ───────────────────────────────────────────────────────
+    crawled_content_count = 0
+    crawled_comments_count = 0
+    sentiment_breakdown = {"positive": 0, "negative": 0, "neutral": 0, "pending": 0}
+    stub_status = "stub-not-implemented"  # see note in docstring
+
+    try:
+        crawler = CrawlerClass()
+        store = SauliteStore()
+
+        if action == "search":
+            keyword = (params.get("keyword") or "").strip()
+            try:
+                max_count = int(params.get("max_count") or 20)
+            except (TypeError, ValueError):
+                max_count = 20
+            max_count = max(1, min(max_count, 100))  # hardcap (thinker pitfall C)
+            rows = crawler.search(keyword, max_count=max_count)
+            crawled_content_count = len(rows or [])
+
+        elif action == "detail":
+            post_id = (params.get("post_id") or params.get("post_ids") or "").strip()
+            row = crawler.detail(post_id)
+            crawled_content_count = 1 if row else 0
+
+        elif action == "comments":
+            raw_post_ids = params.get("post_id") or params.get("post_ids") or ""
+            if isinstance(raw_post_ids, str):
+                if "," in raw_post_ids:
+                    post_ids = [p.strip() for p in raw_post_ids.split(",") if p.strip()]
+                else:
+                    post_ids = [raw_post_ids] if raw_post_ids else []
+            elif isinstance(raw_post_ids, list):
+                post_ids = [str(p) for p in raw_post_ids if p]
+            else:
+                post_ids = []
+
+            try:
+                max_count = int(params.get("max_count") or 100)
+            except (TypeError, ValueError):
+                max_count = 100
+            # Hardcap axis 1: per-post max_count (thinker pitfall C —
+            # each comment spawns one AI daemon thread in saulite_store).
+            max_count = max(1, min(max_count, 100))
+            # Hardcap axis 2: number of post_ids (round-MC-2024-postreview
+            # MUST-HAVE #2). Without this bound, 10 posts × 100 comments
+            # each = 1000 daemon threads, blowing the OS thread limit and
+            # defeating the per-post cap. The deliberate (5, 100) tuple
+            # bounds the worst case at ~500 threads. DON'T bump either
+            # axis without reading the ``saulite_store.store_comment``
+            # per-comment AI-thread cost. Section 13.5 (tasks.md)
+            # tracks the broader ThreadPoolExecutor migration.
+            MAX_POST_IDS = 5
+            post_ids = post_ids[:MAX_POST_IDS]
+
+            for pid in post_ids:
+                rows = crawler.comments(pid, max_count=max_count)
+                if rows:
+                    crawled_comments_count += len(rows)
+
+            # saulite_store fires async AI threads per-comment; giving
+            # them a moment to land yields a non-zero sentiment_breakdown
+            # in the result JSON. The ThreadPoolExecutor migration
+            # (Section 13.5) decouples this from the main thread.
+            try:
+                sentiment_breakdown = store.count_by_sentiment(platform=platform)
+            except Exception:
+                # If the AI threads haven't landed yet OR the DB query
+                # fails, default to zeros. The breakdown is for UI
+                # niceness; it doesn't gate the success/fail status.
+                sentiment_breakdown = {"positive": 0, "negative": 0, "neutral": 0, "pending": crawled_comments_count}
+
+        else:
+            _db_update_task(
+                task_id,
+                status="failed",
+                error=f"unknown crawler action: {action!r}",
+            )
+            log(f"[{task_id}] failed: unknown action {action!r}")
+            return
+
+        # ── Persist result ─────────────────────────────────────────────────────
+        result_dict = {
+            "platform": platform,
+            "action": action,
+            "crawled_content_count": crawled_content_count,
+            "crawled_comments_count": crawled_comments_count,
+            "sentiment_breakdown": sentiment_breakdown,
+            "meta": {"status": "completed", "stub": True},  # Section 13.2 follow-up flips to false
+        }
+        result_json = _json.dumps(result_dict, ensure_ascii=False)
+        _db_update_task(task_id, status="success", code=0, result=result_json)
+        log(
+            f"[{task_id}] completed: {crawled_content_count} content, "
+            f"{crawled_comments_count} comments (meta: stub-not-implemented)"
+        )
+
+        try:
+            from web_runner.notifications import emit_event
+            emit_event(
+                {
+                    "event_type": "crawl.success",
+                    "task_id": task_id,
+                    "platform": platform,
+                    "title": (
+                        f"Crawl {action} {platform} "
+                        f"({crawled_content_count}+{crawled_comments_count} rows)"
+                    ),
+                    "status": "success",
+                    "payload": result_dict,
+                }
+            )
+        except Exception:
+            # emit_event gracefully no-ops if no webhook/SSE is wired;
+            # anything else is best-effort (thinker pitfall E).
+            pass
+
+    except NotImplementedError as exc:
+        # Future real Playwright impls may raise NotImplementedError
+        # during early development. Treat as 'success' with a stub
+        # marker so the operator doesn't get a false-alert flood.
+        _db_update_task(
+            task_id,
+            status="success",
+            code=0,
+            result=_json.dumps(
+                {
+                    "platform": platform,
+                    "action": action,
+                    "meta": {
+                        "status": "stub-not-implemented",
+                        "reason": "crawler platform raised NotImplementedError",
+                        "exc": str(exc),
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        )
+        log(f"[{task_id}] completed (stub): NotImplementedError {exc!r}")
+
+    except (psycopg.Error, ValueError, TypeError, RuntimeError, OSError) as exc:
+        # Real failure path. Matches ``_run_sau``'s error handling
+        # pattern for parity (operator sees same log shape across both
+        # dispatchers).
+        from web_runner.notifications import emit_event
+        _db_update_task(task_id, status="failed", code=-1, error=str(exc))
+        log(f"[{task_id}] failed: {exc!r}")
+        _log_error_event(
+            phase="crawler",
+            platform=platform,
+            action=action,
+            task_id=task_id,
+            exc=exc,
+        )
+        try:
+            emit_event(
+                {
+                    "event_type": "crawl.failed",
+                    "task_id": task_id,
+                    "platform": platform,
+                    "status": "failed",
+                    "error_msg": str(exc),
+                }
+            )
+        except Exception:
+            pass
 
 
 def _schedule_task(task_id: str, argv: list[str], schedule_time: datetime) -> None:
@@ -627,6 +1090,7 @@ def _schedule_task(task_id: str, argv: list[str], schedule_time: datetime) -> No
         # Use new executor if available, fall back to legacy
         try:
             from web_runner.executor import PRIORITY_NORMAL, submit_task
+
             # Extract platform from argv
             platform = argv[0] if argv and not argv[0].startswith("-") else ""
             submit_task(_run_sau, task_id, argv, priority=PRIORITY_NORMAL, platform=platform, task_id=task_id)

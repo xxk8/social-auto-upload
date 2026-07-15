@@ -102,6 +102,39 @@ _PLATFORM_PRESETS: dict[str, dict[str, Any]] = {
         "timezone_id": "Asia/Shanghai",
         "geolocation": {"latitude": 39.9042, "longitude": 116.4074},
     },
+    "zhihu": {
+        "user_agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "viewport": {"width": 1680, "height": 1050},
+        "locale": "zh-CN",
+        "timezone_id": "Asia/Shanghai",
+        "geolocation": {"latitude": 39.9042, "longitude": 116.4074},  # Beijing
+    },
+    "tieba": {
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "viewport": {"width": 1920, "height": 1080},
+        "locale": "zh-CN",
+        "timezone_id": "Asia/Shanghai",
+        "geolocation": {"latitude": 39.9042, "longitude": 116.4074},  # Beijing
+    },
+    "weibo": {
+        "user_agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "viewport": {"width": 1680, "height": 1050},
+        "locale": "zh-CN",
+        "timezone_id": "Asia/Shanghai",
+        "geolocation": {"latitude": 39.9042, "longitude": 116.4074},  # Beijing
+    },
 }
 
 

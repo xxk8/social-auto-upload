@@ -63,6 +63,59 @@ def mark_read():
     return jsonify({"success": True, "data": {"unread": remaining}})
 
 
+@bp.post("/test-health")
+def test_health_notification():
+    """Send a test health notification for the current user.
+
+    Used by SettingsTab "测试通知" button. Creates a simulated
+    ``cookie.expired`` event for the caller's email.
+    """
+    from flask import session as _session
+    from web_runner.routes.auth import _send_smtp_email, _public_url
+    from web_runner.health_monitor import _build_health_email_body, _get_user_email
+
+    body = request.get_json(silent=True) or {}
+    channel = body.get("channel", "email")
+
+    user_id = _session.get("user_id")
+    if not user_id:
+        return jsonify({"success": False, "message": "未登录"}), 401
+    email = _get_user_email(user_id)
+    if not email:
+        return jsonify({"success": False, "message": "无法获取用户邮箱"}), 400
+
+    if channel == "email":
+        subject = "[SAU] 测试通知 — 账号健康度告警"
+        test_body = _build_health_email_body(
+            account="test_account",
+            platform="test_platform",
+            health="expiring_soon",
+            public_url=_public_url(),
+        )
+        try:
+            _send_smtp_email(email, subject, test_body)
+            return jsonify({"success": True, "data": {"channel": "email", "sent_to": email}})
+        except Exception as exc:
+            return jsonify({"success": False, "message": f"邮件发送失败: {exc}"}), 500
+
+    elif channel == "webhook":
+        from web_runner.notifications import UploadEvent, emit_event
+
+        emit_event(
+            UploadEvent(
+                event_type="cookie.expired",
+                platform="test_platform",
+                account="test_account",
+                title="[测试] Cookie 已失效",
+                status="error",
+            )
+        )
+        return jsonify({"success": True, "data": {"channel": "webhook", "sent_to": "webhooks_config"}})
+
+    else:
+        return jsonify({"success": False, "message": f"不支持的 channel: {channel}"}), 400
+
+
 @bp.get("/sse")
 def notifications_sse():
     uid = _authenticate()

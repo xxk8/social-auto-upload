@@ -10,6 +10,7 @@ import psycopg.errors
 from flask import Blueprint, jsonify, request
 
 from web_runner.db import get_database
+from web_runner.routes.auth import _current_user_id
 from web_runner.utils import (
     COOKIES_DIR,
     _quick_check_cookie,
@@ -53,6 +54,9 @@ def list_account_groups():
                     "reason": quick.get("reason"),
                     "age_hours": quick.get("age_hours"),
                     "stale": quick.get("stale", False),
+                    "health": auth.get("last_health") or "unknown",
+                    "last_check_at": auth.get("last_check_at"),
+                    "consecutive_failures": auth.get("consecutive_failures") or 0,
                 })
             result.append({
                 "id": group["id"],
@@ -71,10 +75,11 @@ def create_account_group():
         return jsonify({"success": False, "message": cleaned_or_msg}), 400
     name = cleaned_or_msg
     db = get_database()
+    owner_id = _current_user_id()
     try:
         group_id = db.insert_returning_id(
-            "INSERT INTO account_groups (name, created) VALUES (?, ?)",
-            (name, datetime.now().isoformat(timespec="seconds")),
+            "INSERT INTO account_groups (name, created, owner_user_id) VALUES (?, ?, ?)",
+            (name, datetime.now().isoformat(timespec="seconds"), owner_id),
         )
     except psycopg.errors.IntegrityError:
         # UNIQUE collision on account_groups.name — surface 409 so the
@@ -399,3 +404,70 @@ def reorder_authorizations(group_id: int):
         f"{len(auth_ids)} items"
     )
     return jsonify({"success": True, "message": "Authorizations reordered successfully"})
+
+
+@bp.get("/api/account-authorizations/<int:auth_id>/health")
+def get_authorization_health(auth_id: int):
+    """Return the persisted health status for a single authorization."""
+    db = get_database()
+    auth = db.fetch_one(
+        "SELECT aa.id, aa.last_health, aa.last_check_at, aa.consecutive_failures, "
+        "aa.next_check_at, ag.name as account_name, aa.platform "
+        "FROM account_authorizations aa "
+        "JOIN account_groups ag ON aa.group_id = ag.id "
+        "WHERE aa.id = ?",
+        (auth_id,),
+    )
+    if not auth:
+        return jsonify({"success": False, "message": "Authorization not found"}), 404
+    return jsonify({
+        "success": True,
+        "data": {
+            "id": auth["id"],
+            "platform": auth["platform"],
+            "account": auth["account_name"],
+            "health": auth.get("last_health") or "unknown",
+            "last_check_at": auth.get("last_check_at"),
+            "last_real_check_at": auth.get("last_real_check_at"),
+            "consecutive_failures": auth.get("consecutive_failures") or 0,
+            "next_check_at": auth.get("next_check_at"),
+        },
+    })
+
+
+@bp.post("/api/account-authorizations/<int:auth_id>/health-check")
+def trigger_authorization_health_check(auth_id: int):
+    """Queue an immediate health check for a single authorization.
+
+    Real browser checks can take tens of seconds, so the check is run
+    in a background thread and the endpoint returns 202 Accepted
+    immediately. The frontend can poll ``GET /api/account-authorizations/<id>/health``
+    or refetch the account group list to see the updated status.
+    """
+    import threading
+
+    from web_runner.health_monitor import check_authorization_now
+
+    def _run_check() -> None:
+        try:
+            check_authorization_now(auth_id)
+        except Exception as exc:  # noqa: BLE001
+            log(f"[health] background check failed for auth {auth_id}: {exc}")
+
+    try:
+        db = get_database()
+        auth = db.fetch_one(
+            "SELECT id FROM account_authorizations WHERE id = ?",
+            (auth_id,),
+        )
+        if not auth:
+            return jsonify({"success": False, "message": "Authorization not found"}), 404
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"success": False, "message": str(exc)}), 500
+
+    threading.Thread(target=_run_check, daemon=True, name=f"sau-health-check-{auth_id}").start()
+    return jsonify({
+        "success": True,
+        "message": "Health check queued",
+        "data": {"auth_id": auth_id},
+    }), 202

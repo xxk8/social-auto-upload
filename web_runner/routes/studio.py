@@ -41,7 +41,7 @@ import urllib.parse as _urllib_parse
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request, Response, session
 
 from utils.log import logger as _task_logger
 from web_runner.db import get_database
@@ -2471,6 +2471,132 @@ def serve_studio_media(project_id: int, filename: str):
         # 1h strikes the same trade-off as `/api/ai/images/fetch`.
         max_age=3600,
     )
+
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  AI generation — studio-ai-script-generation
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@bp.post("/api/studio/projects/<int:project_id>/generate")
+def generate_episodes(project_id: int):
+    """Generate four-act episodes for a project via LLM streaming.
+
+    Streams Server-Sent Events back to the client.  On the
+    ``generation_done`` event the parsed episodes are persisted to
+    ``studio_episodes`` inside a single transaction.
+
+    Auth: implicit via the global ``/api/*`` auth gate.  Owner isolation
+    is enforced via :func:`_load_project` (404 for non-owner / missing).
+    """
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"success": False, "message": "未登录"}), 401
+
+    project = _load_project(user_id, project_id)
+    if project is None:
+        return jsonify({"success": False, "message": "项目不存在"}), 404
+
+    # Import here to avoid circular imports at module load time.
+    from web_runner.studio_engine import generate_episodes_sse
+
+    def stream():
+        episodes_data: list[dict] | None = None
+        try:
+            for event in generate_episodes_sse(
+                title=project["title"],
+                synopsis=project["synopsis"],
+                style=project.get("style"),
+            ):
+                yield event
+                # Capture the parsed episodes from the generation_done event
+                # so we can persist them after the stream finishes.
+                if event.startswith("event: generation_done"):
+                    try:
+                        data = json.loads(event.split("data: ", 1)[1])
+                        episodes_data = data.get("episodes")
+                    except (json.JSONDecodeError, IndexError):
+                        episodes_data = None
+        except Exception as exc:  # noqa: BLE001 — route-level safety net
+            _task_logger.exception(
+                f"[studio] generate stream failed id={project_id}"
+            )
+            yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
+            return
+
+        if episodes_data:
+            _persist_generated_episodes(project_id, user_id, episodes_data)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _persist_generated_episodes(
+    project_id: int,
+    user_id: int,
+    episodes_data: list[dict],
+) -> None:
+    """Persist AI-generated episodes atomically.
+
+    Filters invalid acts, assigns ``episode_no`` starting from
+    ``MAX(episode_no) + 1``, inserts the rows, and bumps the parent
+    project's ``updated_at``.  Any exception is logged and swallowed
+    so the SSE stream already completed does not turn into a 500.
+    """
+    db = get_database()
+    now = _now_iso()
+    try:
+        with db.transaction() as tx:
+            max_row = tx.fetch_one(
+                "SELECT COALESCE(MAX(episode_no), 0) AS mx "
+                "FROM studio_episodes WHERE project_id = ?",
+                (project_id,),
+            )
+            base_no = int(max_row["mx"]) if max_row else 0
+
+            for i, ep in enumerate(episodes_data):
+                act = (ep.get("act") or "").strip()
+                if act not in _VALID_ACTS:
+                    continue
+                title = (ep.get("title") or "").strip() or "未命名"
+                scenes = ep.get("scenes") if isinstance(ep.get("scenes"), list) else []
+                dialogues = ep.get("dialogues") if isinstance(ep.get("dialogues"), list) else []
+                tx.execute(
+                    "INSERT INTO studio_episodes "
+                    "(project_id, episode_no, act, title, scenes_json, "
+                    "dialogues_json, status, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)",
+                    (
+                        project_id,
+                        base_no + i + 1,
+                        act,
+                        title,
+                        json.dumps(scenes, ensure_ascii=False, separators=(",", ":")),
+                        json.dumps(dialogues, ensure_ascii=False, separators=(",", ":")),
+                        now,
+                    ),
+                )
+
+            tx.execute(
+                "UPDATE studio_projects SET updated_at = ? "
+                "WHERE id = ? AND owner_user_id = ?",
+                (now, project_id, user_id),
+            )
+        _task_logger.info(
+            f"[studio] generated episodes persisted id={project_id} "
+            f"count={len(episodes_data)}"
+        )
+    except Exception as exc:  # noqa: BLE001
+        _task_logger.exception(
+            f"[studio] episodes persist failed id={project_id}: {exc}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════

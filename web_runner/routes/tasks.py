@@ -1,10 +1,13 @@
 """Task management routes (PR2: dialect-aware Database)."""
+
 from __future__ import annotations
 
+import json
+import time
 from datetime import datetime
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from web_runner.db import get_database
 from web_runner.utils import (
@@ -13,6 +16,7 @@ from web_runner.utils import (
     _db_get_logs,
     _db_get_task,
     _db_insert_task,
+    _make_accepted_response,
     _new_task_id,
     _run_sau,
     _scheduled_timers,
@@ -20,22 +24,68 @@ from web_runner.utils import (
     log,
     task_executor,
 )
+from web_runner import idempotency as _idem
 
 bp = Blueprint("tasks", __name__)
 
 
 @bp.get("/api/tasks")
 def list_tasks():
+    # `task_id` is the single-task filter used by the 202 responses'
+    # `Location` header (`/api/tasks?task_id=<id>`). Exact-match,
+    # NOT a LIKE/prefix — see `_db_get_all_tasks` docstring.
+    task_id = request.args.get("task_id")
     limit = request.args.get("limit", type=int)
     offset = request.args.get("offset", 0, type=int)
-    rows = _db_get_all_tasks(limit=limit, offset=offset)
+    rows = _db_get_all_tasks(task_id=task_id, limit=limit, offset=offset)
     return jsonify({"success": True, "data": rows})
+
+
+@bp.get("/api/tasks/stream")
+def stream_tasks():
+    """Stream task status updates via SSE.
+
+    Emits an ``initial`` event with the current task list, then
+    pushes ``update`` events whenever the task list changes. The
+    stream closes automatically once no tasks are ``pending`` or
+    ``running`` so the client doesn't hold an idle connection.
+    """
+    def generate():
+        previous = _db_get_all_tasks()
+        previous_json = json.dumps(previous, sort_keys=True)
+        yield f"event: initial\ndata: {json.dumps(previous)}\n\n"
+        while True:
+            time.sleep(1)
+            current = _db_get_all_tasks()
+            current_json = json.dumps(current, sort_keys=True)
+            has_running = any(
+                task.get("status") in ("pending", "running")
+                for task in current
+            )
+            if current_json != previous_json:
+                previous = current
+                previous_json = current_json
+                yield f"event: update\ndata: {json.dumps(current)}\n\n"
+            if not has_running:
+                yield f"event: done\ndata: {json.dumps({'message': 'all tasks terminal'})}\n\n"
+                break
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @bp.post("/api/tasks/retry")
 def retry_task():
     payload = request.get_json(silent=True) or {}
     task_id = payload.get("task_id")
+    _idem_key = _idem.read_key_from_request()
     if not task_id:
         return jsonify({"success": False, "message": "task_id is required"}), 400
     task = _db_get_task(task_id)
@@ -43,39 +93,90 @@ def retry_task():
         return jsonify({"success": False, "message": f"Task not found: {task_id}"}), 404
     stored_argv = task.get("argv")
     if not stored_argv:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Cannot retry: no stored argv for this task"}), 400
     argv = _parse_stored_argv(stored_argv)
     if argv is None:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Cannot retry: invalid stored argv"}), 400
+    # Idempotency claim — happens AFTER the argv parse so a
+    # malformed source task surfaces a 4xx (and releases the key)
+    # without occupying a dedup slot. The hash is just the
+    # ``task_id`` since the body is a single-key envelope.
+    if _idem_key:
+        _idem_hash = _idem.payload_hash([task_id])
+        early = _idem.check_and_claim(_idem.current_user_id(), _idem.current_route(), _idem_key, _idem_hash)
+        if early is not None:
+            return early
     new_task_id = _new_task_id("retry")
     _db_insert_task(
-        task_id=new_task_id, status="pending",
+        task_id=new_task_id,
+        status="pending",
         platform=task.get("platform", "") or "",
         action=f"retry-{task.get('action', 'unknown')}",
         account=task.get("account", "") or "",
-        created=datetime.now().isoformat(timespec="seconds"), argv=argv,
+        created=datetime.now().isoformat(timespec="seconds"),
+        argv=argv,
     )
     # Use new executor with retry priority
     try:
         from web_runner.executor import PRIORITY_RETRY, submit_task
+
         platform = argv[0] if argv and not argv[0].startswith("-") else ""
         submit_task(_run_sau, new_task_id, argv, priority=PRIORITY_RETRY, platform=platform, task_id=new_task_id)
     except Exception:
         task_executor.submit(_run_sau, new_task_id, argv)
     log(f"[{new_task_id}] retry of {task_id}: sau {' '.join(argv)}")
-    return jsonify({"success": True, "data": {"task_id": new_task_id}})
+    response = _make_accepted_response(new_task_id)
+    if _idem_key:
+        _idem.finalize(
+            _idem.current_user_id(),
+            _idem.current_route(),
+            _idem_key,
+            response,
+            task_id=new_task_id,
+        )
+    return response
 
 
 def _parse_stored_argv(stored_argv: str) -> list[str] | None:
     """Parse a stored `tasks.argv` JSON column back into a list[str].
 
-    On SQLite `stored_argv` is a JSON-encoded string; on Postgres the
-    same column is JSONB and the value already arrives as dict/list (when
-    loaded via `db.json_load`). The helper handles both shapes so the
-    route stays dialect-agnostic.
+    On SQLite ``stored_argv`` is a JSON-encoded string; on Postgres the
+    column is TEXT (not JSONB, per the post-SQLite-removal schema in
+    ``web_runner/db.py::init_db``), so psycopg returns the raw JSON
+    string and ``db.json_load`` is identity. Round-trip therefore
+    needs an explicit ``json.loads`` to peel the JSON envelope before
+    the ``isinstance(value, list)`` check.
+
+    Pre-round-OPT-async-202 the helper only called ``db.json_load``,
+    which on PG is identity, so it always returned ``None`` for any
+    row whose ``argv`` was a real list. The retry / reschedule /
+    copy routes silently 400'd on every attempt. The ``_db_insert_task``
+    + ``_db_update_task`` hotfix in this round now serializes via
+    ``json.dumps`` on the write side, and this helper does the
+    symmetric ``json.loads`` on the read side.
+
+    Returns ``None`` on:
+      * stored_argv empty / falsy
+      * stored_argv is not a string and not a list
+      * stored_argv is a string but not valid JSON
+      * parsed JSON is a valid value but not a list
     """
+    if not stored_argv:
+        return None
     db = get_database()
     value = db.json_load(stored_argv)
+    if isinstance(value, str):
+        # PG TEXT column path: stored value is a JSON string.
+        # SQLite JSON1 path (legacy): ``value`` would already be a
+        # list/dict after json_load; the str branch wouldn't fire.
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return None
     if isinstance(value, list):
         return [str(v) for v in value]
     return None
@@ -127,6 +228,7 @@ def add_task():
     argv = payload.get("argv")
     priority = payload.get("priority", 1)  # PRIORITY_NORMAL default
     scheduled_at = payload.get("scheduled_at")
+    _idem_key = _idem.read_key_from_request()
     if not platform or not action or not account:
         return jsonify({"success": False, "message": "platform, action, account are required"}), 400
     if not argv:
@@ -141,14 +243,28 @@ def add_task():
             title = payload.get("title", "Untitled")
             images = payload.get("images", [])
             if not images:
+                if _idem_key:
+                    _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
                 return jsonify({"success": False, "message": "images are required for upload-note"}), 400
             argv += ["--title", title, "--images", *images]
+    # Idempotency claim — hash is the JSON body sorted by key so
+    # key order changes from the client don't change the dedup
+    # signature. Happens BEFORE the task row insert.
+    if _idem_key:
+        _idem_hash = _idem.payload_hash([json.dumps(payload, sort_keys=True)])
+        early = _idem.check_and_claim(_idem.current_user_id(), _idem.current_route(), _idem_key, _idem_hash)
+        if early is not None:
+            return early
     task_id = _new_task_id(action)
     status = "scheduled" if scheduled_at else "pending"
     _db_insert_task(
-        task_id=task_id, status=status, platform=platform,
-        action=action, account=account,
-        created=datetime.now().isoformat(timespec="seconds"), argv=argv,
+        task_id=task_id,
+        status=status,
+        platform=platform,
+        action=action,
+        account=account,
+        created=datetime.now().isoformat(timespec="seconds"),
+        argv=argv,
     )
     # Set priority and scheduled_at if provided
     if scheduled_at or priority != 1:
@@ -161,6 +277,7 @@ def add_task():
     if scheduled_at:
         try:
             from web_runner.utils import _schedule_task
+
             parsed = datetime.fromisoformat(scheduled_at)
             _schedule_task(task_id, argv, parsed)
         except Exception as exc:
@@ -171,11 +288,21 @@ def add_task():
         # Use new executor with priority
         try:
             from web_runner.executor import submit_task
+
             submit_task(_run_sau, task_id, argv, priority=priority, platform=platform, task_id=task_id)
         except Exception:
             task_executor.submit(_run_sau, task_id, argv)
     log(f"[{task_id}] manual task: sau {' '.join(argv)}")
-    return jsonify({"success": True, "data": {"task_id": task_id}})
+    response = _make_accepted_response(task_id)
+    if _idem_key:
+        _idem.finalize(
+            _idem.current_user_id(),
+            _idem.current_route(),
+            _idem_key,
+            response,
+            task_id=task_id,
+        )
+    return response
 
 
 @bp.post("/api/tasks/reschedule")
@@ -184,6 +311,7 @@ def reschedule_task():
     payload = request.get_json(silent=True) or {}
     task_id = payload.get("task_id")
     new_scheduled_at = payload.get("new_scheduled_at")
+    _idem_key = _idem.read_key_from_request()
 
     if not task_id:
         return jsonify({"success": False, "message": "task_id is required"}), 400
@@ -192,17 +320,36 @@ def reschedule_task():
 
     task = _db_get_task(task_id)
     if not task:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": f"Task not found: {task_id}"}), 404
     if task.get("status") != "pending":
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Can only reschedule pending tasks"}), 409
 
     try:
         new_dt = datetime.fromisoformat(new_scheduled_at)
     except ValueError:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Invalid datetime format. Use ISO 8601."}), 400
 
     if new_dt < datetime.now():
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Cannot schedule in the past"}), 400
+
+    # Idempotency claim — hash is (task_id, new_scheduled_at) so
+    # a retry with the same key + same datetime dedups, but a
+    # retry with the same key + a different datetime returns 422
+    # (the client has a bug — they should generate a new UUID
+    # for a different reschedule intent).
+    if _idem_key:
+        _idem_hash = _idem.payload_hash([task_id, new_scheduled_at])
+        early = _idem.check_and_claim(_idem.current_user_id(), _idem.current_route(), _idem_key, _idem_hash)
+        if early is not None:
+            return early
 
     db = get_database()
     db.execute(
@@ -212,19 +359,34 @@ def reschedule_task():
 
     # Re-schedule with timer
     from web_runner.utils import _schedule_task
+
     stored_argv = task.get("argv")
     argv = _parse_stored_argv(stored_argv) if stored_argv else []
     if argv:
         _schedule_task(task_id, argv, new_dt)
 
     log(f"[{task_id}] rescheduled to {new_dt.isoformat()}")
-    return jsonify({
-        "success": True,
-        "data": {
-            "task_id": task_id,
-            "scheduled_at": new_dt.isoformat(timespec="seconds"),
-        },
-    })
+    # 202 + Location/Retry-After headers + the new scheduled_at in
+    # the body (the pre-OPT-async-202 response already carried this
+    # field, so existing clients reading data.scheduled_at keep
+    # working). All four pieces travel in a single
+    # _make_accepted_response call — the pre-round body-patch pattern
+    # (``resp.get_json()`` + ``body["data"][...]`` +
+    # ``resp.set_data(jsonify(body).get_data())``) was fragile and
+    # replaced by the helper's ``extra_data`` kwarg.
+    response = _make_accepted_response(
+        task_id,
+        extra_data={"scheduled_at": new_dt.isoformat(timespec="seconds")},
+    )
+    if _idem_key:
+        _idem.finalize(
+            _idem.current_user_id(),
+            _idem.current_route(),
+            _idem_key,
+            response,
+            task_id=task_id,
+        )
+    return response
 
 
 @bp.post("/api/tasks/copy")
@@ -239,6 +401,7 @@ def copy_task():
     payload = request.get_json(silent=True) or {}
     task_id = payload.get("task_id")
     new_scheduled_at = payload.get("new_scheduled_at")
+    _idem_key = _idem.read_key_from_request()
     if not task_id:
         return jsonify({"success": False, "message": "task_id is required"}), 400
     if not new_scheduled_at:
@@ -246,31 +409,55 @@ def copy_task():
 
     task = _db_get_task(task_id)
     if not task:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": f"Task not found: {task_id}"}), 404
     if task.get("status") not in ("pending", "scheduled"):
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Can only copy pending/scheduled tasks"}), 409
 
     try:
         new_dt = datetime.fromisoformat(new_scheduled_at)
     except ValueError:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Invalid datetime format. Use ISO 8601."}), 400
     if new_dt < datetime.now():
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "Cannot schedule in the past"}), 400
+
+    # Idempotency claim — same signature as reschedule
+    # ((task_id, new_scheduled_at)) so a retry with the same
+    # source + same target time dedups, but a retry with a
+    # different target time returns 422.
+    if _idem_key:
+        _idem_hash = _idem.payload_hash([task_id, new_scheduled_at])
+        early = _idem.check_and_claim(_idem.current_user_id(), _idem.current_route(), _idem_key, _idem_hash)
+        if early is not None:
+            return early
 
     stored_argv = task.get("argv")
     argv = _parse_stored_argv(stored_argv) if stored_argv else None
     if argv is None:
         # Fallback: reconstruct a minimal argv if the stored JSON was lost.
-        argv = [task.get("platform", "") or "", task.get("action", "") or "",
-                "--account", task.get("account", "") or ""]
+        argv = [
+            task.get("platform", "") or "",
+            task.get("action", "") or "",
+            "--account",
+            task.get("account", "") or "",
+        ]
 
     new_task_id = _new_task_id("copy")
     _db_insert_task(
-        task_id=new_task_id, status="scheduled",
+        task_id=new_task_id,
+        status="scheduled",
         platform=task.get("platform", "") or "",
         action=task.get("action", "") or "",
         account=task.get("account", "") or "",
-        created=datetime.now().isoformat(timespec="seconds"), argv=argv,
+        created=datetime.now().isoformat(timespec="seconds"),
+        argv=argv,
     )
     db = get_database()
     db.execute(
@@ -279,17 +466,30 @@ def copy_task():
     )
 
     from web_runner.utils import _schedule_task
+
     _schedule_task(new_task_id, argv, new_dt)
 
     log(f"[{new_task_id}] copied from {task_id} to {new_dt.isoformat()}")
-    return jsonify({
-        "success": True,
-        "data": {
-            "task_id": new_task_id,
+    # Same additive-on-202 pattern as reschedule_task above: the
+    # source_task_id + scheduled_at stay in the body so the UI can
+    # update without an extra round-trip. Single helper call via
+    # extra_data; no body-patch.
+    response = _make_accepted_response(
+        new_task_id,
+        extra_data={
             "source_task_id": task_id,
             "scheduled_at": new_dt.isoformat(timespec="seconds"),
         },
-    })
+    )
+    if _idem_key:
+        _idem.finalize(
+            _idem.current_user_id(),
+            _idem.current_route(),
+            _idem_key,
+            response,
+            task_id=new_task_id,
+        )
+    return response
 
 
 @bp.get("/api/tasks/scheduled")
@@ -329,14 +529,16 @@ def list_scheduled_tasks():
                         title = argv[i + 1]
                         break
 
-        tasks.append({
-            "task_id": row["task_id"],
-            "platform": row.get("platform", ""),
-            "account": row.get("account", ""),
-            "title": title,
-            "status": row.get("status", ""),
-            "scheduled_at": row.get("scheduled_at"),
-        })
+        tasks.append(
+            {
+                "task_id": row["task_id"],
+                "platform": row.get("platform", ""),
+                "account": row.get("account", ""),
+                "title": title,
+                "status": row.get("status", ""),
+                "scheduled_at": row.get("scheduled_at"),
+            }
+        )
 
     return jsonify({"success": True, "data": {"tasks": tasks}})
 
@@ -405,15 +607,17 @@ def list_publish_history():
         argv = _parse_stored_argv(row.get("argv") or "") or []
         raw_status = row.get("status", "")
         timeline_status = _timeline_status(raw_status)
-        items.append({
-            "id": row["task_id"],
-            "date": _format_timeline_date(row.get("created")),
-            "title": _title_from_argv(argv, row.get("action", ""), row["task_id"]),
-            "platform": row.get("platform") or "",
-            "status": timeline_status,
-            "url": _url_from_row(row, argv, db) or None,
-            "description": _build_description(row, timeline_status),
-        })
+        items.append(
+            {
+                "id": row["task_id"],
+                "date": _format_timeline_date(row.get("created")),
+                "title": _title_from_argv(argv, row.get("action", ""), row["task_id"]),
+                "platform": row.get("platform") or "",
+                "status": timeline_status,
+                "url": _url_from_row(row, argv, db) or None,
+                "description": _build_description(row, timeline_status),
+            }
+        )
     return jsonify({"success": True, "data": items})
 
 
@@ -466,8 +670,13 @@ def _url_from_row(row: dict, argv: list[str], db) -> str:
             # Project-wide invariant: every Database implementation
             # exposes ``json_load`` (see web_runner/utils.py ::
             # _LOG_ERROR_EVENTS, web_runner/routes/tasks.py ::
-            # _parse_stored_argv). No hasattr-fallback drift needed.
+            # _parse_stored_argv). On PG ``json_load`` is identity for
+            # the TEXT-typed ``result`` column, so a round-trip needs
+            # an explicit ``json.loads`` here too (same fix as
+            # _parse_stored_argv in round-OPT-async-202).
             loaded = db.json_load(raw)
+            if isinstance(loaded, str):
+                loaded = json.loads(loaded)
             if isinstance(loaded, dict):
                 return loaded.get("url") or loaded.get("share_url") or ""
         except (ValueError, TypeError):
@@ -551,10 +760,17 @@ def get_error_events_route():
     after = request.args.get("after")
     limit = request.args.get("limit", type=int)
     offset = request.args.get("offset", 0, type=int)
-    return jsonify({
-        "success": True,
-        "data": _db_get_error_events(
-            after=after, platform=platform, account=account,
-            action=action, exc_type=exc_type, limit=limit, offset=offset,
-        ),
-    })
+    return jsonify(
+        {
+            "success": True,
+            "data": _db_get_error_events(
+                after=after,
+                platform=platform,
+                account=account,
+                action=action,
+                exc_type=exc_type,
+                limit=limit,
+                offset=offset,
+            ),
+        }
+    )
