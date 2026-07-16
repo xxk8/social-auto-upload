@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import hashlib
 import json
 import os
 import re
@@ -23,7 +22,7 @@ from utils.log import logger as _task_logger
 from web_runner.db import get_database
 
 BASE_DIR = Path(__file__).parent.parent.resolve()
-import psycopg  # narrow exception for the orphan-recovery watchdog loop
+import psycopg  # noqa: E402 — narrow exception for the orphan-recovery watchdog loop
 
 dbi = get_database  # alias for shorter call-site reads
 
@@ -657,7 +656,40 @@ def _account_files(platform: str | None = None) -> list[dict]:
     return results
 
 
-_COOKIE_STALE_HOURS = 24
+# Read once at module-import time (matches the project-wide pattern of
+# the SAU_HEALTH_* env vars in ``web_runner/health_monitor.py``). Tests
+# override by ``monkeypatch.setattr(web_runner.utils, "_COOKIE_STALE_HOURS", X)``;
+# re-importing the module to pick up env changes is brittle in pytest.
+# Rationales:
+#  * 24h default ⇒ cookie files older than 24h mark stale but are NOT
+#    deleted (re-authorize refreshes the file). See ``_quick_check_cookie``.
+#  * Deployments can tighten (CI/staging use SAU_COOKIE_STALE_HOURS=1
+#    to surface refresh churn immediately) or loosen (long-lived
+#    cookie operators use SAU_COOKIE_STALE_HOURS=168 = 7d) without a
+#    code change.
+#
+# Cross-knob interaction with ``web_runner/health_monitor._EXPIRING_DAYS``
+# (and its ``SAU_HEALTH_EXPIRING_DAYS`` env var, default 7). The two
+# knobs fire at DIFFERENT layers of ``_determine_health``:
+#   * This knob is checked against cookie-file mtime inside
+#     ``_quick_check_cookie`` and feeds into ``quick["stale"]``.
+#   * ``_EXPIRING_DAYS`` is checked INSIDE ``_determine_health`` against
+#     the ``last_check_at`` ISO timestamp — a separate downstream gate.
+#   * ``_determine_health`` short-circuits on ``quick.get("stale")`` so a
+#     stale file always resolves to ``expiring_soon`` regardless of
+#     ``_EXPIRING_DAYS``. They're not nested; they're two ORTHOGONAL
+#     TRIGGERS — the mtime-trigger (this knob) and the verification-
+#     trigger (``_EXPIRING_DAYS``) — that both produce the SAME
+#     ``expiring_soon`` color. The verification-trigger is only
+#     evaluated when the mtime-trigger doesn't fire, so they're
+#     mutually exclusive at the call-site, not two-tiered.
+#   * Operators shouldn't collapse the two into one — they cover
+#     orthogonal signals ("mtime-stale" vs "verification-stale").
+#     Tightening ``_COOKIE_STALE_HOURS`` doesn't suppress the
+#     "fresh file but old verification" case (``stale=False`` +
+#     ``last_check_at`` very old); that scenario still requires
+#     ``SAU_HEALTH_EXPIRING_DAYS`` to surface ``expiring_soon``.
+_COOKIE_STALE_HOURS = int(os.environ.get("SAU_COOKIE_STALE_HOURS", "24"))
 
 
 def _quick_check_cookie(platform: str, account: str) -> dict:
@@ -723,7 +755,7 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
 
     # Local import avoids a circular import at module load time
     # (web_runner.notifications lazily imports utils._db_get_task).
-    from web_runner.notifications import emit_event, build_event_from_result
+    from web_runner.notifications import build_event_from_result, emit_event
 
     _db_update_task(task_id, status="running")
     log(f"[{task_id}] starting: sau {' '.join(argv)}")
@@ -905,7 +937,6 @@ def _run_crawl(task_id: str, argv_payload) -> None:
     crawled_content_count = 0
     crawled_comments_count = 0
     sentiment_breakdown = {"positive": 0, "negative": 0, "neutral": 0, "pending": 0}
-    stub_status = "stub-not-implemented"  # see note in docstring
 
     try:
         crawler = CrawlerClass()
@@ -1142,7 +1173,14 @@ def _validate_group_name(raw: object) -> tuple[bool, str]:
 
 def _cleanup_old_uploads() -> None:
     now = time.time()
-    max_age = 24 * 60 * 60
+    # Inbox downloads are meant to live until the user deletes them (the
+    # download-center rows persist in localStorage across reloads + restarts,
+    # and a download auto-resumes on boot). We still sweep on a long tail to
+    # prevent unbounded disk growth, but the window is 7 days (not 24h) so a
+    # file the user downloaded yesterday isn't silently wiped before they get
+    # back to it. Uploads dir keeps the shorter 24h window (those are
+    # transient publish payloads). See discussion in inbox download-center.
+    max_age = 7 * 24 * 60 * 60
     count = 0
     # ponytail: sweep BOTH upload dirs. INBOX_DIR is canonical in this
     # module (`BASE_DIR` / "videos" / "inbox", see above) so CWD-relative

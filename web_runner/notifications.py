@@ -27,13 +27,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from web_runner.db import get_database
-
 # Reuse the existing logger so notification logs land in the same stream.
 from utils.log import logger as _log
+from web_runner.db import get_database
 
 # ── Event bus ────────────────────────────────────────────────────────────
-_event_queue: "queue.Queue[UploadEvent]" = queue.Queue()
+_event_queue: queue.Queue[UploadEvent] = queue.Queue()
 _worker_started = False
 _worker_lock = threading.Lock()
 
@@ -401,18 +400,16 @@ def emit_event(event: UploadEvent) -> None:
         _log.info("[notifications] dedup skip %s/%s", event.task_id, event.event_type)
         return
 
-    _event_queue.put(event)
+    _event_queue.put((event, nid))
 
 
 def _deliver_one(event: UploadEvent, nid: int | None) -> None:
     webhooks = resolve_webhooks(event.platform, event.account)
     if not webhooks:
         return
-    aggregated = False
     for wh in webhooks:
         url = wh["url"]
         if _rate_limited(url):
-            aggregated = True
             continue
         channel = wh["channel"]
         secret = wh.get("secret")
@@ -461,8 +458,8 @@ def _retry(event: UploadEvent, nid: int | None) -> None:
 def _worker_loop() -> None:
     while True:
         try:
-            event = _event_queue.get()
-            _deliver_one(event, None)
+            event, nid = _event_queue.get()
+            _deliver_one(event, nid)
         except Exception as exc:  # noqa: BLE001
             _log.warning("[notifications] worker error: %s", exc)
 
@@ -488,15 +485,15 @@ def _push_sse(event: UploadEvent) -> None:
                 pass
 
 
-def subscribe() -> "queue.Queue":
+def subscribe() -> queue.Queue:
     """Register an SSE subscriber queue; returns the queue to yield from."""
-    q: "queue.Queue" = queue.Queue()
+    q: queue.Queue = queue.Queue()
     with _notification_sub_lock:
         _notification_subscribers.setdefault("_global", []).append(q)
     return q
 
 
-def unsubscribe(q: "queue.Queue") -> None:
+def unsubscribe(q: queue.Queue) -> None:
     with _notification_sub_lock:
         subs = _notification_subscribers.get("_global", [])
         if q in subs:

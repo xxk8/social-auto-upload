@@ -439,10 +439,61 @@ def get_authorization_health(auth_id: int):
 def trigger_authorization_health_check(auth_id: int):
     """Queue an immediate health check for a single authorization.
 
-    Real browser checks can take tens of seconds, so the check is run
-    in a background thread and the endpoint returns 202 Accepted
-    immediately. The frontend can poll ``GET /api/account-authorizations/<id>/health``
-    or refetch the account group list to see the updated status.
+    The check is run as ``check_authorization_now(auth_id,
+    force_real_check=True)`` (the function-level default since
+    round-OPT-3F-e2e follow-up) so the manual button semantics match
+    its label — i.e. Chromium spins up and visits the platform creator
+    page with the stored storage_state loaded, NOT just file-level
+    stats. This catches the "cookie file fresh but platform session
+    killed server-side" failure mode that quick checks cannot detect
+    (cf. ``test_manual_check_quick_pass_real_fail_returns_invalid``
+    for the lock-in).
+
+    Real browser checks can take 5–30s per call (up to
+    ``(_HEALTH_RETRIES + 1) * _HEALTH_TIMEOUT`` = 60s by default with
+    the standard retry budget), so the call runs in a background
+    daemon thread and the endpoint returns 202 Accepted immediately.
+    The frontend can poll
+    ``GET /api/account-authorizations/<id>/health`` or refetch the
+    account group list to see the updated ``last_health`` /
+    ``last_real_check_at`` once the thread finishes.
+
+    Note (multi-call semantics): the route DOES spawn one thread per
+    HTTP request — the response itself is fast (~tens of ms: auth
+    existence lookup + thread spawn + 202 return) but the daemon
+    thread itself lives up to 5–30s (or up to ``(_HEALTH_RETRIES + 1)
+    * _HEALTH_TIMEOUT`` = 60s) doing the real cookie_auth. If the user
+    double-clicks the per-row button or if two browser tabs race, two
+    concurrent Chromium instances per ``auth_id`` WILL be spawned, and
+    each writes its own ``last_real_check_at`` last-writer-wins.
+
+    The only in-flight guard today is the frontend's
+    ``disabled={checking}`` + ``inflightRef`` double-guard on
+    ``SortableAuthorizationItem.handleCheckNow``. For the
+    single-operator Web Shell usage pattern this is enough; if we
+    ever expose this route to multi-user SaaS or paths where the
+    frontend guard is bypassable (mobile clients, curl, scripts),
+    add a ``threading.Lock`` (or per-``auth_id`` map of locks) here.
+
+    Important caveat for any future lock-uniqueness work: the route
+    is NOT the only writer to ``account_authorizations``. The
+    periodic ``health_monitor._run_monitor_cycle`` writes the same
+    columns (``last_health``, ``last_check_at``,
+    ``last_real_check_at``, ``consecutive_failures``,
+    ``next_check_at``) every ``_HEALTH_INTERVAL`` seconds from a
+    daemon thread. A per-auth_id lock on THIS route gates only
+    HTTP-triggered checks — it does NOT serialize against the
+    background monitor. Any concurrent hardening must share one lock
+    across this route + ``_run_monitor_cycle`` (or use a coordination
+    protocol); locking only the route would only narrow the race
+    window — the monitor side remains last-writer-wins regardless.
+
+    Sibling follow-up (out of scope for this PR): this endpoint
+    does not gate on ``_is_auth_enabled`` / ``_current_user_id``.
+    Pre-existing condition — not introduced by the
+    ``force_real_check=True`` contract change — and not worth
+    gating in the same PR for risk-surface reasons. Worth a
+    standalone security ticket once the lock coordination lands.
     """
     import threading
 
@@ -450,7 +501,13 @@ def trigger_authorization_health_check(auth_id: int):
 
     def _run_check() -> None:
         try:
-            check_authorization_now(auth_id)
+            # force_real_check=True is the new function-level default.
+            # Explicit kwarg is intentional: a future revert of the
+            # function default would silently downgrade this route back
+            # to "quick-only" without updating this caller — keeping
+            # the keyword argument here makes the upstream contract
+            # obvious in grep.
+            check_authorization_now(auth_id, force_real_check=True)
         except Exception as exc:  # noqa: BLE001
             log(f"[health] background check failed for auth {auth_id}: {exc}")
 
@@ -465,6 +522,10 @@ def trigger_authorization_health_check(auth_id: int):
     except Exception as exc:  # noqa: BLE001
         return jsonify({"success": False, "message": str(exc)}), 500
 
+    log(
+        f"[health] manual health-check enqueued: auth_id={auth_id} "
+        f"(real cookie_auth enabled — force_real_check=True)"
+    )
     threading.Thread(target=_run_check, daemon=True, name=f"sau-health-check-{auth_id}").start()
     return jsonify({
         "success": True,

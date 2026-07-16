@@ -29,7 +29,7 @@ social-auto-upload 提供了统一的前端 Vite 应用，同时承载两个使�
 | 状态 | 标签 | 含义 |
 |---|---|---|
 | `valid` | 健康 | cookie 文件有效，且最近一次真实浏览器校验通过 |
-| `expiring_soon` | 即将过期 | cookie 文件超过 24 小时未刷新，或最近一次真实检查已超过 7 天 |
+| `expiring_soon` | 即将过期 | cookie 文件 mtime 超过 24 小时（可调 `SAU_COOKIE_STALE_HOURS`，默认 24）未刷新，或最近一次真实检查已超过 7 天（可调 `SAU_HEALTH_EXPIRING_DAYS`，默认 7） |
 | `invalid` | 已失效 | cookie 文件缺失/损坏，或真实浏览器校验失败 |
 | `unknown` | 未检查 | 授权刚创建，尚未完成首次健康检查 |
 
@@ -42,10 +42,10 @@ social-auto-upload 提供了统一的前端 Vite 应用，同时承载两个使�
 
 ### 后台检查策略
 
-- 后台 daemon 默认每 6 小时对所有账号串行检查一次。
+- 后台 daemon 默认每 6 小时（`SAU_HEALTH_MONITOR_INTERVAL=21600` 秒）对所有账号串行检查一次。
 - 每次检查都会做轻量的文件级 quick check。
-- 真实的浏览器校验默认每 24 小时才执行一次，避免频繁启动 Chromium 消耗资源。
-- 检查频率可通过环境变量调整，详见 [`docs/install.md`](docs/install.md) 的「账号健康监控」章节。
+- 真实的浏览器校验默认每 24 小时（`SAU_HEALTH_REAL_CHECK_INTERVAL=86400` 秒）才执行一次，避免频繁启动 Chromium 消耗资源。
+- 检查频率、最大重试、超时与 stale 阈值均可通过环境变量调整；默认 / 范围 / 调优位置见 [`docs/install.md`](docs/install.md) §11「账号健康监控」与环境变量表。
 
 ### 告警通知
 
@@ -62,6 +62,7 @@ social-auto-upload 提供了统一的前端 Vite 应用，同时承载两个使�
   - 邮件发送会依次回退到第一个管理员、第一个用户。
   - 通知偏好（是否发邮件 / webhook）直接读取第一个用户的 `notify_health_email` / `notify_health_webhook`。
 - 升级后首次启动时，`init_db()` 会自动把历史分组的所有者回填为数据库中第一个用户（仅在 `users` 表非空时执行，一次性迁移）。
+- 通知通道 env vars 以 [`docs/install.md` §11 环境变量表](install.md#11-账号健康监控account-health-monitoring) 中的 4 个 `SAU_*_WEBHOOK_URL` / 兑底 `SAU_WEBHOOK_URL` + `SAU_SMTP_*` 为准；频道未设该频道不发。openspec 中领会的独立 `SAU_HEALTH_WEBHOOK_URL` 未生效，仅为 reserved 提示。
 
 ## API 接口
 

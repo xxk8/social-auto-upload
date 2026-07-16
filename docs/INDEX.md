@@ -63,6 +63,7 @@
 
 - On-call cron 排错：[`docs/dev/monitor-cdp-throttling-cron-ops.md`](docs/dev/monitor-cdp-throttling-cron-ops.md)
 - Public-Inbox 终止阈值：[`docs/dev/public-inbox-ops.md`](docs/dev/public-inbox-ops.md)
+- Account Health 调优表：[`docs/install.md` §11](install.md#11-account-health-monitoring)（SAU_HEALTH_* + SAU_COOKIE_STALE_HOURS 的默认值 / 范围 / ORTHOGONAL TRIGGERS）
 
 ---
 

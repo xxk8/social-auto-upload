@@ -177,14 +177,34 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 | `invalid` | quick check 失败或真实浏览器校验失败 | 红色 |
 | `unknown` | 尚未完成首次检查 | 灰色 |
 
-#### 环境变量
+#### 环境变量（SAU_HEALTH_* + SAU_COOKIE_STALE_HOURS）
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `SAU_HEALTH_MONITOR_INTERVAL` | `21600`（6 小时） | 后台健康检查轮询间隔，单位秒 |
-| `SAU_HEALTH_REAL_CHECK_INTERVAL` | `86400`（24 小时） | 两次真实浏览器检查之间的最小间隔，单位秒 |
-| `SAU_HEALTH_TIMEOUT` | `30` | 单次真实检查超时时间，单位秒 |
-| `SAU_HEALTH_EXPIRING_DAYS` | `7` | 上次真实检查超过多少天即标记为 `expiring_soon` |
+调优位置均指 Python 模块级常量（在源码里直接 `int(os.environ.get(...))`，改 env 后重启 Flask 进程即生效）。范围列给出的是**安全边界**，越过边界会被 `_clamp_health_retries` 等夹具静默截断、或在 `_quick_check_cookie` 里出现意外的 expired-too-soon。
+
+| 变量 | 默认值 | 有效范围 | 调优位置 | 说明 |
+|---|---|---|---|---|
+| `SAU_HEALTH_MONITOR_INTERVAL` | `21600`（6 小时） | `≥ 60` 秒 | [`web_runner/health_monitor.py::_HEALTH_INTERVAL`](web_runner/health_monitor.py) | 后台 daemon 线程串行轮询所有账号的间隔，单位秒。设太小 = continuous browser churn；设太大 = 失效 cookie 检出滞后 |
+| `SAU_HEALTH_REAL_CHECK_INTERVAL` | `86400`（24 小时） | `≥ 0` 秒（`0` = 每轮都触发） | [`web_runner/health_monitor.py::_REAL_CHECK_INTERVAL`](web_runner/health_monitor.py) | 两次真实浏览器 cookie_auth 之间的最小间隔，单位秒。控制后台轮询里 hard 真实检查的频率 |
+| `SAU_HEALTH_TIMEOUT` | `30` | `[5, 120]` 秒 | [`web_runner/health_monitor.py::_HEALTH_TIMEOUT`](web_runner/health_monitor.py) | 单次真实检查超时，单位秒。**worst-case 总耗时 ≈ `(_HEALTH_RETRIES + 1) × _HEALTH_TIMEOUT`** ：默认配置 `(1+1)×30 = 60s`；两端 range 拉满 `(3+1)×120 = 480s`（8 分钟；看似卡死但实为 retry 在跑，不要按 hang 处理） |
+| `SAU_HEALTH_EXPIRING_DAYS` | `7` | `[1, 365]` 天 | [`web_runner/health_monitor.py::_EXPIRING_DAYS`](web_runner/health_monitor.py) | 上次真实检查超过多少天即在没有 stale 信号时也标记为 `expiring_soon`。**与 `SAU_COOKIE_STALE_HOURS` 是 ORTHOGONAL TRIGGERS**，详见下方「互相关系」 |
+| `SAU_HEALTH_RETRIES` | `1` | `[0, 3]`（强制 clamp） | [`web_runner/health_monitor.py::_HEALTH_RETRIES`](web_runner/health_monitor.py)（经 `_clamp_health_retries()`） | 单次真实检查失败后的 retry 次数。**会被硬夹到 3**，传 `100` 也不会失控，但也不会保留原值。详见 `_clamp_health_retries()` docstring |
+| `SAU_COOKIE_STALE_HOURS` | `24` | `[1, 168]` 小时（≤ 1 周） | [`web_runner/utils.py::_COOKIE_STALE_HOURS`](web_runner/utils.py) | cookie 文件 mtime 超过多少小时即在 quick check 中标记为 `stale=true`，从而进入 `expiring_soon` 路径。设太大 = 检测滞后；设太小 = fresh 也会变 stale |
+| `SAU_FEISHU_WEBHOOK_URL` | (未设置) | HTTPS URL | [`web_runner/notifications.py::_env_webhooks`](web_runner/notifications.py) | 飞书 bot incoming webhook URL，账号健康度降级事件会发到这里。未设 → 该通道不发。其他 SAU_*_WEBHOOK_URL 同型 |
+| `SAU_FEISHU_WEBHOOK_SECRET` | (未设置) | string | [`web_runner/notifications.py::_feishu_sign`](web_runner/notifications.py) | 飞书 HMAC-SHA256 签名密钥（与 `SAU_FEISHU_WEBHOOK_URL` 配对使用；不设 → 走无签名 frame） |
+| `SAU_DINGTALK_WEBHOOK_URL` | (未设置) | HTTPS URL | [`web_runner/notifications.py::_env_webhooks`](web_runner/notifications.py) | 钉钉 bot webhook URL。未设 → 该通道不发 |
+| `SAU_DINGTALK_WEBHOOK_SECRET` | (未设置) | string | [`web_runner/notifications.py::_dingtalk_sign`](web_runner/notifications.py) | 钉钉 HMAC-SHA256 签名密钥（与 `SAU_DINGTALK_WEBHOOK_URL` 配对使用；不设 → 不加签 query string） |
+| `SAU_WEWORK_WEBHOOK_URL` | (未设置) | HTTPS URL | [`web_runner/notifications.py::_env_webhooks`](web_runner/notifications.py) | 企业微信 bot webhook URL。未设 → 该通道不发 |
+| `SAU_WEBHOOK_URL` | (未设置) | HTTPS URL | [`web_runner/notifications.py::_env_webhooks`](web_runner/notifications.py) | 通用 custom webhook 兑底（feishu/dingtalk/wework 全未设时发这里；`feishu/dingtalk` 关键词不会匹配该 URL） |
+| `SAU_WEBHOOK_AGG_WINDOW` | `60` | `≥ 1` 秒 | [`web_runner/notifications.py::_rate_limited`](web_runner/notifications.py) | webhook 通道 rate-limit 窗口（默认 60s 内 20 调，避免 bot 调用盾被打中） |
+| `SAU_SMTP_*` | (未设置) | 详见 [`web_runner/routes/auth.py::_send_smtp_email`](web_runner/routes/auth.py) | 同列左侧 | 邮件发送 config 群（`SAU_SMTP_HOST` / `SAU_SMTP_PORT` / `SAU_SMTP_USER` / `SAU_SMTP_PASSWORD` / `SAU_SMTP_FROM`）；不改其他不动，例越未设 → 邮件不发。健康度通知调用路径见下方〔告警通知〕段 |
+| `SAU_HEALTH_WEBHOOK_URL` | (reserved) | reserved | n/a | **openspec 只佔位、实际未生效**—`web_runner/health_monitor.py::_send_health_notification` 走 `emit_event()` 共用上方 4 个 `SAU_*_WEBHOOK_URL`，而非独立的 `SAU_HEALTH_WEBHOOK_URL`。设计记录在 `openspec/changes/account-health-monitoring/{proposal.md, design.md[D3]}`，未来若不同通道上费补，可改 `notifications.py::resolve_webhooks` 优先指定 SAU_HEALTH_WEBHOOK_URL。今未生效不报错，明 table 留行 slipper pledge。 |（ORTHOGONAL TRIGGERS）
+
+`SAU_COOKIE_STALE_HOURS` 与 `SAU_HEALTH_EXPIRING_DAYS` 是两条**在调用点互斥（mutually exclusive at the call-site）的 ORTHOGONAL TRIGGERS**——不是两层嵌套：
+
+- `SAU_COOKIE_STALE_HOURS` ⇒ **mtime-trigger**：回答"cookie 文件是不是太久没刷新"，看 `stat.st_mtime`。
+- `SAU_HEALTH_EXPIRING_DAYS` ⇒ **verification-trigger**：回答"上次真实检查是不是太久之前"，看 `account_authorizations.last_check_at`。
+- `_determine_health` 里 mtime-trigger 先求值：mtime 触发 → 跳过 verification；mtime 不触发 → 才求值 verification。同一个调用只会有一条路径生效（mutually exclusive at the call-site）；两条 trigger 都映射到同一个 `expiring_soon` 颜色。
+- `SAU_HEALTH_RETRIES` 与上面两个**完全正交**：它控制 `_check_with_retry()` 内部重试预算，**只看 `_determine_health` 拿到的 `real_valid`——而 `real_valid` 只看 retry 内的结论**。**stale 与 expiring 只看 mtime 和 `last_check_at`**，与 retry 完全无关。调高 retry 修不了 stale 误报，但能把 `_check_with_retry()` 内部短暂网络抖动 / timeout 导致的 `real_valid=False` 吞掉（**for-loop 里任一 attempt 不抛异常即 early-return（`True` / `False` 原样透传，不重试平台侧直接判 invalid）；raise 才 `continue` 到下一个 attempt；N+1 次全 raise 才走完循环 return `False`**），让单次网络抖动不会直接升级成 `invalid` 误报。简而言之：**stale 看 mtime、`real_valid` 看 retry，两个互不干涉**——运维别误以为 retry 能修 stale。
 
 #### 告警通知
 
@@ -203,7 +223,7 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 - 邮件与 webhook 通道分别受所有者（或 fallback 用户）的 `users.notify_health_email` / `users.notify_health_webhook` 偏好控制。
 - 升级部署时的历史分组回填是一次性迁移，仅在 `users` 表非空时执行。
 
-通知依赖 `SAU_WEBHOOK_URL` / SMTP 配置，具体见 `web_runner/notifications.py` 与 `web_runner/routes/auth.py`。
+通知依赖上方环境变量表中 `SAU_FEISHU_WEBHOOK_URL` / `SAU_DINGTALK_WEBHOOK_URL` / `SAU_WEWORK_WEBHOOK_URL` / `SAU_WEBHOOK_URL` 兑底 + `SAU_SMTP_*` 配置，具体见 [`web_runner/notifications.py::_env_webhooks`](web_runner/notifications.py) 与 [`web_runner/routes/auth.py::_send_smtp_email`](web_runner/routes/auth.py)。openspec 中领会的 `SAU_HEALTH_WEBHOOK_URL` 是占位名，上表中顶只留一行 reserved 提示，未实际生效。
 
 ### 12. 可选：一键启动（推荐用于 Web Shell / Studio 联调）
 

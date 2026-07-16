@@ -19,15 +19,39 @@ import asyncio
 import os
 import threading
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from web_runner.db import get_database
-from web_runner.utils import _quick_check_cookie, log as _log
+from web_runner.utils import _quick_check_cookie
+from web_runner.utils import log as _log
 
 # Configurable via env; defaults mirror openspec/changes/account-health-monitoring.
 _HEALTH_INTERVAL = int(os.environ.get("SAU_HEALTH_MONITOR_INTERVAL", "21600"))  # 6h
 _HEALTH_TIMEOUT = int(os.environ.get("SAU_HEALTH_TIMEOUT", "30"))  # seconds per check
-_HEALTH_RETRIES = 1
+# Retry budget for the real cookie_auth call. Default 1 keeps the
+# 60s total budget headroom (see ``_check_with_retry`` docstring); bump
+# for flakier networks or down-flaky platforms via SAU_HEALTH_RETRIES.
+# Clamped to [0, 3] so a misconfigured ``SAU_HEALTH_RETRIES=100`` can't
+# spawn a Chromium storm; see ``_clamp_health_retries`` for bounds.
+def _clamp_health_retries(raw: int) -> int:
+    """Bound ``SAU_HEALTH_RETRIES`` to [0, 3] — runaway retry foot-gun.
+
+    Cap rationale: each retry triggers a full Chromium cold-start
+    (5–30s each). 4+ retries would total up to ~120s worst case,
+    exceeding operator patience before they give up on a flaky
+    account and re-authorize manually. Min 0 lets operators disable
+    retries for fail-fast behavior on fast-but-flaky networks where
+    a Chromium restart costs more wall-clock than the speedup from
+    confirming a single failure.
+
+    Tests pin this via ``TestHealthRetriesEnvVar``; the constant itself
+    captures ``_clamp_health_retries(int(env))`` at module-import time
+    and is monkeypatched in unit tests rather than reloaded.
+    """
+    return max(0, min(3, raw))
+
+
+_HEALTH_RETRIES = _clamp_health_retries(int(os.environ.get("SAU_HEALTH_RETRIES", "1")))
 _EXPIRING_DAYS = int(os.environ.get("SAU_HEALTH_EXPIRING_DAYS", "7"))
 # Real browser checks are expensive; only run them periodically.
 _REAL_CHECK_INTERVAL = int(os.environ.get("SAU_HEALTH_REAL_CHECK_INTERVAL", "86400"))  # 24h
@@ -83,7 +107,23 @@ async def _check_platform_cookie(platform: str, account: str) -> bool:
 
 
 async def _check_with_retry(platform: str, account: str) -> bool:
-    """Run the real check with timeout and one retry."""
+    """Run the real cookie_auth check with timeout and bounded retries.
+
+    Total wall-clock budget per invocation is ``(_HEALTH_RETRIES + 1) *
+    _HEALTH_TIMEOUT``: at default ``_HEALTH_RETRIES=1`` and
+    ``_HEALTH_TIMEOUT=30s`` that's up to 60s; with the documented
+    SAU_HEALTH_RETRIES cap of 3 it's up to 120s worst case. The first
+    attempt is the original call; subsequent attempts (0–3 retries,
+    env-driven) are only triggered after ``TimeoutError`` or generic
+    exceptions; success short-circuits via ``return``.
+
+    The retry budget is bounded both at the env layer (clamped to
+    [0, 3] via ``_clamp_health_retries`` to prevent runaway) and at
+    the budget layer (each attempt hedged by ``_HEALTH_TIMEOUT``). The
+    loop body deliberately distinguishes ``TimeoutError`` from generic
+    exception so an environmental timeout doesn't masquerade as a
+    cookie_auth failure in the operator log.
+    """
     for attempt in range(_HEALTH_RETRIES + 1):
         try:
             return await asyncio.wait_for(
@@ -372,12 +412,44 @@ def start_health_monitor() -> None:
         _log("[health] monitor started")
 
 
-def check_authorization_now(auth_id: int) -> dict:
+def check_authorization_now(
+    auth_id: int, *, force_real_check: bool = True
+) -> dict:
     """Synchronously run a health check for a single authorization.
 
     Intended for the manual ``POST /api/account-authorizations/<id>/health-check``
     endpoint. Runs the async check in a fresh event loop inside the
     current thread.
+
+    ``force_real_check`` (default ``True``): when True, a real browser
+    ``cookie_auth()`` is invoked via ``cli.platforms.<plat>.check`` —
+    i.e. Chromium spins up and visits the platform's creator page with
+    the storage_state cookie loaded, just like a real upload would.
+    The fast file-based ``_quick_check_cookie`` always runs first as a
+    gate (``_check_authorization`` only enters the real branch when
+    ``quick["valid"]`` is True); ``force_real_check`` only enables the
+    second hop.
+
+    Default is True so the manual button now matches its label
+    ("立即完整验证" = "立即用真实浏览器查一次") and surfaces platform-side
+    session expiry that file-level stats cannot detect — e.g. bilibili
+    cookie file looks intact but ``/x/web-interface/nav`` returns
+    ``isLogin=False``. Callers that want quick-only behavior (e.g. a
+    future cheap pre-flight sweep) can pass ``force_real_check=False``.
+
+    Trade-off: real cookie_auth takes 5–30s per call, or up to
+    ``(_HEALTH_RETRIES + 1) * _HEALTH_TIMEOUT`` (= 60s by default)
+    with the standard retry budget. The route in
+    ``web_runner/routes/account_groups.py`` queues this call to a
+    daemon thread so the HTTP response stays 202 non-blocking.
+
+    Contract change history (round-OPT-3F-e2e follow-up): prior to this
+    commit the default was force_real_check=False (a left-over from an
+    earlier "don't blow up the budget" experiment) which silently
+    downgraded the manual button to a file-only check while keeping
+    the UI label "立即检查" — a UX lie. The flipped default plus the
+    rerouted button label are the two halves of the same fix; do not
+    revert one without the other.
     """
     db = get_database()
     auth = db.fetch_one(
@@ -391,7 +463,14 @@ def check_authorization_now(auth_id: int) -> dict:
     if not auth:
         raise ValueError(f"Authorization {auth_id} not found")
 
-    new_health = asyncio.run(_check_authorization(auth))
+    _log(
+        f"[health] manual check for auth={auth_id} "
+        f"platform={auth['platform']}/{auth['account_name']} "
+        f"force_real_check={force_real_check}"
+    )
+    new_health = asyncio.run(
+        _check_authorization(auth, force_real_check=force_real_check)
+    )
     return {
         "health": new_health,
         "last_check_at": _now_iso(),
