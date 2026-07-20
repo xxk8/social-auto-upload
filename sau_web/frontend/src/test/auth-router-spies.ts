@@ -1,15 +1,15 @@
-import { vi } from 'vitest'
+import { vi, type Mock } from 'vitest'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Auth-router test spies — shared mock instances for tests that need to
-// verify LoginPage's post-merge `navigate('/dashboard/publish', { replace: true })`
+// verify LoginPage's post-merge `{ to: '/dashboard/publish', replace: true }`
 // redirect contract.
 //
 // Why this file exists as a SEPARATE module from `redirect-spy.ts`:
 //
 //   1. `vi.hoisted` runs at module-init time, BEFORE the consumer's
 //      `vi.mock(..., factory)` body evaluates. Test files declare
-//      `vi.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }))`
+//      `vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }))`
 //      where the factory closes over the spy. The spy therefore has to be
 //      a stable imported value that's reachable from the factory's
 //      lexical scope, AND must be created before any `vi.mock`
@@ -29,7 +29,7 @@ import { vi } from 'vitest'
 //      resolver on every render. Under happy-dom that resolver
 //      identity change triggers an internal micro-render via
 //      useForm's internal setState, so LoginPage's render-time
-//      `if (isAuthenticated) { navigate('/dashboard/publish', {replace:true}) }`
+//      `if (isAuthenticated) { { to: '/dashboard/publish', replace:true } }`
 //      branch fires TWICE per mount (once on the initial render,
 //      once on the RHF re-render). Tests that lock the redirect
 //      **target** should assert with `toHaveBeenCalledWith(...)`,
@@ -51,10 +51,51 @@ import { vi } from 'vitest'
 //   const imports — the transformer is happy with that.
 // ─────────────────────────────────────────────────────────────────────────
 
-const _internal = vi.hoisted(() => ({
-  mockNavigate: vi.fn(),
-  mockUseAuth: vi.fn(),
-}))
+// Default-useAuth return value: tests that don't explicitly
+// `mockUseAuth.mockReturnValue(...)` get a fantasy authenticated
+// admin out of the box. Without this, AuthGuard (called at first
+// render by AppShell + many slice components) destructures
+// `useAuth()` = undefined → throws TypeError → unmounts the
+// entire test tree → empty `<body><div /></body>`. Tests that want
+// the unauthenticated path override via `mockUseAuth.mockReturnValue(
+// { isAuthenticated: false, ... })` — the vi.fn() ref is stable
+// across tests so the per-test override still works.
+//
+// Type choice rationale: deliberately widen to `Mock<() => any>`.
+// Three earlier rounds attempted narrowing — first plain object
+// (overly strict returning shape -> 30+ TS2322 errors in tests that
+// construct their own wider-shape user objects), then `as const`
+// (readonly literal cascade -> same problem statement), then
+// `vi.fn(() => ({ ... }))` with structural return inference
+// (still narrows .mockReturnValue arg-type -> 14 remaining errors
+// for tests like AppShell.setAuth({ user: null, … })). The
+// `Mock<() => any>` annotation widens BOTH directions: any-typed
+// .mockReturnValue argument AND any-typed return. This restores
+// the pre-fix type contract where test files could pass any
+// claimant shape (`{ user: null }`, `{ isAuthenticated: false }`,
+// `{ name: 'Jane' }` etc.) without TS friction.
+//
+// Behavior contract is unchanged: tests that don't touch
+// `mockUseAuth.mockReturnValue(...)` get the default authenticated
+// admin shape; tests that DO call .mockReturnValue override the
+// default impl wholesale (Vi .mockReturnValue replaces the impl,
+// not extends).
+const _internal = vi.hoisted(() => {
+  const sendCode = vi.fn().mockResolvedValue({ success: true })
+  const login = vi.fn().mockResolvedValue({ success: true })
+  const logout = vi.fn().mockResolvedValue({ success: true })
+  const mockUseAuth: Mock<() => any> = vi.fn(() => ({
+    isAuthenticated: true,
+    user: { id: 1, email: 'test@example.com', role: 'admin' },
+    isLoading: false,
+    sendCode,
+    login,
+    logout,
+    sendCodeStatus: 'idle',
+    loginStatus: 'idle',
+  }))
+  return { mockNavigate: vi.fn(), mockUseAuth, sendCode, login, logout }
+})
 
 export const mockNavigate = _internal.mockNavigate
 export const mockUseAuth = _internal.mockUseAuth
