@@ -1,11 +1,25 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { TanStackRouterVite as TanStackRouter } from '@tanstack/router-vite-plugin'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import path from 'path'
 import type { IncomingMessage } from 'http'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    // TanStack Router plugin must point to app/ routes + routeTree.gen
+    TanStackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+      routesDirectory: './app/routes',
+      generatedRouteTree: './app/routeTree.gen.ts',
+    }),
+    // TanStack Start plugin defaults to src/; project uses app/
+    tanstackStart({ srcDirectory: 'app' }),
+    react(),
+    tailwindcss(),
+  ],
   server: {
     port: 5174,
     open: true,
