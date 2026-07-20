@@ -30,19 +30,26 @@ import type { ApplyAttempt, FormHandle } from '@/lib/chat/chatFormBridge'
  */
 
 // ── mocks ─────────────────────────────────────────────────────
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into two domain-specific mocks. The inbox API methods now mock
+// `@/api/inbox` (the canonical production import path); the constants
+// (PLATFORMS, NOTE_PLATFORMS, NOTE_PLATFORM_IMAGE_LIMITS, getNoteImageLimit)
+// now mock `@/api/types` (canonical source; `@/api/client` only re-exports).
+vi.mock('@/api/inbox', () => ({
+  inboxApi: {
     inboxDownload: vi.fn().mockResolvedValue({ success: false, message: 'unmocked' }),
     inboxReveal: vi.fn(),
     inboxTranscribeStream: vi.fn(),
     inboxFetchFile: vi.fn(),
   },
+}))
+vi.mock('@/api/types', () => ({
   getNoteImageLimit: () => 30,
   PLATFORMS: [],
   NOTE_PLATFORMS: [],
   NOTE_PLATFORM_IMAGE_LIMITS: {},
 }))
-import { api } from '@/api/client'
+
 
 vi.mock('@/api/ai', () => ({
   aiApi: {
@@ -52,6 +59,7 @@ vi.mock('@/api/ai', () => ({
   },
 }))
 import { aiApi } from '@/api/ai'
+import { inboxApi } from '@/api/inbox'
 
 // Stub the auto-recommend polling hook so the interval doesn't fire
 // mid-test and contaminate "manual search only" scenarios with auto-recommend
@@ -136,8 +144,8 @@ beforeEach(() => {
   vi.mocked(aiApi.searchImages).mockReset()
   vi.mocked(aiApi.recommendImages).mockReset()
   vi.mocked(aiApi.fetchImageAsFile).mockReset()
-  vi.mocked(api.inboxDownload).mockReset()
-  vi.mocked(api.inboxFetchFile).mockReset()
+  vi.mocked(inboxApi.inboxDownload).mockReset()
+  vi.mocked(inboxApi.inboxFetchFile).mockReset()
 })
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.removeItem('sau-material-panel-recent-queries')
@@ -446,7 +454,7 @@ describe('click tile → addImageToForm dispatched — §11.2 scenario 4', () =>
     // A separate test covers `api.inboxDownload` throwing — THAT path toasts.
     const form = makeStubForm()
     const ref = { current: form }
-    vi.mocked(api.inboxDownload).mockResolvedValue({
+    vi.mocked(inboxApi.inboxDownload).mockResolvedValue({
       success: false,
       message: '亲，cookie 没准备好',
     })
@@ -491,7 +499,7 @@ describe('click tile → addImageToForm dispatched — §11.2 scenario 4', () =>
     // Call-budget lock: pin exactly one inboxDownload call so future
     // refactors that retry / swallow-then-retry surface loudly instead
     // of silently shifting the side-effect count.
-    const inboxSpy = vi.mocked(api.inboxDownload)
+    const inboxSpy = vi.mocked(inboxApi.inboxDownload)
     inboxSpy.mockRejectedValue(new Error('亲，cookie 没准备好 (PatchedException)'))
     const toastSpy = vi.fn()
     ;(globalThis as { __addToastSpy?: typeof toastSpy }).__addToastSpy = toastSpy

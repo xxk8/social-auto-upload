@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, within } from '@testing-library/react'
@@ -38,29 +38,24 @@ vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => mockUseAuth(),
 }))
 
-// Proxy backstop for @/api/client — only inboxDownload + inboxTranscribeStream
-// are stubbed (the InboxPage only calls those two methods for the i18n-test
-// surface). Other methods get a vi.fn() so a future refactor that adds a
-// new api.someMethod(...) call fails at ASSERTION time rather than at
-// render time.
-const inboxDownload = vi.fn().mockResolvedValue({
-  success: true,
-  filename: 'test.mp4',
-  engine: 'yt-dlp',
-})
-const inboxTranscribeStream = vi.fn()
-
-vi.mock('@/api/client', () => ({
-  api: new Proxy(
-    {},
-    {
-      get: (_target, prop: string) => {
-        if (prop === 'inboxDownload') return inboxDownload
-        if (prop === 'inboxTranscribeStream') return inboxTranscribeStream
-        return vi.fn()
-      },
-    },
-  ),
+// Round-XXX second-batch migration: replaced the legacy `@/api/client`
+// Proxy backstop with an explicit `@/api/inbox` mock. Production
+// imports `inboxApi.inboxDownload` + `inboxApi.inboxTranscribeStream`
+// from `@/api/inbox` (see src/Pages/InboxPage.tsx imports); the legacy
+// Proxy was catching a wide surface that production doesn't even
+// exercise. After this migration, a future InboxPage hook that
+// imports a new method will fail loudly (real axios call →
+// AggregateError) instead of silently returning `vi.fn() => undefined`.
+vi.mock('@/api/inbox', () => ({
+  inboxApi: {
+    inboxDownload: vi.fn(),
+    inboxTranscribeStream: vi.fn(),
+    // inboxReveal is called from InboxRow's 「打开所在文件夹」 IconButton
+    // (InboxPage.tsx ~line 1379, onClick handler). Without this stub the
+    // IconButton closure captures `undefined` and clicking it throws
+    // `inboxReveal is not a function`.
+    inboxReveal: vi.fn(),
+  },
 }))
 
 const clipboardWrite = vi.fn().mockResolvedValue(undefined)

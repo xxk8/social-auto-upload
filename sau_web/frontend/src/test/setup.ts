@@ -25,6 +25,57 @@ if (!globalThis.matchMedia) {
   })) as unknown as typeof matchMedia
 }
 
+// jsdom <25 does not ship window.EventSource. Three places in the
+// codebase construct one directly:
+//   - src/api/tasks.ts (streamTasks) — now has a `typeof`
+//     guard that returns null early, so this stub is belt-only
+//     for that path.
+//   - src/api/accounts.ts:55 (refreshStaleAccounts) — also has
+//     no guard yet and would ReferenceError if a test imported
+//     `accountsApi` directly without vi-mocking. Stub catches.
+//   - src/Components/LoginProgressModal.tsx:202 — `new
+//     EventSource(sseUrl)` inside the open-effect. Renders
+//     thrown ReferenceError would crash the entire test
+//     simulate-open. Stub catches.
+//
+// Real test behavior: the stub never fires events. Tests that
+// exercise SSE behavior must mock `@/api/client` (the Proxy
+// pattern) and trigger events manually via the mocked stream's
+// `eventListeners`. The stub just keeps the constructor from
+// blowing up the whole test run.
+if (typeof globalThis.EventSource === 'undefined') {
+  globalThis.EventSource = class EventSource {
+    static readonly CONNECTING = 0
+    static readonly OPEN = 1
+    static readonly CLOSED = 2
+    url: string
+    readyState: number = EventSource.CONNECTING
+    withCredentials: boolean = false
+    onerror: ((event: Event) => void) | null = null
+    onopen: ((event: Event) => void) | null = null
+    onmessage: ((event: MessageEvent) => void) | null = null
+    constructor(url: string, init?: EventSourceInit) {
+      this.url = url
+      this.withCredentials = init?.withCredentials ?? false
+    }
+    addEventListener(_type: string, _listener: EventListenerOrEventListenerObject | null): void {
+      void _type
+      void _listener
+    }
+    removeEventListener(_type: string, _listener: EventListenerOrEventListenerObject | null): void {
+      void _type
+      void _listener
+    }
+    close(): void {
+      this.readyState = EventSource.CLOSED
+    }
+    dispatchEvent(_event: Event): boolean {
+      void _event
+      return true
+    }
+  } as unknown as typeof EventSource
+}
+
 // jsdom 25 sometimes lazy-mounts window.localStorage AFTER setup
 // but BEFORE beforeEach runs. AppShell.tsx (and any component
 // reading localStorage in a useState initializer) throws
@@ -36,11 +87,17 @@ if (!globalThis.matchMedia) {
 // dashboard sweep) so all tests share one install path. The
 // dual-target defineProperty (window + globalThis) handles
 // environments where the bare `localStorage.removeItem(...)`
-// reference resolves to globalThis, not window. The try/catch
-// around each defineProperty swallows the non-configurable
-// case — a working real localStorage is the desired terminal
-// state, so we don't want to crash setup on the install path.
-// Idempotent — no-op when a real working localStorage exists.
+// reference resolves to globalThis, not window. Both installs
+// go through `safeDefine`, a best-effort helper that swallows
+// any defineProperty throw — TypeError on non-configurable
+// re-define is the main one (real LS already installed with
+// `configurable: false`), but the swallow also covers future
+// throws (preventExtensions-target rejection, strict-mode
+// descriptor failure). A working real localStorage is the
+// desired terminal state, so a half-install is preferable to
+// a setup-time crash that takes out the whole test file.
+// Idempotent — `safeDefine` is a no-op when defineProperty
+// fails (real LS stays installed).
 if (
   typeof window !== 'undefined' &&
   (typeof window.localStorage === 'undefined' ||
@@ -55,20 +112,30 @@ if (
     key: (i: number) => Array.from(store.keys())[i] ?? null,
     get length() { return store.size },
   }
-  try {
-    Object.defineProperty(window, 'localStorage', {
-      value: ls,
-      configurable: true,
-      writable: true,
-    })
-  } catch {}
-  try {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: ls,
-      configurable: true,
-      writable: true,
-    })
-  } catch {}
+  // Best-effort `Object.defineProperty`: any throw is swallowed
+  // (TypeError on non-configurable re-define, preventExtensions
+  // rejection, strict-mode descriptor failures, ...). Names the
+  // swallow intent — "do this best-effort, half-install beats
+  // setup crash". Used solely for the localStorage polyfill.
+  const safeDefine = (
+    target: object,
+    key: string,
+    descriptor: object,
+  ): void => {
+    try {
+      Object.defineProperty(target, key, descriptor)
+    } catch { void 0 }
+  }
+  safeDefine(window, 'localStorage', {
+    value: ls,
+    configurable: true,
+    writable: true,
+  })
+  safeDefine(globalThis, 'localStorage', {
+    value: ls,
+    configurable: true,
+    writable: true,
+  })
 }
 
 // ── Custom matchers (replacement for @testing-library/jest-dom) ──
@@ -322,3 +389,23 @@ vi.spyOn(console, 'error').mockImplementation((...args) => {
   if (first.includes('inside a test was not wrapped in act')) return
   originalError(...args)
 })
+
+// Round-XXX second-batch migration: REMOVED the legacy `@/api/client`
+// Proxy fallback. All 16 test files that previously mocked
+// `@/api/client` have been migrated to domain-specific modules
+// (`@/api/accounts`, `@/api/inbox`, `@/api/tasks`, `@/api/ai`,
+// `@/api/publish`, `@/api/types`). The global Proxy was masking
+// forgotten mocks — a test that imported `api.foo` from `@/api/client`
+// without vi.mock-ing it would silently receive a fake `vi.fn()` that
+// resolves to `{success: true}`, hiding the contract drift.
+//
+// After removal: a forgotten mock now triggers the REAL axios call
+// → `AggregateError` in `waitFor` → the test fails LOUDLY with a
+// clear "fetch failed" error. That's the desired behavior — silent
+// fallback was the wrong default per the migration design rationale
+// in `docs/.mimocode/plans/1784297910069-crisp-moon.md` §四 P0.
+//
+// If a future test genuinely needs the wide-shape fallback (e.g. for
+// a contract that isn't yet wrapped in a domain module), add an
+// explicit `vi.mock('@/api/<domain>', …)` at the top of THAT test file
+// — do NOT reintroduce the global Proxy.

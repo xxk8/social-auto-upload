@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MultiPlatformGeneratePanel } from './MultiPlatformGeneratePanel'
+import { aiApi } from '@/api/ai'
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into `@/api/ai` (for `aiApi.generateMultiPlatformStream`) + `@/api/types`
+// (for the PLATFORMS constant). Production MultiPlatformGeneratePanel.tsx
+// imports `aiApi` from `@/api/ai` and `PLATFORMS` from `@/api/client` (which
+// re-exports from `@/api/types`).
+vi.mock('@/api/ai', () => ({
+  aiApi: {
     generateMultiPlatformStream: vi.fn(),
   },
+}))
+vi.mock('@/api/types', () => ({
   PLATFORMS: [
     { label: '抖音', value: 'douyin', color: 'magenta' },
     { label: '快手', value: 'kuaishou', color: 'orange' },
@@ -17,7 +25,7 @@ vi.mock('@/api/client', () => ({
   ],
 }))
 
-import { api } from '@/api/client'
+
 
 describe('MultiPlatformGeneratePanel', () => {
   const mockApply = vi.fn()
@@ -53,7 +61,7 @@ describe('MultiPlatformGeneratePanel', () => {
   })
 
   it('calls generateMultiPlatformStream on generate click', () => {
-    const mockGenerate = vi.mocked(api.generateMultiPlatformStream)
+    const mockGenerate = vi.mocked(aiApi.generateMultiPlatformStream)
     mockGenerate.mockImplementation(async () => {})
 
     render(<MultiPlatformGeneratePanel onApplyResult={mockApply} />)

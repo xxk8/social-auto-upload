@@ -34,21 +34,29 @@ vi.mock('@/api/ai', () => ({
   NormalizedImage: class NormalizedImage {}, // type-only export placeholder
 }))
 import { aiApi } from '@/api/ai'
+import { inboxApi } from '@/api/inbox'
 
 // ── mock @/api/client (only fetchAndAddUrl pathway; not exercised here but
 //    needed because materialPanelStore imports `api` for the inbox flow). ──
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into `@/api/inbox` (for the 4 inbox API methods) + `@/api/types` (for
+// getNoteImageLimit, PLATFORMS, NOTE_PLATFORMS). Mirrors the same split
+// applied to MaterialSection.test.tsx — same shape because both tests
+// exercise the material-panel-store-driven inbox flow.
+vi.mock('@/api/inbox', () => ({
+  inboxApi: {
     inboxDownload: vi.fn(),
     inboxReveal: vi.fn(),
     inboxTranscribeStream: vi.fn(),
     inboxFetchFile: vi.fn(),
   },
+}))
+vi.mock('@/api/types', () => ({
   getNoteImageLimit: () => 30,
   PLATFORMS: [],
   NOTE_PLATFORMS: [],
 }))
-import { api } from '@/api/client'
+
 
 // ── LS cleanup hook ─────────────────────────────────────────────
 const STORAGE_KEY = 'sau-material-panel-recent-queries'
@@ -74,8 +82,8 @@ beforeEach(() => {
   vi.mocked(aiApi.searchImages).mockReset()
   vi.mocked(aiApi.recommendImages).mockReset()
   vi.mocked(aiApi.fetchImageAsFile).mockReset()
-  vi.mocked(api.inboxDownload).mockReset()
-  vi.mocked(api.inboxFetchFile).mockReset()
+  vi.mocked(inboxApi.inboxDownload).mockReset()
+  vi.mocked(inboxApi.inboxFetchFile).mockReset()
 })
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY)

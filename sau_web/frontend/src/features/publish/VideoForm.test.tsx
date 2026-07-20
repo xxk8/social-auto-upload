@@ -240,12 +240,23 @@ vi.mock('@/Components/ui/tag-input', () => ({
   ),
 }))
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into 3 domain-specific mocks (same shape as NoteForm.test.tsx):
+//   • `@/api/publish`     — `publishApi.uploadVideo` + `publishApi.uploadNoteMultipart`
+//   • `@/api/accounts`    — `accountsApi.getAccounts`
+//   • `@/api/types`        — PLATFORMS / NOTE_PLATFORMS / PLATFORMS_WITH_ICONS
+vi.mock('@/api/publish', () => ({
+  publishApi: {
     uploadVideo: vi.fn().mockResolvedValue({ success: true, data: { task_id: 't1' } }),
     uploadNoteMultipart: vi.fn(),
+  },
+}))
+vi.mock('@/api/accounts', () => ({
+  accountsApi: {
     getAccounts: vi.fn().mockResolvedValue({ success: true, data: [] }),
   },
+}))
+vi.mock('@/api/types', () => ({
   PLATFORMS_WITH_ICONS: [
     { label: '抖音', value: 'douyin' },
     { label: '快手', value: 'kuaishou' },

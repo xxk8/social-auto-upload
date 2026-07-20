@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@/test/user-event-shim'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from '@/test-utils/MemoryRouter';
 import { QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/Components/ui/tooltip'
 import { AppShell, SIDEBAR_STORAGE_KEY as APP_SHELL_SIDEBAR_KEY } from './AppShell'
@@ -117,37 +117,25 @@ vi.mock('@/features/preferences/PreferencesDialogProvider', () => ({
   }),
 }))
 
-// Stub the api.client. <CommandPalette>'s useTasks() hook hits this
-// when mounted — without the Proxy backstop, TanStack Query resolves
-// useTasks' queryFn against the real axios/fetch call to
-// localhost:3000 (dev backend), surfacing ECONNREFUSED.
+// Stub the tasks API. <CommandPalette>'s useTasks() hook resolves
+// `tasksApi.getTasks()` (see src/hooks/useTasks.ts → src/api/tasks.ts:7)
+// when mounted. Returning `[]` keeps the command palette empty by
+// default; tests that need seeded data override via
+// `vi.mocked(tasksApi.getTasks).mockResolvedValueOnce(...)` or import
+// `tasksApi` and call `.mockResolvedValue` directly.
 //
-// We NARROW the Proxy's `get` trap to return concrete shapes that
-// match each known hook's queryFn contract. The previous wide-shape
-// stub (`mockResolvedValue({ success: true, data: [] })` for every
-// api.* call) was runtime-OK because no AppShell test asserts on
-// tasks data — but a future CommandPalette fix that reads
-// `tasks.map(t => t.task_id)` would silently throw on shape
-// mismatch.
-//
-//   • `api.getTasks` → Promise<TaskItem[]> directly (matches
-//     useTasks()' queryFn contract).
-//   • Default: vi.fn() returning undefined — same fall-through as
-//     InboxPage.test.tsx's Proxy. Callers see undefined and surface
-//     the gap via a future explicit override here, rather than
-//     masking with a wider-shape stub.
-vi.mock('@/api/client', () => ({
-  api: new Proxy(
-    {},
-    {
-      get: (_target: object, prop: string) => {
-        if (prop === 'getTasks') {
-          return vi.fn().mockResolvedValue([])
-        }
-        return vi.fn()
-      },
-    },
-  ),
+// Round-XXX second-batch migration: replaced the legacy `@/api/client`
+// Proxy backstop with an explicit `@/api/tasks` mock. The Proxy was
+// previously catching a wide api.* surface that production under test
+// doesn't even exercise — production imports `tasksApi` from
+// `@/api/tasks`, not `api` from `@/api/client`. Removing the silent
+// Proxy means a future CommandPalette hook that imports a new method
+// will fail loudly (real axios call → AggregateError) instead of
+// silently returning `vi.fn() => undefined`.
+vi.mock('@/api/tasks', () => ({
+  tasksApi: {
+    getTasks: vi.fn().mockResolvedValue([]),
+  },
 }))
 
 // Stub the 6 lazy-loaded route pages that AppShell's <Routes> refer to.

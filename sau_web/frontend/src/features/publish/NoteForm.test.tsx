@@ -232,12 +232,25 @@ vi.mock('@/Components/ui/tag-input', () => ({
   ),
 }))
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into 3 domain-specific mocks:
+//   • `@/api/publish`     — `publishApi.uploadVideo` + `publishApi.uploadNoteMultipart`
+//   • `@/api/accounts`    — `accountsApi.getAccounts`
+//   • `@/api/types`        — PLATFORMS / NOTE_PLATFORMS / PLATFORMS_WITH_ICONS / getNoteImageLimit
+// Production NoteForm.tsx imports the canonical domain modules (not
+// the deprecated `@/api/client` barrel).
+vi.mock('@/api/publish', () => ({
+  publishApi: {
     uploadVideo: vi.fn(),
     uploadNoteMultipart: vi.fn().mockResolvedValue({ success: true, data: { task_id: 'n1' } }),
+  },
+}))
+vi.mock('@/api/accounts', () => ({
+  accountsApi: {
     getAccounts: vi.fn().mockResolvedValue({ success: true, data: [] }),
   },
+}))
+vi.mock('@/api/types', () => ({
   PLATFORMS_WITH_ICONS: [],
   PLATFORMS: [
     { label: '抖音', value: 'douyin' },

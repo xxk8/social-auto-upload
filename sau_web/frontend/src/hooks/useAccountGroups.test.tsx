@@ -3,11 +3,28 @@ import { renderHook, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useAuthorizeAccountGroup } from './useAccountGroups'
-import { api, type AccountGroup } from '@/api/client'
+import {type AccountGroup} from '@/api/client'
+import { accountsApi } from '@/api/accounts'
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: explicit `vi.mock('@/api/accounts')`
+// replaces the deleted `vi.mock('@/api/client')` Proxy fallback (in
+// `src/test/setup.ts`). `vi.mocked(...)` is TS-only — without a runtime
+// vi.fn() factory, `.mockResolvedValue` throws 'Cannot spy on a primitive
+// value.' Mirror ALL 10 methods so any caller (current hook OR a future
+// per-test invocations of another `vi.mocked(accountsApi.X)`) gets a
+// vi.fn() instead of undefined; per-test overrides set the values.
+vi.mock('@/api/accounts', () => ({
+  accountsApi: {
+    getAccountGroups: vi.fn(),
+    createAccountGroup: vi.fn(),
+    deleteAccountGroup: vi.fn(),
+    renameAccountGroup: vi.fn(),
     authorizeAccountGroup: vi.fn(),
+    confirmAuthorizeAccountGroup: vi.fn(),
+    removeAuthorization: vi.fn(),
+    reorderAccountGroups: vi.fn(),
+    reorderAuthorizations: vi.fn(),
+    moveAuthorization: vi.fn(),
   },
 }))
 
@@ -34,7 +51,7 @@ describe('useAuthorizeAccountGroup', () => {
 
   it('cold cache (no group query yet) falls through to backend POST', async () => {
     const { wrapper } = setup()
-    const mockAuth = vi.mocked(api.authorizeAccountGroup)
+    const mockAuth = vi.mocked(accountsApi.authorizeAccountGroup)
     mockAuth.mockResolvedValue({
       success: true,
       data: { group_name: 'g1', platform: 'douyin', cookie_file: '/x.json' },
@@ -61,7 +78,7 @@ describe('useAuthorizeAccountGroup', () => {
       },
     ]
     const { wrapper } = setup(groups)
-    const mockAuth = vi.mocked(api.authorizeAccountGroup)
+    const mockAuth = vi.mocked(accountsApi.authorizeAccountGroup)
     mockAuth.mockResolvedValue({
       success: true,
       data: { group_name: 'g1', platform: 'douyin', cookie_file: '/d.json' },
@@ -87,7 +104,7 @@ describe('useAuthorizeAccountGroup', () => {
       },
     ]
     const { wrapper } = setup(groups)
-    const mockAuth = vi.mocked(api.authorizeAccountGroup)
+    const mockAuth = vi.mocked(accountsApi.authorizeAccountGroup)
 
     const { result } = renderHook(() => useAuthorizeAccountGroup(), { wrapper })
     const data = await act(async () => {
@@ -117,7 +134,7 @@ describe('useAuthorizeAccountGroup', () => {
       },
     ]
     const { wrapper } = setup(groups)
-    const mockAuth = vi.mocked(api.authorizeAccountGroup)
+    const mockAuth = vi.mocked(accountsApi.authorizeAccountGroup)
     mockAuth.mockResolvedValue({
       success: true,
       data: { group_name: 'g2', platform: 'douyin', cookie_file: '/d2.json' },
@@ -144,7 +161,7 @@ describe('useAuthorizeAccountGroup', () => {
     ]
     const { queryClient, wrapper } = setup(groups)
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
-    const mockAuth = vi.mocked(api.authorizeAccountGroup)
+    const mockAuth = vi.mocked(accountsApi.authorizeAccountGroup)
     // Use kuaishou so we fall through and onSuccess still fires against a real network result
     mockAuth.mockResolvedValue({
       success: true,
@@ -176,7 +193,7 @@ describe('useAuthorizeAccountGroup', () => {
     ]
     const { queryClient, wrapper } = setup(groups)
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
-    const mockAuth = vi.mocked(api.authorizeAccountGroup)
+    const mockAuth = vi.mocked(accountsApi.authorizeAccountGroup)
 
     const { result } = renderHook(() => useAuthorizeAccountGroup(), { wrapper })
     await act(async () => {

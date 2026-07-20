@@ -44,8 +44,13 @@ import type { GroupSelection } from '../GroupPublishSelector'
  *     div + child block render.
  */
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into 3 domain-specific mocks:
+//   • `@/api/publish`     — `publishApi.uploadVideo` + `publishApi.uploadNoteMultipart`
+//   • `@/api/ai`          — `aiApi.generateMessagesStream`
+//   • `@/api/types`        — PLATFORMS (truncated below; see original)
+vi.mock('@/api/publish', () => ({
+  publishApi: {
     uploadVideo: vi.fn().mockResolvedValue({
       success: true,
       data: { task_id: 'mock-video-task-id' },
@@ -54,8 +59,14 @@ vi.mock('@/api/client', () => ({
       success: true,
       data: { task_id: 'mock-note-task-id' },
     }),
+  },
+}))
+vi.mock('@/api/ai', () => ({
+  aiApi: {
     generateMessagesStream: vi.fn(),
   },
+}))
+vi.mock('@/api/types', () => ({
   PLATFORMS: [
     { value: 'douyin', label: '抖音' },
     { value: 'bilibili', label: 'B站' },

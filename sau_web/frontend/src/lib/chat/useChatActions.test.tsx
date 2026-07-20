@@ -7,13 +7,21 @@ import type { FormHandle, MaybeRef } from './chatFormBridge'
 
 // ─── module mocks ────────────────────────────────────────────────────────
 
-const generateMessagesStream = vi.fn()
-
-vi.mock('@/api/client', () => ({
-  api: {
-    generateMessagesStream: (...args: unknown[]) => generateMessagesStream(...args),
+// Round-XXX second-batch migration: replaced legacy `vi.mock('@/api/client', …)`
+// with an explicit `vi.mock('@/api/ai', …)` that forwards the call to the
+// LOCAL `generateMessagesStream` vi.fn (declared just below). The legacy
+// `@/api/client` mock was targeting the deprecated barrel; the actual
+// production consumer is `aiApi.generateMessagesStream` (see
+// `useChatActions.ts:151`). Mocking `@/api/ai` keeps the test wiring intact
+// without relying on the removed `@/api/client` Proxy backstop.
+vi.mock('@/api/ai', () => ({
+  aiApi: {
+    generateMessagesStream: (...args: unknown[]) => (generateMessagesStream as (...a: unknown[]) => unknown)(...args),
   },
 }))
+
+
+const generateMessagesStream = vi.fn()
 
 // Helper: synchronous SSE-style onChunk/onDone dispatch.
 function emitSseSequence(

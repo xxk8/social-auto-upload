@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useTagRecommendation } from './useTagRecommendation'
+import { aiApi } from '@/api/ai'
 
-vi.mock('@/api/client', () => ({
-  api: {
-    generateMessagesStream: vi.fn(),
-  },
-}))
+// Round-XXX second-batch migration: removed legacy `vi.mock('@/api/client', …)`
+// block. The mock was targeting the deprecated `api.foo` barrel but production
+// uses `aiApi.generateMessagesStream` directly. The test re-mocks the
+// actual domain module via `vi.mocked(aiApi.generateMessagesStream)` below,
+// so deleting the legacy block is a pure dead-code removal.
 
-import { api } from '@/api/client'
+
 
 describe('useTagRecommendation', () => {
   beforeEach(() => {
@@ -23,7 +24,7 @@ describe('useTagRecommendation', () => {
   })
 
   it('calls generateMessagesStream with correct prompt structure', async () => {
-    const mockGenerate = vi.mocked(api.generateMessagesStream)
+    const mockGenerate = vi.mocked(aiApi.generateMessagesStream)
     mockGenerate.mockImplementation(async (_payload, _onChunk, onDone) => {
       onDone('["标签1", "标签2", "标签3"]')
     })
@@ -45,7 +46,7 @@ describe('useTagRecommendation', () => {
   })
 
   it('includes description in prompt when provided', async () => {
-    const mockGenerate = vi.mocked(api.generateMessagesStream)
+    const mockGenerate = vi.mocked(aiApi.generateMessagesStream)
     mockGenerate.mockImplementation(async (_payload, _onChunk, onDone) => {
       onDone('["a", "b"]')
     })
@@ -62,7 +63,7 @@ describe('useTagRecommendation', () => {
   })
 
   it('parses JSON array from code-fenced response', async () => {
-    const mockGenerate = vi.mocked(api.generateMessagesStream)
+    const mockGenerate = vi.mocked(aiApi.generateMessagesStream)
     mockGenerate.mockImplementation(async (_payload, _onChunk, onDone) => {
       onDone('```json\n["tag1", "tag2"]\n```')
     })
@@ -77,7 +78,7 @@ describe('useTagRecommendation', () => {
   })
 
   it('returns empty array on unparseable response', async () => {
-    const mockGenerate = vi.mocked(api.generateMessagesStream)
+    const mockGenerate = vi.mocked(aiApi.generateMessagesStream)
     mockGenerate.mockImplementation(async (_payload, _onChunk, onDone) => {
       onDone('This is not JSON at all')
     })
@@ -92,7 +93,7 @@ describe('useTagRecommendation', () => {
   })
 
   it('does not call API when title is empty', async () => {
-    const mockGenerate = vi.mocked(api.generateMessagesStream)
+    const mockGenerate = vi.mocked(aiApi.generateMessagesStream)
     const { result } = renderHook(() => useTagRecommendation())
 
     await act(async () => {

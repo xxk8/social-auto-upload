@@ -56,8 +56,13 @@ vi.mock('@/hooks/useAccountGroups', () => ({
   }),
 }))
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into `@/api/accounts` (for `accountsApi.checkAllAccounts`) +
+// `@/api/types` (for the PLATFORMS constant). Production
+// AccountsProvider.tsx imports `accountsApi` from `@/api/accounts` and
+// `PLATFORMS` from `@/api/client` (which re-exports from `@/api/types`).
+vi.mock('@/api/accounts', () => ({
+  accountsApi: {
     checkAllAccounts: vi.fn().mockResolvedValue({
       success: true,
       data: [
@@ -65,6 +70,8 @@ vi.mock('@/api/client', () => ({
       ],
     }),
   },
+}))
+vi.mock('@/api/types', () => ({
   PLATFORMS: [
     { label: '抖音', value: 'douyin', color: 'magenta' },
     { label: '快手', value: 'kuaishou', color: 'orange' },

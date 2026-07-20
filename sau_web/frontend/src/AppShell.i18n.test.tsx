@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from '@/test-utils/MemoryRouter';
 import { QueryClientProvider } from '@tanstack/react-query'
 import { I18nextProvider } from 'react-i18next'
 import { TooltipProvider } from '@/Components/ui/tooltip'
@@ -60,18 +60,15 @@ vi.mock('@/features/preferences/PreferencesDialogProvider', () => ({
   }),
 }))
 
-vi.mock('@/api/client', () => ({
-  api: new Proxy(
-    {},
-    {
-      get: (_target: object, prop: string) => {
-        if (prop === 'getTasks') {
-          return vi.fn().mockResolvedValue([])
-        }
-        return vi.fn()
-      },
-    },
-  ),
+// Round-XXX second-batch migration: replaced the legacy `@/api/client`
+// Proxy backstop with an explicit `@/api/tasks` mock. Mirrors the
+// change in AppShell.test.tsx — see that file's comment block for the
+// rationale (production imports `tasksApi` from `@/api/tasks`; the
+// Proxy was catching a surface production doesn't even exercise).
+vi.mock('@/api/tasks', () => ({
+  tasksApi: {
+    getTasks: vi.fn().mockResolvedValue([]),
+  },
 }))
 
 vi.mock('@/features/accounts/AccountsPage', () => ({

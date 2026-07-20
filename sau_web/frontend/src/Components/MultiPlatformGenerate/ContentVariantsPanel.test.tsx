@@ -1,14 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ContentVariantsPanel } from './ContentVariantsPanel'
+import { aiApi } from '@/api/ai'
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: replaced legacy `@/api/client` mock
+// with an explicit `@/api/ai` mock. Production ContentVariantsPanel.tsx
+// imports `aiApi.generateVariantsStream` from `@/api/ai` (confirmed by
+// reading the production source). The legacy `api.generateVariantsStream`
+// barrel was never actually invoked.
+vi.mock('@/api/ai', () => ({
+  aiApi: {
     generateVariantsStream: vi.fn(),
   },
 }))
 
-import { api } from '@/api/client'
+
 
 describe('ContentVariantsPanel', () => {
   const mockApply = vi.fn()
@@ -48,7 +54,7 @@ describe('ContentVariantsPanel', () => {
   })
 
   it('calls generateVariantsStream on generate click', () => {
-    const mockGenerate = vi.mocked(api.generateVariantsStream)
+    const mockGenerate = vi.mocked(aiApi.generateVariantsStream)
     mockGenerate.mockImplementation(async () => {})
 
     render(<ContentVariantsPanel onApplyVariant={mockApply} />)
