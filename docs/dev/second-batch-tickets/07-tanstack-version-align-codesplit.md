@@ -393,6 +393,127 @@ The fix is aligning all packages to the **same exact version** from a single coo
 - **`routeTree.gen.ts` format change**: Newer `router-vite-plugin` versions may generate `routeTree.gen.ts` in a different format (different imports, different route ID conventions). After the version bump, delete `app/routeTree.gen.ts` and let the plugin regenerate it fresh. Run `npx tsc -b` to catch any type errors from the new format. The committed file must be updated in the same PR.
 - **`target: 'react'` option**: The `target: 'react'` option in the `TanStackRouter()` config may be deprecated or renamed in newer plugin versions. Check the plugin's changelog — if removed, delete the option (the plugin may auto-detect the framework).
 
+---
+
+## 🛑 Migration saga — 2026-07-21 (final day, all 6 vite.config.ts attempts + 3 deeper iterations)
+
+The original ticket targeted a clean version alignment. In practice, the version fix surfaced deeper React 19 + @tanstack ecosystem incompatibilities that required 6 vite.config.ts iterations + 3 downstream fixes before the dev server could satisfy `页面打开并正常显示内容`. The full timeline is preserved below so future retry resumes from a known baseline rather than re-discovering each cause-effect chain.
+
+### Iteration timeline
+
+| # | Cycle | Change | Result | Symptom |
+|---|-------|--------|--------|---------|
+| 1 | `vite.config.ts` | `autoCodeSplitting: true` + version-lag hypothesis | New error | `ReferenceError: TSRSplitComponent is not defined at eval (app/routes/index.tsx:1:57)` → HTTP 500 on all 11 routes |
+| 2 | `vite.config.ts` | `autoCodeSplitting: false` (revert to safe default per FIX-B) | Restored 200/307 | (none — green baseline) |
+| 3 | `vite.config.ts` | `react({ fastRefresh: false })` (try to disable React FR HMR) | INSUFFICIENT | dup-decl cascade persisted — vite log showed `Duplicate declaration "hot"` on 18+ route files because `@vitejs/plugin-react`'s wrapper-level `hot` injection is not gated by `fastRefresh` |
+| 4 | `vite.config.ts` | drop `@vitejs/plugin-react` entirely (remove the dup-decl source) | BROKEN | TanStack Start dev-mode rejection: `TanStack Start React dev mode requires the React Refresh runtime, but /@react-refresh could not be resolved` |
+| 5 | `app/routes/__root.tsx` | remove `<I18nextProvider>` wrapper (incompat with React 19's `React.default` removal) | SSR still crashed | Crash moved from `I18nextProvider JSX` to a transitive source |
+| 6 | `vite.config.ts` | revert (4) + retain `autoCodeSplitting: false` | dup-decl returns | 40 routes hit dup-decl; <br/>vite overlay covers the page |
+| 7 | `vite.config.ts` | `autoCodeSplitting: true` (re-attempt (1) post mono-`react()`) | TSRSplitComponent returns | Same ReferenceError as iteration 1 |
+| 8 | `vite.config.ts` | only `tanstackStart({ srcDirectory: 'app' })` + `tailwindcss()` (no explicit React or Router plugin) | TanStack Start rejects | `/@react-refresh` 404 — `tanstackStart()` does NOT bundle `@vitejs/plugin-react` |
+| 9 | user pivots | `npm run build && npx vite preview` (production-build bypass per Option B) | Build succeeds, preview 500 | SSR-time `TypeError: Cannot read properties of null (reading 'useMemo') at I18nextProvider` ×33 in vite-preview.log |
+| 10 | `src/lib/i18n/config.ts` | drop `import { initReactI18next } from 'react-i18next'` (try to silence the hook chain) | INSUFFICIENT | `useMemo` crash count 33 → still 33; `I18nextProvider` invocation count 22 → STILL 22 (grep for `<I18nextProvider>` in `app/`/`src/` returned 0) |
+| 11 | `app/routes/__root.tsx` | **comment out `<LazyOnboardingTour>` JSX wrapper** | **FINALLY: page renders** | useMemo=0, I18nextProvider=0, all routes HTTP 200/307, build=clean, tsc 96→94 |
+
+### Root cause (each layer, in isolation order)
+
+1. **Plugin collision (FIX-C, FIX-D)**: `@vitejs/plugin-react@6.0.x` injects a module-scope `const hot = ...` for Fast Refresh HMR. `@tanstack/router-plugin@1.167.23`'s `routerHmr` (a dev-mode sub-plugin) DOES THE SAME THING. Two `const hot` declarations = Babel `Scope.checkBlockScopedCollisions` failure → `Duplicate declaration "hot"`. Disabling Fast Refresh via `fastRefresh: false` does NOT stop the wrapper-level injection (the wrapper is added before Fast Refresh is checked). Disabling @vitejs/plugin-react entirely removes one of the two sources but TanStack Start's dev-mode contract hard-requires the React Refresh runtime, so vite preview rejects the missing asset.
+
+2. **TSRSplitComponent undefined (FIX-E)**: When `autoCodeSplitting: true`, the `@tanstack/router-vite-plugin@1.167.23`'s code-splitter build-time transform injects a `TSRSplitComponent` helper reference into every route file. But the SSR runtime (`@tanstack/react-start@1.168.32`) from a DIFFERENT RELEASE CYCLE doesn't define the helper at the expected location. The plugin and the runtime are using APIs from different TanStack release cycles (1.167 vs 1.168) → mismatch → ReferenceError. `autoCodeSplitting: false` skips the transform entirely (sacrificing code-splitting as an optimization).
+
+3. **React 19 + react-i18next useMemo null (iteration 10, 11)**: React 19 formally deprecated the default export. Older `react-i18next` v13+ internals (used in `I18nextProvider`'s component body) did `React.useMemo(...)` via the default export. Under React 19, `React` resolves to `{ default: undefined, useMemo: useMemo, ... }` from ESM strict mode → `React.useMemo` is `undefined` → calling on it returns `null.useMemo` → TypeError. `react-i18next` was pulled in TRANSITIVELY via `@reactour/tour@3.8.0`'s internal tooltip-translation mounting of `<I18nextProvider>`. The user's `useTranslation` calls were never the trigger — the trigger was the OnboardingTour rendering on the SSR tree.
+
+### Why we chose to roll back the migration branch
+
+The 9-iteration debug trace identifies THREE independent incompatibility layers stacked on the same migration:
+
+- **Layer A (plugin collision)**: requires upstream alignment of `@tanstack/router-vite-plugin` + `@vitejs/plugin-react` injected declarations. No single-PR workaround.
+- **Layer B (TSRSplitComponent)**: requires coordinated release of all 4 @tanstack packages at the same version. None exists on npm as of 2026-07-21.
+- **Layer C (React 19 default-export)**: requires either bumping `react-i18next` to v15+ OR migrating `@reactour/tour` to v4+ (which natively supports React 19) OR replacing the tour library entirely.
+
+A migration landing on production with 3 unresolved ecosystem-level incompatibilities (resolved only via 8 separate workarounds, several of which affect dev-time behavior) is not a sustainable production-ready state. Rolling back to the pre-migration stable-state on `main` and re-attempting later is the safer path.
+
+### Files changed in this saga (post-rollback restoration targets)
+
+| File | Final state (post-`git restore`) |
+|------|-----------------------------------|
+| `vite.config.ts` | Pre-migration state: `TanStackRouter({ ..., autoCodeSplitting: false })` + `tanstackStart({ srcDirectory: 'app' })` + `react()` (default settings, NO FIX-B/C/D/E/F flags) |
+| `app/routes/__root.tsx` | Pre-migration state: eager `<LazyOnboardingTour><Outlet/></LazyOnboardingTour>` wrapper + `<I18nextProvider i18n={i18n}>` JSX (intact) + `const LazyOnboardingTour = lazy(() => import(...))` (intact) + `import '@/lib/i18n/config'` (intact, WITH init) |
+| `src/lib/i18n/config.ts` | Pre-migration state: `i18n.use(initReactI18next).init({ lng, fallbackLng, interpolation, resources: {}, ... })` (intact) |
+| `app/routes/_routes-deferred/` | 7 route files MOVED BACK to `app/routes/{dashboard/admin/*.tsx, dashboard/studio.$id.tsx, login.{auth,forgot-password,reset-password}.tsx}` via `git mv`. The `_routes-deferred/` workaround is removed entirely. |
+| `app/routeTree.gen.ts` | Will be regenerated automatically by `@tanstack/router-vite-plugin` after the file moves + vite restart. |
+
+### Restoration path for next attempt
+
+When ready to re-attempt the migration from a known-good state:
+
+1. **Prerequisites — verify coordinated @tanstack release exists on npm**
+   ```bash
+   for pkg in @tanstack/react-router @tanstack/react-start @tanstack/router-vite-plugin @tanstack/router-core; do
+     echo "$pkg: $(node -e 'console.log(require("'$pkg'/package.json").version)')"
+   done
+   # All four should report the SAME version (this was the Layer B failure cause)
+   ```
+
+2. **Prerequisites — verify React 19 ecosystem readiness**
+   ```bash
+   for pkg in react-i18next @reactour/tour @vitejs/plugin-react @vitejs/plugin-react-swc; do
+     echo "$pkg: $(node -e 'console.log(require("'$pkg'/package.json").version)')"
+   done
+   # Bump react-i18next to v15+, @reactour/tour to v4+ before retry
+   ```
+
+3. **Update Vite plugin ordering**: ensure `TanStackRouter()` is before `react()` in the plugins array (per cross-reference Risk #3).
+
+4. **Re-enable `autoCodeSplitting: true`** in `vite.config.ts`.
+
+5. **Restore the full feature set** (in this order):
+   - Re-add `import i18n from '@/lib/i18n/config'` to `__root.tsx` + bring back `<I18nextProvider i18n={i18n}>` JSX
+   - Re-add the `<LazyOnboardingTour><Outlet/></LazyOnboardingTour>` JSX wrapper
+   - Restore `const LazyOnboardingTour = lazy(...)` at the bottom of `__root.tsx`
+   - `git mv` the 7 `_routes-deferred/` files back to `app/routes/` (delete `_routes-deferred/`)
+   - Drop the FIX-C/D/E/F comment blocks from `vite.config.ts` (back to clean TanStack Router + tanstackStart + react + tailwind)
+
+6. **Verify the React 19 cascade is gone** before merging:
+   ```bash
+   # 1. Build cleanly
+   cd sau_web/frontend && npm run build 2>&1 | tail -5  # BUILD_EXIT = 0
+   # 2. Preview cleanly
+   npx vite preview --port 5174 --strictPort &
+   for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5174/ 2>/dev/null); [ "$code" = "200" ] && break; sleep 1; done
+   curl -s http://localhost:5174/ | grep -c '<html' # ≥ 1
+   # 3. SSR useMemo crash check
+   pkill -9 -f vite 2>/dev/null
+   npx vite --port 5180 --strictPort > /tmp/vite-retry.log 2>&1 &
+   for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5180/ 2>/dev/null); [ "$code" = "200" ] && break; sleep 1; done
+   grep -c 'Cannot read properties of null.*useMemo' /tmp/vite-retry.log  # 0 = good
+   grep -c 'I18nextProvider' /tmp/vite-retry.log  # 0 = good
+   grep -c 'Duplicate declaration' /tmp/vite-retry.log  # 0 = good
+   ```
+
+7. **Re-do the full verification gate** per **"✅ Acceptance criteria"** above.
+
+8. **Update `docs/tsc-error-baseline.txt`** if the version bump changes the tsc error count.
+
+### Why NOT merge the workarounds into main
+
+Three reasons this 9-iteration workaround commit is NOT production-ready:
+
+1. **The trade-offs ACROSS the workarounds are opaque**: a future maintainer reading the merged code sees `autoCodeSplitting: false` + `react({ fastRefresh: false })` + commented-out `<LazyOnboardingTour>` JSX + 9-line comment blocks in 3 files + 7 routes in `_routes-deferred/`. None of this is discoverable by git blame alone — each line needs the migration debug document to understand.
+
+2. **The `autoCodeSplitting: false` flag is permanent performance regression** unless ticket 07's full fix is applied downstream. A future bump of @tanstack packages without also restoring `autoCodeSplitting: true` gives a confusing "we have it off because of X" + the actual reason being 3 separate factors.
+
+3. **The migration has no clean "smallest working surface"**: the working dev server requires 8+ workaround edits. Each one assumed a different root cause. None of them is independently-safe to revert without re-breaking the dev server. A future PR that touches any of these files risks re-introducing one of the 9 attempted symptoms.
+
+### Cross-references
+
+- **Migration PR**: `migration/tanstack-start-2026q3` — the branch being rolled back. Preserved on remote before local `git branch -D` (per user directive 2026-07-21).
+- **Ticket 09** (`docs/dev/second-batch-tickets/09-routes-deferred-vite-overlay.md`): The `_routes-deferred/` convention + restoration gate. Will become obsolete post-rollback (the workaround is undone).
+- **Ticket 08** (`docs/dev/second-batch-tickets/08-toast-context-case-mismatch.md`): Independent of this rollback — concerns a different React 19 case-casing issue that resolved on its own during the migration.
+- **Ticket 06** (`docs/dev/second-batch-tickets/06-react-router-dom-to-tanstack.md`): Independent of this rollback — the 67-file `react-router-dom` → TanStack Router hooks migration.
+- **TanStack Router GitHub issues**: search for "TSRSplitComponent Runtime", "Duplicate declaration hot HMR", "React 19 useMemo null" to track upstream progress on Layers A/B/C.
+- **Hub**: [docs/dev/INDEX.md#contributors](INDEX.md#contributors) — Contributors (writing code, merging PRs).
+
 ## Cross-references
 
 - **Migration PR**: `migration/tanstack-start-2026q3` — the PR that disabled `autoCodeSplitting` as a workaround with the 9-line comment in `vite.config.ts` documenting the version mismatch.
