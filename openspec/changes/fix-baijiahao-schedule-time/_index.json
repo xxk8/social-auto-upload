@@ -1,0 +1,25 @@
+{
+  "name": "fix-baijiahao-schedule-time",
+  "created": "2026-07-02T00:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Fix the random-hour selection bug in BaiJiaHaoVideo.set_schedule_time (uploader/baijiahao_uploader/main.py). The hour VALUE (e.g. 14 for 2pm) was used as an INDEX into the platform's hour dropdown, picking a random available hour instead of the requested one. Originally annotated as FIXME(known-bug) in the parent change `cli-uploader-architecture-consistency` per its design.md D4; this change is the explicit follow-up ticket D4 promised.",
+    "tasks": {
+      "total": 6,
+      "completed": 0
+    },
+    "design": "design.md"
+  },
+  "layers": [
+    "uploader"
+  ],
+  "platforms": [
+    "baijiahao"
+  ],
+  "parentChange": "cli-uploader-architecture-consistency",
+  "parentTaskReference": "Task 4.4 (add FIXME annotation — to be removed by this change once implemented)",
+  "applyReady": false,
+  "specs": [
+    "specs/baijiahao-schedule-time/spec.md"
+  ]
+}

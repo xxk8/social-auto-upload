@@ -19,6 +19,12 @@ When the request body contains a non-empty `messages` array, the handler SHALL f
 - **THEN** the `messages` array takes precedence
 - **AND** the legacy single-turn assembly code is NOT executed
 
+#### Scenario: JSON mode hint in messages
+
+- **WHEN** the request body contains `messages` AND `json_mode: true`
+- **THEN** the handler SHALL append `response_format: { type: "json_object" }` to the OpenRouter request payload
+- **AND** the rest of the streaming logic remains unchanged
+
 ### Requirement: Single-turn fallback preserved
 
 When the request body does NOT contain a `messages` array (or contains an empty one), the handler SHALL run the existing single-turn path unchanged.

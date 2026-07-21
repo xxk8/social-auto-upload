@@ -2,7 +2,7 @@ schema: spec-driven
 
 context: |
   Tech stack:
-    - Backend: Python 3.10+, Flask, SQLite
+    - Backend: Python 3.10+, Flask, SQLite (dev) + PostgreSQL 19 (production target per openspec/changes/migrate-sqlite-to-postgresql-19)
     - CLI: Python, argparse, asyncio (sau_cli.py)
     - Frontend: React 18, TypeScript, Vite, Ant Design 5, Zustand, TanStack Query
     - Structure: sau_cli.py + uploader/ (Python CLI), web_runner.py (Flask), sau_web/frontend/ (React)
@@ -49,10 +49,17 @@ rules:
     - Must include frontend impact section even if "no frontend changes"
     - 提案须同时指出 CLI/API/Frontend 三层的影响
   design:
-    - Backend changes go in web_runner.py; do not duplicate CLI logic in Flask
+    - Backend changes go in web_runner/* (package: __init__.py + routes/ + utils/ + db.py); PR1 of openspec/migrate-sqlite-to-postgresql-19 deleted the legacy web_runner.py / web_runner_legacy.py / routes/ai.py entry points
+    - Use create_app() factory pattern (defined in web_runner/__init__.py); do not rely on a module-level `web_runner.app` instance
     - Frontend API calls go in src/api/client.ts; pages under src/Pages/
     - State management with Zustand stores in src/stores/
     - Data fetching with TanStack Query hooks in src/hooks/
+    - 'Frontend component cva() variants MUST remain module-local to preserve Vite Fast Refresh; canonical examples: `src/Components/ui/badge.tsx`, `button.tsx`, `alert.tsx`, `sheet.tsx`'
+    - 'Type-side escape hatch for callers of the cva-bound component: `ComponentProps<typeof X>["variant"]` (use `NonNullable<>` to strip the trailing `| undefined` that `VariantProps<T>` adds)'
+    - 'Frontend `tsconfig.app.json` runs in `verbatimModuleSyntax: true` paired with `erasableSyntaxOnly: true`'
+    - 'Resolving non-erasable type/import errors in tests goes through the 4-rung fallback (import type → mixed type+value → split imports → inline `Parameters<...>`); do NOT bypass by splitting off a `tsconfig.test.json`'
+    - 'Frontend ESLint baseline lives at `sau_web/frontend/scripts/.lint-baseline-after-render-harness.json`; PRs must keep the listed `file × rule` pairs stable. NEW `file × rule` pairs in a PR = regression, fail CI'
+    # (OPT-follow-up-3-sweep-2 allowlist removed — all 12 `only-export-components` entries cleared by the same `*.tsx → *.tsx + *.helpers.ts` sibling-split template used for `render-harness.tsx`. Headline: `react-refresh/only-export-components × 12 → 0`. Authoritative current state lives in DESIGN.md `Known open lint baseline`.)
   tasks:
     - Each task must be scoped to one layer (CLI / Web API / Frontend) or clearly state if cross-layer
     - Prefer small focused tasks over large multi-file tasks

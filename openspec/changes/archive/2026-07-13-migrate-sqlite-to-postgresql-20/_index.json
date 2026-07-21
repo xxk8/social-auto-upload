@@ -1,0 +1,7 @@
+{
+  "id": 20,
+  "title": "Migrate SQLite to PostgreSQL",
+  "specs": [
+    "specs/migrate-sqlite-to-postgresql-20/spec.md"
+  ]
+}

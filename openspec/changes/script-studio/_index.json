@@ -1,0 +1,14 @@
+{
+  "id": "script-studio",
+  "title": "Script Studio (AI Script Follow-up)",
+  "status": "proposed",
+  "created": "2026-07-06",
+  "proposal": "proposal.md",
+  "design": "design.md",
+  "tasks": "tasks.md",
+  "specs": [
+    "specs/script-engine/spec.md",
+    "specs/script-viewer/spec.md",
+    "specs/storyboard-export/spec.md"
+  ]
+}

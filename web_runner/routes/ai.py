@@ -1,21 +1,390 @@
-"""AI content generation routes."""
+"""AI content generation routes (PR2: dialect-aware Database)."""
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import queue as _queue
 import threading
-from typing import Generator
+import time
+from collections import deque
+from collections.abc import Generator
 
-from flask import Blueprint, Response, jsonify, request
+import psycopg.errors
+
 import requests as http_requests
+from flask import Blueprint, Response, jsonify, request
 
-from web_runner.db import DB_PATH, db_lock, get_connection
+# NOTE: `web_runner.utils.log` is a function-like helper `def log(msg)` —
+# it does NOT expose `.warning()` etc. To emit a real python-logging
+# WARNING-level message we instead import the logger object that
+# `web_runner.utils` itself uses via `_task_logger`. Alias as `logger`
+# so call sites read `logger.warning(...)`. The legacy `log(msg)`
+# function (used elsewhere in ai.py for INFO-level DB-backed logging)
+# is unaffected.
+from utils.log import logger  # noqa: E402  (after stdlib + 3rd-party imports)
+from web_runner.db import get_database
 from web_runner.utils import log
 
 bp = Blueprint("ai", __name__)
 
 OPENROUTE_BASE_URL = "https://openrouter.ai/api/v1"
+
+# ── Vision-model detection (image-input support) ────────────────────
+# OpenRouter returns a cryptic "Cannot read 'image.png' (this model
+# does not support image input)" when an image is sent to a text-only
+# model. We proactively detect vision capability from the live model
+# list so we can (a) short-circuit with a clear, actionable error and
+# (b) translate the raw OpenRouter error if it still slips through.
+#
+# The cache is populated lazily and refreshed on a TTL. Until it has
+# been populated at least once we treat capability as UNKNOWN (None)
+# so we never false-block a genuinely vision-capable model when the
+# network to OpenRouter's /models endpoint is unavailable.
+_VISION_MODEL_CACHE: dict = {"ids": set(), "ts": 0.0, "ttl": 3600.0}
+
+
+def _refresh_vision_model_ids() -> set:
+    now = time.time()
+    if _VISION_MODEL_CACHE["ids"] and (now - _VISION_MODEL_CACHE["ts"]) < _VISION_MODEL_CACHE["ttl"]:
+        return _VISION_MODEL_CACHE["ids"]
+    try:
+        resp = http_requests.get(
+            f"{OPENROUTE_BASE_URL}/models",
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            ids: set[str] = set()
+            for m in resp.json().get("data", []):
+                mods = m.get("architecture", {}).get("input_modalities", [])
+                if "image" in mods:
+                    ids.add(m["id"])
+            if ids:
+                _VISION_MODEL_CACHE["ids"] = ids
+                _VISION_MODEL_CACHE["ts"] = now
+                return ids
+    except (http_requests.RequestException, OSError, TimeoutError, ValueError, KeyError):
+        pass
+    # Keep the last-known set (possibly empty) so a transient /models
+    # failure doesn't flip a confident "no" into a false negative.
+    return _VISION_MODEL_CACHE["ids"]
+
+
+def _model_supports_images(model_id: str) -> bool | None:
+    """True if vision-capable, False if text-only, None if unknown."""
+    ids = _VISION_MODEL_CACHE["ids"]
+    if not ids:
+        return None  # never fetched → unknown, don't block
+    return model_id in ids
+
+
+def _messages_contain_images(messages: list) -> bool:
+    for m in messages or []:
+        content = m.get("content") if isinstance(m, dict) else None
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return True
+        elif isinstance(content, str) and "image_url" in content:
+            return True
+    return False
+
+
+def _translate_openrouter_error(msg: str) -> str:
+    """Turn OpenRouter's cryptic vision error into a clear, actionable one."""
+    low = (msg or "").lower()
+    if "does not support image input" in low or ("cannot read" in low and "image" in low):
+        return (
+            "当前模型不支持图片/视觉输入。请换用一个带「图片」(Vision) 标签的模型，"
+            "或在发送前移除图片附件后再试。"
+        )
+    return msg
+
+
+def _web_search(query: str, max_results: int = 5) -> list[dict]:
+    """Search the web using DuckDuckGo. Returns list of {title, snippet, url}."""
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+            return [
+                {"title": r.get("title", ""), "snippet": r.get("body", ""), "url": r.get("href", "")}
+                for r in results
+            ]
+    except Exception as e:
+        log.warning(f"[ai] Web search failed: {e}")
+        return []
+
+
+# ── Image search helpers (openspec ai-sidebar-material-search §1) ───
+# Two-source aggregator: Pexels (api_key 200/h) + Pixabay (api_key 5000/h)
+# free tier. Both sources are paid API-only; neither key set → 503, never
+# silently fall back to DuckDuckGo (text-quality too low for publishing
+# imagery). Pure-function normalizers below + ThreadPoolExecutor
+# concurrent caller + per-user sliding-window rate limit + binary proxy
+# with SSRF gates via inbox._is_public_url + inbox._resolve_is_public.
+def _has_image_source() -> bool:
+    """True iff at least one image-source API key is configured.
+
+    Treated as build-time / .env-controlled (operator config), not
+    user-managed like AI_MODELS. See docs/ai-material-search.md for
+    how to obtain PEXELS_API_KEY / PIXABAY_API_KEY.
+    """
+    return bool(os.environ.get("PEXELS_API_KEY", "").strip()) or bool(
+        os.environ.get("PIXABAY_API_KEY", "").strip()
+    )
+
+
+def _search_pexels(query: str, count: int, orientation: str | None = None) -> list[dict]:
+    """Raw Pexels photo search. Returns the upstream `photos` list (or []).
+
+    Silent-failure-by-design: 401 / 429 / 5xx / timeout / JSONDecodeError
+    all collapse to `[]` so the merge layer can still surface Pixabay
+    results. Rationale: aggregator should not cascade one source's
+    transient failure onto the other.
+
+    The `orientation` arg is forwarded as a query param so callers
+    that need 9:16 portrait / 16:9 landscape can hint Pexels — by
+    default Pexels returns a mixed set dominated by 1:1 / 4:3 hits
+    which downstream `<Image style="objectFit: cover">` crops
+    against the user's intent. Valid values per Pexels API:
+    `"portrait"` / `"landscape"` / `"square"`. None = no hint, mixed.
+    Studio phase-2 wires `orientation="portrait"` for scene
+    backgrounds; the recommendation grid in `_search_images` keeps
+    the legacy mixed-orientation contract.
+    """
+    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        return []
+    params: dict = {"query": query, "per_page": max(1, count), "page": 1}
+    if orientation:
+        params["orientation"] = orientation
+    try:
+        resp = http_requests.get(
+            "https://api.pexels.com/v1/search",
+            headers={"Authorization": api_key},
+            params=params,
+            timeout=(5, 8),
+        )
+    except (http_requests.RequestException, OSError, TimeoutError) as e:
+        logger.warning(f"[ai] Pexels connect failed: {type(e).__name__}: {e}")
+        return []
+    if resp.status_code != 200:
+        logger.warning(f"[ai] Pexels search returned {resp.status_code} for query={query!r}")
+        return []
+    try:
+        return resp.json().get("photos") or []
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"[ai] Pexels search JSON decode failed: {type(e).__name__}: {e}")
+        return []
+
+
+def _search_pixabay(query: str, count: int) -> list[dict]:
+    """Raw Pixabay hit search. Returns the upstream `hits` list (or [])."""
+    api_key = os.environ.get("PIXABAY_API_KEY", "").strip()
+    if not api_key:
+        return []
+    try:
+        resp = http_requests.get(
+            "https://pixabay.com/api/",
+            params={
+                "key": api_key,
+                "q": query,
+                "per_page": max(3, count),
+                "page": 1,
+                "image_type": "photo",
+            },
+            timeout=(5, 8),
+        )
+    except (http_requests.RequestException, OSError, TimeoutError) as e:
+        logger.warning(f"[ai] Pixabay connect failed: {type(e).__name__}: {e}")
+        return []
+    if resp.status_code != 200:
+        logger.warning(f"[ai] Pixabay search returned {resp.status_code} for query={query!r}")
+        return []
+    try:
+        return resp.json().get("hits") or []
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"[ai] Pixabay search JSON decode failed: {type(e).__name__}: {e}")
+        return []
+
+
+def _normalize_pexels_photo(p: dict) -> dict:
+    """Pexels raw photo → uniform `NormalizedImage` schema (pure function).
+
+    `thumb` / `preview` / `full` map onto a 3-tier size contract so the
+    frontend can pick per surface. `id` is stringified as
+    `f"pexels:{photo_id}"` so the merge layer can dedupe against
+    `f"pixabay:{hit_id}"` without collisions.
+    """
+    src = p.get("src") or {}
+    photographer = p.get("photographer") or ""
+    photo_id = p.get("id")
+    str_id = f"pexels:{photo_id}" if photo_id is not None else ""
+    return {
+        "id": str_id,
+        "source": "pexels",
+        "thumb": src.get("medium") or src.get("small") or src.get("tiny") or "",
+        "preview": src.get("large2x") or src.get("large") or src.get("original") or "",
+        "full": src.get("original") or "",
+        "photographer": photographer,
+        "photographerUrl": p.get("photographer_url"),
+        "pageUrl": p.get("url") or "",
+        "alt": p.get("alt") or "",
+    }
+
+
+def _normalize_pixabay_hit(h: dict) -> dict:
+    """Pixabay raw hit → uniform `NormalizedImage` schema (pure function).
+
+    Pixabay's `fullHDURL` is only set on hits that actually upload a UHD
+    version (subset of `largeImageURL`); fall back progressively so a
+    missing field doesn't strand `full === ""`.
+    """
+    user = h.get("user") or ""
+    user_id = h.get("user_id", "")
+    hit_id = h.get("id")
+    str_id = f"pixabay:{hit_id}" if hit_id is not None else ""
+    photographer_url = (
+        f"https://pixabay.com/users/{user}-{user_id}/" if user and user_id is not None else None
+    )
+    return {
+        "id": str_id,
+        "source": "pixabay",
+        "thumb": h.get("webformatURL") or h.get("previewURL") or "",
+        "preview": h.get("largeImageURL") or h.get("webformatURL") or "",
+        "full": h.get("fullHDURL") or h.get("largeImageURL") or h.get("webformatURL") or "",
+        "photographer": user,
+        "photographerUrl": photographer_url,
+        "pageUrl": h.get("pageURL") or "",
+        "alt": h.get("tags") or "",
+    }
+
+
+def _merge_image_results(
+    pexels_raw_list: list[dict],
+    pixabay_raw_list: list[dict],
+    count: int,
+) -> list[dict]:
+    """Two raw-source lists → normalized + dedupe + cap-to-count.
+
+    Dedup key is `f"{source}:{upstream_id}"`. Cross-source collisions
+    don't occur naturally (different CDNs) but the prefix prevents an
+    accidental upstream-int collision (e.g. if both APIs ever share
+    pool IDs after a future refactor).
+
+    Iteration order: pexels first then pixabay, so the user's most-
+    likely-source (Pexels for stock) leads the visible grid.
+    Caps early at `count` to avoid allocating past-the-end Tailwind cards.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for raw in pexels_raw_list or []:
+        try:
+            norm = _normalize_pexels_photo(raw)
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if not norm["id"] or norm["id"] in seen:
+            continue
+        seen.add(norm["id"])
+        out.append(norm)
+        if len(out) >= count:
+            return out
+    for raw in pixabay_raw_list or []:
+        try:
+            norm = _normalize_pixabay_hit(raw)
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if not norm["id"] or norm["id"] in seen:
+            continue
+        seen.add(norm["id"])
+        out.append(norm)
+        if len(out) >= count:
+            return out
+    return out
+
+
+def _search_images(query: str, count: int = 9) -> tuple[list[dict], dict]:
+    """Concurrent two-source aggregator → (merged_results, debug).
+
+    Both calls run on a `max_workers=2` ThreadPoolExecutor with an 8s
+    per-source timeout. Either source's exception is logged + added
+    to `debug.errors` but does NOT raise to the caller — the merge
+    silently degrades. Returns empty when both fail. UI-side debug
+    keys are surfaced in the response so the user can read "pexels:
+    ConnectionError · pixabay: TimeoutError" without grep-shipping logs.
+    """
+    debug: dict = {"pexels_count": 0, "pixabay_count": 0, "merged_count": 0, "errors": []}
+    pexels_raw: list[dict] = []
+    pixabay_raw: list[dict] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        f_pex = ex.submit(_search_pexels, query, count)
+        f_pix = ex.submit(_search_pixabay, query, count)
+        try:
+            pexels_raw = f_pex.result(timeout=8) or []
+            debug["pexels_count"] = len(pexels_raw)
+        except concurrent.futures.TimeoutError:
+            debug["errors"].append("pexels: TimeoutError")
+            logger.warning("[ai] Pexels search timed out after 8s")
+        except Exception as e:  # noqa: BLE001 — bounded by ThreadPoolExecutor's wall-clock budget
+            debug["errors"].append(f"pexels: {type(e).__name__}")
+            logger.warning(f"[ai] Pexels search raised: {type(e).__name__}: {e}")
+        try:
+            pixabay_raw = f_pix.result(timeout=8) or []
+            debug["pixabay_count"] = len(pixabay_raw)
+        except concurrent.futures.TimeoutError:
+            debug["errors"].append("pixabay: TimeoutError")
+            logger.warning("[ai] Pixabay search timed out after 8s")
+        except Exception as e:  # noqa: BLE001
+            debug["errors"].append(f"pixabay: {type(e).__name__}")
+            logger.warning(f"[ai] Pixabay search raised: {type(e).__name__}: {e}")
+    merged = _merge_image_results(pexels_raw, pixabay_raw, count)
+    debug["merged_count"] = len(merged)
+    return merged, debug
+
+
+# ── Soft per-user rate limit (openspec §1.7) ─────────────────────────
+# Sliding window per uid. Auth-disabled `authenticate_sse_request`
+# returns 0 so all auth-disabled calls cluster in bucket 0 (mirrors
+# inbox `_inbox_sem`'s monotonic shape). Uses `time.monotonic()`
+# (NOT `time.time()`) so NTP clock jumps don't accidentally
+# invalidate in-window entries. Plain `dict` + `setdefault` keeps
+# the bucket creation explicit — a `defaultdict` would silently
+# materialize buckets from `__contains__` lookups in tests,
+# defeating the per-test cleanup pattern.
+_IMAGE_CALL_LOG: dict[int, deque] = {}
+_IMAGE_RATE_WINDOW_SEC = 60
+_IMAGE_RATE_MAX_CALLS = 30
+
+
+def _check_image_rate_limit(uid: int) -> bool:
+    """Sliding-window image-search limiter.
+
+    Returns True and appends `now` to the bucket if the caller is under
+    the cap; False (no append) if at/over cap. Trims entries that
+    slid out of the 60s window before counting so the boundary is
+    continuous rather than fixed-clock-aligned (avoids burst-at-:00
+    reset thrash).
+    """
+    now = time.monotonic()
+    bucket = _IMAGE_CALL_LOG.setdefault(uid, deque(maxlen=64))
+    while bucket and (now - bucket[0]) > _IMAGE_RATE_WINDOW_SEC:
+        bucket.popleft()
+    if len(bucket) >= _IMAGE_RATE_MAX_CALLS:
+        return False
+    bucket.append(now)
+    return True
+
+
+# ── Image binary fetch proxy cap (openspec §1.10) ────────────────────
+# Front-end CORS-unsafe to fetch Pexels/Pixabay CDNs directly + convert
+# to File (Pixabay sometimes ratelimits origins; mixed-content warnings
+# if dev HTTPS over localhost). Backend proxies by streaming bytes
+# with a 10MB cap; the SSRF gates + iterator live inline in the
+# /api/ai/images/fetch route below.
+_IMAGE_FETCH_MAX_BYTES = 10 * 1024 * 1024  # 10 MB — adequate for 图文 mode (<=9 × 1 MB)
+
 
 _ai_request_queue: _queue.Queue = _queue.Queue()
 _ai_request_semaphore = threading.Semaphore(2)
@@ -29,7 +398,7 @@ MAX_MESSAGES_PER_REQUEST = 30
 AI_MODELS = {
     "google/gemma-4-26b-a4b-it:free": "Gemma 4 26B",
     "deepseek/deepseek-chat-v3-0324:free": "DeepSeek V3",
-    "qwen/qwen3-235b-a22b:free": "Qwen3 235B",
+    "qwen/qwen3-235b-a22b-it:free": "Qwen3 235B",
 }
 
 DEFAULT_SYSTEM_PROMPT = """你是一个专业的社交媒体内容创作者。请根据用户的要求生成高质量的社交媒体内容。
@@ -43,16 +412,140 @@ PLATFORM_PROMPTS = {
     "douyin": "你是抖音内容创作专家。生成适合短视频平台的吸引人文案，要简洁有力，有hook。",
     "xiaohongshu": "你是小红书内容创作专家。生成种草风格的笔记内容，要有真实感和分享感。",
     "kuaishou": "你是快手内容创作专家。生成接地气、有温度的内容。",
-    "bilibili": "你是B站内容创作专家。生成适合年轻用户群体的创意内容。",
+    "bilibili": "你是B站内容创建专家。生成适合年轻用户群体的创意内容。",
 }
+
+SUPPORTED_PLATFORMS = {"douyin", "xiaohongshu", "kuaishou", "bilibili", "tencent", "tiktok", "baijiahao"}
+
+PLATFORM_VARIANT_LABELS: dict[str, str] = {
+    "douyin": "抖音",
+    "kuaishou": "快手",
+    "xiaohongshu": "小红书",
+    "bilibili": "Bilibili",
+    "tencent": "视频号",
+    "tiktok": "TikTok",
+    "baijiahao": "百家号",
+}
+
+PLATFORM_STYLE_PROMPTS: dict[str, str] = {
+    "douyin": (
+        "你是抖音内容创作专家。抖音的核心特征：\n"
+        "- 前3秒必须有强hook，抓住用户注意力\n"
+        "- 标题简短有力，10-15字为佳，可用悬念/数字/反转\n"
+        "- 描述口语化，引导互动（'你觉得呢？''双击点赞'）\n"
+        "- 标签用短关键词，如 #教程 #干货 #生活小技巧\n"
+        "- 整体风格：快节奏、有冲击力、接地气"
+    ),
+    "xiaohongshu": (
+        "你是小红书内容创作专家。小红书的核心特征：\n"
+        "- 标题要有emoji开头，用'！''？'增强表达感\n"
+        "- 种草风格，真实分享感，像朋友推荐\n"
+        "- 描述分段，用emoji作为段落标记\n"
+        "- 标签用#号标签，带emoji更佳，如 #好物推荐 #必买清单\n"
+        "- 整体风格：精致、有生活感、女性友好"
+    ),
+    "kuaishou": (
+        "你是快手内容创作专家。快手的核心特征：\n"
+        "- 标题接地气，用家人们/老铁们等亲切称呼\n"
+        "- 内容真实不做作，强调'真实记录'\n"
+        "- 描述朴实真诚，少用花哨修辞\n"
+        "- 标签偏生活化，如 #日常生活 #真实记录\n"
+        "- 整体风格：真实、有温度、老铁文化"
+    ),
+    "bilibili": (
+        "你是B站内容创作专家。B站的核心特征：\n"
+        "- 标题可以稍微标题党，用【】包裹关键词\n"
+        "- 了解弹幕文化，内容要有梗、有趣\n"
+        "- 描述详细，可以加时间戳章节\n"
+        "- 标签偏二次元/科技/学习，如 #知识分享 #硬核科普\n"
+        "- 整体风格：年轻化、有深度、玩梗"
+    ),
+    "tencent": (
+        "你是微信视频号内容创作专家。视频号的核心特征：\n"
+        "- 标题中规中矩，适合微信生态传播\n"
+        "- 内容偏正能量、知识分享、生活技巧\n"
+        "- 描述简洁明了，引导转发朋友圈\n"
+        "- 标签用通用关键词\n"
+        "- 整体风格：稳重、正能量、适合社交传播"
+    ),
+    "tiktok": (
+        "你是TikTok内容创作专家。TikTok的核心特征：\n"
+        "- 标题用英文，简洁有冲击力\n"
+        "- 前3秒hook至关重要\n"
+        "- 描述简短，用英文hashtag\n"
+        "- 标签用英文热门标签，如 #fyp #viral #tutorial\n"
+        "- 整体风格：国际化、快节奏、娱乐性强"
+    ),
+    "baijiahao": (
+        "你是百家号内容创作专家。百家号的核心特征：\n"
+        "- 标题SEO友好，包含关键词，15-25字\n"
+        "- 内容偏资讯/知识/深度分析\n"
+        "- 描述正式，信息量大\n"
+        "- 标签用行业关键词\n"
+        "- 整体风格：专业、权威、信息密度高"
+    ),
+}
+
+MULTI_PLATFORM_JSON_INSTRUCTION = (
+    "\n\n请根据以上平台特征，为用户提供的主题生成内容。\n"
+    "你必须严格返回一个JSON对象，格式如下：\n"
+    '{"title": "生成的标题", "description": "生成的描述/正文", "tags": ["标签1", "标签2", "标签3"]}\n'
+    "不要返回任何其他文字，只返回JSON对象。tags数组至少3个标签，最多10个。"
+)
+
+STYLE_VARIANTS: dict[str, str] = {
+    "attention": (
+        "你是内容创作专家，擅长写吸引力强的文案。你的风格特征：\n"
+        "- 标题简短有力，10-15字，善用悬念、数字、反转\n"
+        "- 前3秒必须有强hook，抓住用户注意力\n"
+        "- 描述口语化，引导互动（'你觉得呢？''双击点赞'）\n"
+        "- 标签用短关键词，如 #教程 #干货 #生活小技巧\n"
+        "- 整体风格：快节奏、有冲击力、接地气"
+    ),
+    "professional": (
+        "你是内容创作专家，擅长写专业权威的文案。你的风格特征：\n"
+        "- 标题信息密度高，包含核心关键词，15-25字\n"
+        "- 内容结构清晰，有条理，逻辑性强\n"
+        "- 描述详细，提供有价值的信息和见解\n"
+        "- 标签用行业关键词和专业术语\n"
+        "- 整体风格：专业、权威、值得信赖"
+    ),
+    "friendly": (
+        "你是内容创作专家，擅长写亲切自然的文案。你的风格特征：\n"
+        "- 标题像朋友聊天一样自然，用'分享''推荐'等词\n"
+        "- 内容真实不做作，有真实感和分享感\n"
+        "- 描述分段，用emoji作为段落标记，增强表达感\n"
+        "- 标签用生活化、有温度的关键词\n"
+        "- 整体风格：亲切、自然、有温度、像朋友推荐"
+    ),
+    "creative": (
+        "你是内容创作专家，擅长写创意有趣的文案。你的风格特征：\n"
+        "- 标题可以稍微标题党，用【】包裹关键词或用有趣表达\n"
+        "- 内容有梗、有趣、出人意料，能引发共鸣\n"
+        "- 描述有创意，善用比喻、拟人等修辞手法\n"
+        "- 标签用有趣、有网感的关键词\n"
+        "- 整体风格：年轻化、有创意、有趣味、有记忆点"
+    ),
+}
+
+STYLE_VARIANT_LABELS: dict[str, str] = {
+    "attention": "吸引力型",
+    "professional": "专业型",
+    "friendly": "亲切型",
+    "creative": "创意型",
+}
+
+VARIANT_JSON_INSTRUCTION = (
+    "\n\n请根据以上写作风格，为用户提供的主题生成内容。\n"
+    "你必须严格返回一个JSON对象，格式如下：\n"
+    '{"title": "生成的标题", "description": "生成的描述/正文", "tags": ["标签1", "标签2", "标签3"]}\n'
+    "不要返回任何其他文字，只返回JSON对象。tags数组至少3个标签，最多10个。"
+)
 
 
 def _get_all_keys_cached() -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
-            rows = conn.execute("SELECT * FROM ai_api_keys ORDER BY id ASC").fetchall()
-            return [dict(r) for r in rows]
+    db = get_database()
+    return db.fetch_all("SELECT * FROM ai_api_keys ORDER BY id ASC")
 
 
 def _get_next_key() -> str:
@@ -68,10 +561,8 @@ def _get_next_key() -> str:
 def _mark_rate_limited(key: str) -> None:
     from datetime import datetime
     now = datetime.now().isoformat(timespec="seconds")
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute("UPDATE ai_api_keys SET rate_limited_at = ? WHERE api_key = ?", (now, key))
-            conn.commit()
+    db = get_database()
+    db.execute("UPDATE ai_api_keys SET rate_limited_at = ? WHERE api_key = ?", (now, key))
 
 
 def _has_any_api_key() -> bool:
@@ -104,6 +595,17 @@ def _ai_queue_worker():
                 images = payload.get("images", [])
                 prompt = payload.get("prompt", "")
                 system_prompt = payload.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
+                # Guard: text-only model cannot consume images — short-circuit
+                # with a clear message instead of OpenRouter's cryptic error.
+                if images and _model_supports_images(payload.get("model", "")) is False:
+                    result_holder["success"] = False
+                    result_holder["message"] = (
+                        f"当前模型 {payload.get('model', '')} 不支持图片输入。"
+                        "请选择带「图片」(Vision) 标签的模型后再发送图片。"
+                    )
+                    result_event.set()
+                    _ai_request_queue.task_done()
+                    continue
                 if images:
                     user_content = _build_media_content(images, prompt)
                     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
@@ -135,7 +637,9 @@ def _ai_queue_worker():
                             current_key = _get_next_key()
                             continue
                         else:
-                            result_holder["message"] = resp.json().get("error", {}).get("message", f"API error: {resp.status_code}")
+                            result_holder["message"] = _translate_openrouter_error(
+                                resp.json().get("error", {}).get("message", f"API error: {resp.status_code}")
+                            )
                             break
                     except (json.JSONDecodeError, ValueError):
                         result_holder["message"] = "Failed to parse API response"
@@ -157,7 +661,84 @@ def _ensure_ai_worker():
             _ai_queue_worker_started = True
 
 
-def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000, temperature: float = 0.7) -> Generator[str, None, None]:
+# ── Founder gate + audit helper (ai-api-keys-founder feature) ─────
+# Centralized so each of the 4 mutation endpoints in this blueprint
+# Centralized so each of the 4 mutation endpoints in this blueprint
+# (POST /api/ai/config, DELETE /api/ai/config, GET /api/ai/keys,
+# POST /api/ai/keys/batch) gets the SAME 401/403 surface — a future
+# PR that loosens or tightens the gate exactly mirrors across all
+# endpoints by editing this one helper.
+
+def _check_founder_gate() -> "Response | None":
+    """Return a Flask response to short-circuit non-founder callers, or None.
+
+    Mirrors the contract of ``web_runner.routes.auth.founder_required``
+    but is invoked inline inside each AI-key route so we can layer in
+    a consistent pre-flight audit-log row before the mutation runs.
+    Importing the decorator and stacking it on top of the existing
+    inline auth checks would require re-wiring the body order; this
+    inline call lets the existing route shapes stay intact.
+
+    Returns:
+      * 401-flask-response when auth is enabled and there is no
+        session user.
+      * 403-flask-response when auth is enabled and the session's
+        user is not the founder.
+      * None when the caller is the founder (or auth is disabled —
+        synthesized admin counts as founder for dev/CI parallelism).
+    """
+    from web_runner.routes.auth import (
+        _current_user_id as _uid_in,
+        _current_user_is_founder as _is_founder_in,
+        _is_auth_enabled as _enabled_in,
+    )
+    if not _enabled_in():
+        return None
+    if _uid_in() is None:
+        return jsonify({"success": False, "message": "未登录"}), 401
+    if not _is_founder_in():
+        return jsonify({"success": False, "message": "仅项目创始人可执行此操作"}), 403
+    return None
+
+
+def _audit_ai_key_action(action: str, detail: dict) -> None:
+    """Append a founder-side audit row for an AI-key mutation.
+
+    Writes into ``admin_audit_log`` so a non-founder admin reviewing
+    the Audit page sees AI-key lifecycle events alongside role-change
+    events. Failure mode mirrors ``web_runner.routes.admin.update_user_role``:
+    an audit write error MUST NOT 500 the caller (the mutation
+    already succeeded). The leading ``_audit_ai_key_action`` is
+    always post-commit so the audit row's existence means the
+    mutation actually landed.
+    """
+    from datetime import datetime
+    import json as _audit_json
+    from web_runner.routes.auth import _current_user_id
+
+    actor = _current_user_id() or 0
+    now = datetime.now().isoformat(timespec="seconds")
+    try:
+        get_database().execute(
+            "INSERT INTO admin_audit_log "
+            "(admin_user_id, target_user_id, action, detail, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (actor, None, action, _audit_json.dumps(detail, ensure_ascii=False), now),
+        )
+    except Exception as _audit_exc:
+        try:
+            from utils.log import logger as _audit_logger
+            _audit_logger.warning(
+                "audit log write failed for ai-key action=%s: %s",
+                action, _audit_exc,
+            )
+        except Exception:
+            # Logger unavailable — silently drop the audit row but
+            # never strangle the upstream mutation response.
+            pass
+
+
+def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000, temperature: float = 0.7, json_mode: bool = False) -> Generator[str, None, None]:
     all_keys = _get_all_keys_cached()
     max_attempts = max(len(all_keys), 1)
     current_key = _get_next_key()
@@ -166,10 +747,13 @@ def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000,
             yield f"event: error\ndata: {json.dumps({'message': 'No API keys available.'})}\n\n"
             return
         try:
+            payload: dict = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature, "stream": True}
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
             resp = http_requests.post(
                 f"{OPENROUTE_BASE_URL}/chat/completions",
                 headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature, "stream": True},
+                json=payload,
                 timeout=(10, 120), stream=True,
             )
             if resp.status_code == 429:
@@ -178,6 +762,7 @@ def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000,
                 continue
             if resp.status_code != 200:
                 error_msg = resp.json().get("error", {}).get("message", f"API error: {resp.status_code}")
+                error_msg = _translate_openrouter_error(error_msg)
                 yield f"event: error\ndata: {json.dumps({'message': error_msg})}\n\n"
                 return
             full_content = ""
@@ -206,6 +791,280 @@ def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000,
     yield f"event: error\ndata: {json.dumps({'message': 'All API keys rate-limited. Please wait a few minutes and try again.'})}\n\n"
 
 
+def _parse_json_from_text(text: str) -> dict | None:
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = [line for line in lines if not line.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    import re
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _generate_single_platform(model: str, topic: str, platform: str) -> dict:
+    style_prompt = PLATFORM_STYLE_PROMPTS.get(platform, DEFAULT_SYSTEM_PROMPT)
+    system_msg = style_prompt + MULTI_PLATFORM_JSON_INSTRUCTION
+    messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": f"主题：{topic}"}]
+    full_content = ""
+    for chunk in _stream_openrouter(model, messages, max_tokens=1500, temperature=0.7, json_mode=False):
+        if chunk.startswith("event: data"):
+            try:
+                data = json.loads(chunk.split("data: ", 1)[1])
+                full_content += data.get("content", "")
+            except (json.JSONDecodeError, IndexError):
+                pass
+        elif chunk.startswith("event: error"):
+            try:
+                err = json.loads(chunk.split("data: ", 1)[1])
+                return {"platform": platform, "title": "", "description": "", "tags": [], "error": err.get("message", "Unknown error")}
+            except (json.JSONDecodeError, IndexError):
+                return {"platform": platform, "title": "", "description": "", "tags": [], "error": "Stream error"}
+    full_content = full_content.strip()
+    parsed = _parse_json_from_text(full_content)
+    if parsed and isinstance(parsed, dict):
+        return {
+            "platform": platform,
+            "title": parsed.get("title", ""),
+            "description": parsed.get("description", ""),
+            "tags": parsed.get("tags", []) if isinstance(parsed.get("tags"), list) else [],
+        }
+    return {"platform": platform, "title": "", "description": full_content, "tags": [], "parseError": True}
+
+
+@bp.post("/api/ai/generate/multi-platform")
+def ai_multi_platform():
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
+    if not _has_any_api_key():
+        return jsonify({"success": False, "message": "AI service not configured."})
+    data = request.get_json(silent=True) or {}
+    topic = data.get("topic", "").strip()
+    platforms = data.get("platforms", [])
+    model = data.get("model", "google/gemma-4-26b-a4b-it:free")
+    if not topic:
+        return jsonify({"success": False, "message": "Topic is required."}), 400
+    if not isinstance(platforms, list) or len(platforms) == 0:
+        return jsonify({"success": False, "message": "At least one platform is required."}), 400
+    invalid = [p for p in platforms if p not in SUPPORTED_PLATFORMS]
+    if invalid:
+        return jsonify({"success": False, "message": f"Unsupported platform: {', '.join(invalid)}"}), 400
+
+    def generate():
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results: dict[str, dict] = {}
+        with ThreadPoolExecutor(max_workers=min(len(platforms), 4)) as executor:
+            futures = {executor.submit(_generate_single_platform, model, topic, p): p for p in platforms}
+            for future in as_completed(futures):
+                platform = futures[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    result = {"platform": platform, "title": "", "description": "", "tags": [], "error": str(e)}
+                results[platform] = result
+                if result.get("error"):
+                    yield f"event: platform_error\ndata: {json.dumps(result)}\n\n"
+                else:
+                    yield f"event: platform_result\ndata: {json.dumps(result)}\n\n"
+        yield f"event: done\ndata: {json.dumps({'results': results})}\n\n"
+
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        if _is_auth_enabled() and _sse_uid:
+            log_action(_sse_uid, "ai_generate")
+    except Exception:
+        pass
+    return Response(generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _generate_single_platform_variant(model: str, topic: str, platform: str, search_context: str = "") -> dict:
+    """
+    Single-platform variant generator — used by `/api/ai/generate/variants`
+    when the request supplies `platforms`. Reuses per-platform persona
+    prompts (PLATFORM_STYLE_PROMPTS) + the multi-platform JSON envelope
+    so the LLM emits the structured title/description/tags payload.
+
+    Returns a dict shaped like:
+
+        {"platform": str, "platformLabel": str, "title": str,
+         "description": str, "tags": list[str]}
+
+    On error path the same shape with `error: str` instead of
+    `title/description/tags`. The frontend consumer keys the chat-assistant
+    bubble by the platform field directly (each platform = one bubble).
+    """
+    platform_prompt = PLATFORM_STYLE_PROMPTS.get(platform, DEFAULT_SYSTEM_PROMPT)
+    system_msg = platform_prompt + MULTI_PLATFORM_JSON_INSTRUCTION
+    user_msg = f"主题：{topic}"
+    if search_context:
+        user_msg = f"主题：{topic}\n\n以下是关于该主题的最新网络搜索结果，请参考这些真实信息来生成更准确、更有价值的内容：\n{search_context}"
+    messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}]
+    full_content = ""
+    label = PLATFORM_VARIANT_LABELS.get(platform, platform)
+    for chunk in _stream_openrouter(model, messages, max_tokens=1500, temperature=0.7, json_mode=False):
+        if chunk.startswith("event: data"):
+            try:
+                data = json.loads(chunk.split("data: ", 1)[1])
+                full_content += data.get("content", "")
+            except (json.JSONDecodeError, IndexError):
+                pass
+        elif chunk.startswith("event: error"):
+            try:
+                err = json.loads(chunk.split("data: ", 1)[1])
+                return {"platform": platform, "platformLabel": label, "title": "", "description": "", "tags": [], "error": err.get("message", "Unknown error")}
+            except (json.JSONDecodeError, IndexError):
+                return {"platform": platform, "platformLabel": label, "title": "", "description": "", "tags": [], "error": "Stream error"}
+    full_content = full_content.strip()
+    label = PLATFORM_VARIANT_LABELS.get(platform, platform)
+    parsed = _parse_json_from_text(full_content)
+    if parsed and isinstance(parsed, dict):
+        return {
+            "platform": platform,
+            "platformLabel": label,
+            "title": parsed.get("title", ""),
+            "description": parsed.get("description", ""),
+            "tags": parsed.get("tags", []) if isinstance(parsed.get("tags"), list) else [],
+        }
+    return {"platform": platform, "platformLabel": label, "title": "", "description": full_content, "tags": [], "parseError": True}
+
+
+def _generate_single_variant(model: str, topic: str, style: str, search_context: str = "") -> dict:
+    style_prompt = STYLE_VARIANTS.get(style, STYLE_VARIANTS["friendly"])
+    system_msg = style_prompt + VARIANT_JSON_INSTRUCTION
+    user_msg = f"主题：{topic}"
+    if search_context:
+        user_msg = f"主题：{topic}\n\n以下是关于该主题的最新网络搜索结果，请参考这些真实信息来生成更准确、更有价值的内容：\n{search_context}"
+    messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}]
+    full_content = ""
+    for chunk in _stream_openrouter(model, messages, max_tokens=1500, temperature=0.7, json_mode=False):
+        if chunk.startswith("event: data"):
+            try:
+                data = json.loads(chunk.split("data: ", 1)[1])
+                full_content += data.get("content", "")
+            except (json.JSONDecodeError, IndexError):
+                pass
+        elif chunk.startswith("event: error"):
+            try:
+                err = json.loads(chunk.split("data: ", 1)[1])
+                return {"style": style, "styleLabel": STYLE_VARIANT_LABELS.get(style, style), "title": "", "description": "", "tags": [], "error": err.get("message", "Unknown error")}
+            except (json.JSONDecodeError, IndexError):
+                return {"style": style, "styleLabel": STYLE_VARIANT_LABELS.get(style, style), "title": "", "description": "", "tags": [], "error": "Stream error"}
+    full_content = full_content.strip()
+    parsed = _parse_json_from_text(full_content)
+    if parsed and isinstance(parsed, dict):
+        return {
+            "style": style,
+            "styleLabel": STYLE_VARIANT_LABELS.get(style, style),
+            "title": parsed.get("title", ""),
+            "description": parsed.get("description", ""),
+            "tags": parsed.get("tags", []) if isinstance(parsed.get("tags"), list) else [],
+        }
+    return {"style": style, "styleLabel": STYLE_VARIANT_LABELS.get(style, style), "title": "", "description": full_content, "tags": [], "parseError": True}
+
+
+@bp.post("/api/ai/generate/variants")
+def ai_variants():
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
+    if not _has_any_api_key():
+        return jsonify({"success": False, "message": "AI service not configured."})
+    data = request.get_json(silent=True) or {}
+    topic = data.get("topic", "").strip()
+    model = data.get("model", "google/gemma-4-26b-a4b-it:free")
+    use_search = data.get("search", False)
+    # Per-platform mode: when caller passes `platforms`, switch the
+    # generator from style-variants (4 personas) to per-platform
+    # variants (one assistant turn per platform id). Both modes emit
+    # the same `variant_result` / `variant_error` / `done` events so
+    # the frontend `readSSEStream` consumer dispatches one shared
+    # onVariantResult callback — the discriminator is the payload
+    # shape (presence of `platform` field).
+    platforms_param = data.get("platforms")
+    if not topic:
+        return jsonify({"success": False, "message": "Topic is required."}), 400
+
+    platform_mode = False
+    targets: list[str] = []
+    if isinstance(platforms_param, list) and len(platforms_param) > 0:
+        invalid = [p for p in platforms_param if p not in SUPPORTED_PLATFORMS]
+        if invalid:
+            return jsonify({"success": False, "message": f"Unsupported platform: {', '.join(invalid)}"}), 400
+        platform_mode = True
+        targets = list(platforms_param)
+
+    search_context = ""
+    if use_search:
+        search_results = _web_search(topic, max_results=5)
+        if search_results:
+            search_context = "\n".join(
+                f"- {r['title']}: {r['snippet']}" for r in search_results
+            )
+
+    def generate():
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results: dict[str, dict] = {}
+        if platform_mode:
+            units = [(p, _generate_single_platform_variant) for p in targets]
+        else:
+            units = [(s, _generate_single_variant) for s in STYLE_VARIANTS.keys()]
+        with ThreadPoolExecutor(max_workers=min(len(units), 4)) as executor:
+            futures = {executor.submit(worker, model, topic, key, search_context): key for (key, worker) in units}
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    if platform_mode:
+                        result = {"platform": key, "platformLabel": PLATFORM_VARIANT_LABELS.get(key, key), "title": "", "description": "", "tags": [], "error": str(e)}
+                    else:
+                        result = {"style": key, "styleLabel": STYLE_VARIANT_LABELS.get(key, key), "title": "", "description": "", "tags": [], "error": str(e)}
+                results[key] = result
+                if result.get("error"):
+                    yield f"event: variant_error\ndata: {json.dumps(result)}\n\n"
+                else:
+                    yield f"event: variant_result\ndata: {json.dumps(result)}\n\n"
+        yield f"event: done\ndata: {json.dumps({'results': results})}\n\n"
+
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        if _is_auth_enabled() and _sse_uid:
+            log_action(_sse_uid, "ai_generate")
+    except Exception:
+        pass
+    return Response(generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@bp.post("/api/ai/search")
+def ai_search():
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
+    data = request.get_json(silent=True) or {}
+    query = data.get("query", "").strip()
+    max_results = data.get("max_results", 5)
+    if not query:
+        return jsonify({"success": False, "message": "Query is required."}), 400
+    results = _web_search(query, max_results=max_results)
+    return jsonify({"success": True, "data": results})
+
+
 @bp.post("/api/ai/generate")
 def ai_generate():
     _ensure_ai_worker()
@@ -227,6 +1086,15 @@ def ai_generate():
     result_event.wait(timeout=120)
     if not result_event.is_set():
         return jsonify({"success": False, "message": "Request timed out."})
+    # Log AI usage for quota tracking
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        from web_runner.routes.auth import _current_user_id
+        uid = _current_user_id()
+        if uid:
+            log_action(uid, "ai_generate")
+    except Exception:
+        pass
     return jsonify(result_holder)
 
 
@@ -259,60 +1127,121 @@ def ai_models():
 
 @bp.get("/api/ai/config")
 def ai_config_get():
-    with db_lock:
-        with get_connection() as conn:
-            rows = conn.execute("SELECT * FROM ai_api_keys").fetchall()
+    db = get_database()
+    rows = db.fetch_all("SELECT * FROM ai_api_keys")
     configured = bool(rows) or bool(os.environ.get("OPENROUTE_API_KEY", ""))
     return jsonify({"success": True, "data": {"configured": configured, "key_count": len(rows)}})
 
 
 @bp.get("/api/ai/keys")
 def ai_keys_list():
+    # Founder gate (ai-api-keys-founder feature): only the project
+    # founder can enumerate masked keys. Even the masked list reveals
+    # the prefix + suffix of every key (e.g. ``sk-or-v1-001****5e4f``),
+    # which is enough for an adversary to correlate rate-limit
+    # behaviour with a specific key. Other roles — admin / user —
+    # can only SELECT models at /api/ai/models, never list keys.
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
+    _audit_ai_key_action("ai_key_list", {})
     keys = _get_all_keys_cached()
     return jsonify({"success": True, "data": [{"id": k["id"], "masked": k["masked"], "created": k["created"], "rate_limited": bool(k.get("rate_limited_at"))} for k in keys]})
 
 
 @bp.post("/api/ai/config")
 def ai_config_set():
+    # Founder gate (ai-api-keys-founder feature): only the project
+    # founder can add a new AI key. Replaces the previous unauthenticated
+    # `@login_required`-only surface — that path was the actual leak
+    # point described in this round's design doc; even after the
+    # DELETE path was admin-gated, an attacker with any email-code
+    # log-in could still INSERT a key, then read it back via /api/ai/keys
+    # (which never had a gate). This row-level founder gate closes
+    # both sides of the round-trip.
     from datetime import datetime
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
     data = request.get_json(silent=True) or {}
     key = data.get("api_key", "").strip()
     if not key:
-        return jsonify({"success": False, "message": "API key is required."})
+        # ``400`` on empty / missing ``api_key`` so the response is
+        # unambiguously distinguishable from a successful insert,
+        # rather than relying on callers to branch on the ``success``
+        # flag. Matches the convention in ``ai_keys_batch`` below
+        # which returns 400 on malformed payload, and aligns with
+        # the test contract that has asserted 400 since the original
+        # commit (the route drifted to 200 silently at some point and
+        # this rounding brings the implementation back to the test).
+        return jsonify({"success": False, "message": "API key is required."}), 400
     masked = key[:8] + "****" + key[-4:] if len(key) > 12 else "****"
     now = datetime.now().isoformat(timespec="seconds")
+    db = get_database()
     try:
-        with db_lock:
-            with get_connection() as conn:
-                conn.execute("INSERT INTO ai_api_keys (api_key, masked, created) VALUES (?, ?, ?)", (key, masked, now))
-                conn.commit()
-                row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        # Thread-safe vs. concurrent worker-thread INSERTs:
+        # insert_returning_id reads the id directly from the INSERT row
+        # instead of crossing instance state.
+        row_id = db.insert_returning_id(
+            "INSERT INTO ai_api_keys (api_key, masked, created) VALUES (?, ?, ?)",
+            (key, masked, now),
+        )
+        _audit_ai_key_action("ai_key_add", {"key_id": row_id, "masked": masked, "mode": "single"})
         return jsonify({"success": True, "data": {"configured": True, "key_masked": masked, "key_id": row_id}})
-    except __import__("sqlite3").IntegrityError:
+    except psycopg.errors.IntegrityError:
+        # psycopg.IntegrityError is the parent of UniqueViolation,
+        # ForeignKeyViolation, NotNullViolation, CheckViolation, and
+        # RestrictViolation — all PK / UNIQUE / FK / CHECK / NOT NULL
+        # constraints surface as this single Python type, so the catch
+        # collapses to one branch for the API response.
         return jsonify({"success": False, "message": "该 Key 已经添加过了。"}), 409
 
 
 @bp.delete("/api/ai/config")
 def ai_config_delete():
+    # Founder gate (ai-api-keys-founder feature): only the project
+    # founder can delete keys (single or bulk). Replaces the previous
+    # admin-only-on-bulk gate, which left the single-key delete path
+    # exposed to any logged-in user.
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
     data = request.get_json(silent=True) or {}
     key_id = data.get("key_id")
+    db = get_database()
     if key_id is not None:
-        with db_lock:
-            with get_connection() as conn:
-                cur = conn.execute("DELETE FROM ai_api_keys WHERE id = ?", (int(key_id),))
-                conn.commit()
-                if cur.rowcount == 0:
-                    return jsonify({"success": False, "message": "Key not found."}), 404
+        target_id = int(key_id)
+        # Capture masked label BEFORE deleting for the audit row.
+        prior = db.fetch_one(
+            "SELECT masked FROM ai_api_keys WHERE id = ?",
+            (target_id,),
+        )
+        db.execute("DELETE FROM ai_api_keys WHERE id = ?", (target_id,))
+        _audit_ai_key_action(
+            "ai_key_delete",
+            {"key_id": target_id, "masked": (prior or {}).get("masked"), "mode": "single"},
+        )
         return jsonify({"success": True, "message": "Key removed."})
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute("DELETE FROM ai_api_keys")
-            conn.commit()
+    # Bulk delete — no key_id specified.
+    prior_count = db.fetch_one("SELECT COUNT(*) AS cnt FROM ai_api_keys")
+    prior_n = int((prior_count or {}).get("cnt", 0) or 0)
+    db.execute("DELETE FROM ai_api_keys")
+    _audit_ai_key_action(
+        "ai_key_delete",
+        {"mode": "all", "count": prior_n},
+    )
     return jsonify({"success": True, "message": "All API keys removed."})
 
 
 @bp.post("/api/ai/keys/batch")
 def ai_keys_batch():
+    # Founder gate (ai-api-keys-founder feature): tighter than the
+    # prior admin gate. Batch imports are how an operator typically
+    # loads a fresh key pool; a non-founder should not be able to
+    # mutate the pool at all even with a single admin role.
+    gate = _check_founder_gate()
+    if gate is not None:
+        return gate
     from datetime import datetime
     data = request.get_json(silent=True) or {}
     raw = data.get("keys", [])
@@ -323,24 +1252,30 @@ def ai_keys_batch():
     added = 0
     skipped = 0
     errors: list[str] = []
-    with db_lock:
-        with get_connection() as conn:
-            for entry in raw:
-                key = (entry if isinstance(entry, str) else str(entry)).strip()
-                if not key or not key.startswith("sk-"):
-                    skipped += 1
-                    continue
-                masked = key[:8] + "****" + key[-4:] if len(key) > 12 else "****"
-                try:
-                    conn.execute(
-                        "INSERT INTO ai_api_keys (api_key, masked, created) VALUES (?, ?, ?)",
-                        (key, masked, now),
-                    )
-                    added += 1
-                except __import__("sqlite3").IntegrityError:
-                    skipped += 1
-            conn.commit()
-    return jsonify({"success": True, "data": {"added": added, "skipped": skipped}})
+    db = get_database()
+    for entry in raw:
+        key = (entry if isinstance(entry, str) else str(entry)).strip()
+        if not key or not key.startswith("sk-"):
+            skipped += 1
+            continue
+        masked = key[:8] + "****" + key[-4:] if len(key) > 12 else "****"
+        try:
+            db.execute(
+                "INSERT INTO ai_api_keys (api_key, masked, created) VALUES (?, ?, ?)",
+                (key, masked, now),
+            )
+            added += 1
+        except Exception as exc:
+            exc_name = type(exc).__name__
+            if "IntegrityError" in exc_name or "unique" in str(exc).lower():
+                skipped += 1
+            else:
+                errors.append(exc_name)
+    _audit_ai_key_action(
+        "ai_key_batch",
+        {"added": added, "skipped": skipped, "errors": errors},
+    )
+    return jsonify({"success": True, "data": {"added": added, "skipped": skipped, "errors": errors}})
 
 
 @bp.post("/api/ai/enhance-prompt")
@@ -374,6 +1309,18 @@ def ai_enhance_prompt():
 
 @bp.post("/api/ai/generate/stream")
 def ai_generate_stream():
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
+    # Log AI usage for quota tracking (before streaming starts)
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        if _is_auth_enabled() and _sse_uid:
+            log_action(_sse_uid, "ai_generate")
+    except Exception:
+        pass
     if not _has_any_api_key():
         def err():
             yield f"event: error\ndata: {json.dumps({'message': 'AI service not configured.'})}\n\n"
@@ -391,6 +1338,13 @@ def ai_generate_stream():
             def cap_err():
                 yield f"event: error\ndata: {json.dumps({'message': f'Too many messages in conversation (max {MAX_MESSAGES_PER_REQUEST}).'})}\n\n"
             return Response(cap_err(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        # Guard: refuse to send images to a text-only model with a clear
+        # message instead of OpenRouter's cryptic "Cannot read
+        # 'image.png' (this model does not support image input)".
+        if _messages_contain_images(raw_messages) and _model_supports_images(model) is False:
+            def vision_err():
+                yield f"event: error\ndata: {json.dumps({'message': f'当前模型 {model} 不支持图片输入。请选择带「图片」(Vision) 标签的模型后再发送图片。'})}\n\n"
+            return Response(vision_err(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
         return Response(
             _stream_openrouter(model, raw_messages),
             mimetype="text/event-stream",
@@ -418,3 +1372,436 @@ def ai_generate_stream():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Image search routes (openspec ai-sidebar-material-search §1.7 + §1.8 + §1.10) ──
+
+
+@bp.post("/api/ai/images/search")
+def ai_images_search():
+    """Keyword → Pexels + Pixabay merged + deduped image list.
+
+    Auth-aware (mirrors /api/ai/search contract): when
+    SAU_AUTH_ENABLED=true, returns 401 if not logged in. Soft per-user
+    rate limit (30/min) fires BEFORE the external API call so Pexels's
+    200/hour free tier cannot be exhausted by a single-burst clicker.
+    503 response carries `code: "IMAGE_SOURCE_NOT_CONFIGURED"` so the
+    frontend can branch on a stable identifier instead of parsing the
+    Chinese human-readable message. The `debug` block surfaces per-
+    source counts + error labels so a 0-result response still tells
+    the user WHICH source failed.
+    """
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    uid = 0
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
+        uid = _sse_uid
+    if not _check_image_rate_limit(uid):
+        return jsonify({
+            "success": False,
+            "message": "image search rate-limited; retry after 60s",
+            "retry_after_sec": 60,
+        }), 429
+    if not _has_image_source():
+        return jsonify({
+            "success": False,
+            "message": "未配置图片搜索 API key。请在 .env 设置 PEXELS_API_KEY 或 PIXABAY_API_KEY 后重启 run.py。",
+            "code": "IMAGE_SOURCE_NOT_CONFIGURED",
+        }), 503
+    data = request.get_json(silent=True) or {}
+    query = (data.get("query") or "").strip()
+    count = int(data.get("count") or 9)
+    if not query:
+        return jsonify({"success": False, "message": "query required"}), 400
+    # Cap count to Pexels's per_page ceiling so we don't ask for more
+    # than upstream will return. 9 is the default 3x3 grid size.
+    count = max(1, min(count, 80))
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        log_action(uid, "ai_image_search")
+    except Exception:  # noqa: BLE001
+        pass
+    merged, debug = _search_images(query, count)
+    return jsonify({"success": True, "data": merged, "debug": debug})
+
+
+@bp.post("/api/ai/recommend-images")
+def ai_recommend_images():
+    """Title → keyword-derived image recommendation. Re-uses _search_images.
+
+    Accepts `{topic}` (preferred) OR `{query}` (alias — same field name
+    as /api/ai/images/search for client-side uniformity) for input. Same
+    auth + rate-limit + 503 contracts. The 9-result default mirrors
+    the manual-search default so the user doesn't have to learn a second
+    count value when switching modes.
+    """
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    uid = 0
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
+        uid = _sse_uid
+    if not _check_image_rate_limit(uid):
+        return jsonify({
+            "success": False,
+            "message": "image search rate-limited; retry after 60s",
+            "retry_after_sec": 60,
+        }), 429
+    if not _has_image_source():
+        return jsonify({
+            "success": False,
+            "message": "未配置图片搜索 API key。请在 .env 设置 PEXELS_API_KEY 或 PIXABAY_API_KEY 后重启 run.py。",
+            "code": "IMAGE_SOURCE_NOT_CONFIGURED",
+        }), 503
+    data = request.get_json(silent=True) or {}
+    topic = (data.get("topic") or data.get("query") or "").strip()
+    count = int(data.get("count") or 9)
+    if not topic:
+        return jsonify({"success": False, "message": "topic required"}), 400
+    count = max(1, min(count, 80))
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        log_action(uid, "ai_image_search")
+    except Exception:  # noqa: BLE001
+        pass
+    merged, debug = _search_images(topic, count)
+    return jsonify({"success": True, "data": merged, "debug": debug})
+
+
+@bp.get("/api/ai/images/fetch")
+def ai_images_fetch():
+    """SSRF-gated 10MB binary-image proxy for frontend File conversion.
+
+    Validates URL via inbox._is_public_url + inbox._resolve_is_public
+    *before* opening a streaming connection — DNS-rebinding rejection
+    comes from inbox.py round-19 hardening, mirrored here for the same
+    defense-in-depth. The 10MB cap fires inside the generator so the
+    underlying socket is released cleanly when truncation fires.
+
+    Auth: when SAU_AUTH_ENABLED, login is enforced. Auth-disabled
+    mirrors the same "synthetic admin id = 0" path as other AI routes.
+    """
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+    from web_runner.routes.inbox import _is_public_url, _resolve_is_public
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
+    url = (request.args.get("url") or "").strip()
+    if not url:
+        return jsonify({"success": False, "message": "url required"}), 400
+    if not _is_public_url(url):
+        return jsonify({"success": False, "message": "url rejected (private/loopback)"}), 400
+    if not _resolve_is_public(url):
+        return jsonify({"success": False, "message": "url rejected (dns private/loopback)"}), 400
+
+    # Open streaming connection now (NOT inside generator) so we can
+    # capture upstream Content-Type for Response.mimetype BEFORE
+    # iteration starts — Flask's Response needs the mimetype at
+    # construction time, not after the first chunk has streamed.
+    try:
+        resp = http_requests.get(url, stream=True, timeout=(5, 8))
+    except (http_requests.RequestException, OSError, TimeoutError) as e:
+        return jsonify({
+            "success": False,
+            "message": f"upstream connection failed: {type(e).__name__}",
+        }), 502
+    if resp.status_code != 200:
+        try:
+            resp.close()
+        except Exception:  # noqa: BLE001
+            pass
+        return jsonify({
+            "success": False,
+            "message": f"upstream returned {resp.status_code}",
+        }), 502
+    # Parse mimetype: strip "; charset=..." suffix so the spec stays
+    # narrow ("image/png" not "image/png; charset=binary").
+    upstream_ct = (
+        (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip()
+        or "image/jpeg"
+    )
+
+    def _generate():
+        bytes_yielded = 0
+        try:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                bytes_yielded += len(chunk)
+                if bytes_yielded > _IMAGE_FETCH_MAX_BYTES:
+                    logger.warning(
+                        f"[ai] image fetch exceeded 10MB cap, truncated at {url[:80]}"
+                    )
+                    break
+                yield chunk
+        finally:
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    return Response(
+        _generate(),
+        mimetype=upstream_ct,
+        # 1h public cache: Pexels/Pixabay photos are immutable in URL
+        # but the upstream can swap the file under the same URL on
+        # rare retag events. 1h strikes a balance between browser
+        # re-fetch pressure vs. stale-image risk; bump to 24h only
+        # after adding an upstream-ETag/Last-Modified revalidate hook.
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+# ── Pexels VIDEOS API helpers (round-Video-Backgrounds-v1) ───────────
+# Round-Video-Backgrounds-v1 swaps the Studio renderer's per-scene
+# background from a static Pexels IMAGE (currently consumed via
+# `<Image src={...}/>` inside `<SceneCard>`) to an actual downloaded
+# Pexels VIDEO clip consumed by Remotion `<OffthreadVideo>`. Edge-TTS
+# synthesizes per-scene voiceover consumed by `<Audio>`. This trio of
+# helpers (search / normalise / download) mirrors the existing image
+# pair (`_search_pexels` + `_normalize_pexels_photo`) so a maintainer
+# can find them by analogy.
+#
+# Two important differences from the image helpers:
+#   * Endpoint: Pexels separates photo+video APIs. Photo lives at
+#     `/v1/search`, Video lives at `/videos/search` — a single
+#     PEXELS_API_KEY serves both surfaces (same `Authorization`
+#     header, NOT Bearer-prefixed). Sharing the env var keeps
+#     operator onboarding to a single key per Pexels account.
+#   * Response shape: each `videos[]` item carries NESTED
+#     `video_files[]` with multiple resolutions (SD / HD / FHD /
+#     4K). `_normalize_pexels_video` picks the smallest MP4 ≥
+#     540px wide AND portrait orientation (height > width) so we
+#     don't burn disk on 4K footage when 540p is plenty for a 4-8
+#     second short-form clip. This mirrors the existing image
+#     `_normalize_pexels_photo` shape so the Studio pipeline can
+#     treat video and image rows identically at the
+#     `studio_assets.ref_image_url` column (the column name is
+#     kept despite carrying video URLs — `kind` discriminates).
+# ─────────────────────────────────────────────────────────────────────
+
+
+_VIDEO_DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024  # 50 MB; Pexels HD ≈ 5-15 MB
+# Duration floor for short-form reels: anything shorter than ~4 s
+# won't survive the cross-fade between two scenes that share a clip
+# (the more typical case is one B-roll clip per scene with no
+# cross-fade). 4 s is the smallest duration that still covers a
+# natural-read-rate body line.
+_VIDEO_MIN_DURATION_SEC = 4
+
+
+def _search_pexels_videos(
+    query: str,
+    count: int,
+    orientation: str | None = None,
+    min_duration: int | None = _VIDEO_MIN_DURATION_SEC,
+) -> list[dict]:
+    """Raw Pexels VIDEO search. Returns the upstream `videos` list (or []).
+
+    Same failure envelope as `_search_pexels`: silent-degrade on
+    401/429/5xx/timeout/JSONDecodeError so the Studio pipeline never
+    cascades a transient upstream failure onto a partial render.
+    Both `_search_pexels` (photos) and `_search_pexels_videos`
+    (videos) are called from `_resolve_scene_*` helpers; if one
+    source fails, the other still ships a result.
+
+    `orientation`: forwarded as a query param (`portrait` / `landscape`
+    / `square`). The Studio pipeline always sets `portrait` so the
+    returned clip fits the 9:16 vertical frame without wide
+    letterboxing.
+
+    `min_duration`: forwarded as a query param so Pexels filters
+    out < N-second clips at the upstream. `None` skips the param
+    entirely (legacy smoke-test callers pass `None` to bypass).
+    The Studio pipeline always sets `min_duration=4` so a 7-second
+    scene never picks a 1-second B-roll that loops 7× on screen.
+    """
+    api_key = os.environ.get("PEXELS_API_KEY", "").strip()
+    if not api_key:
+        return []
+    params: dict = {"query": query, "per_page": max(1, count), "page": 1}
+    if orientation:
+        params["orientation"] = orientation
+    if min_duration is not None:
+        params["min_duration"] = max(1, int(min_duration))
+    try:
+        resp = http_requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": api_key},
+            params=params,
+            timeout=(5, 8),
+        )
+    except (http_requests.RequestException, OSError, TimeoutError) as e:
+        logger.warning(f"[ai] Pexels Videos connect failed: {type(e).__name__}: {e}")
+        return []
+    if resp.status_code != 200:
+        logger.warning(
+            f"[ai] Pexels Videos search returned {resp.status_code} for query={query!r}"
+        )
+        return []
+    try:
+        return resp.json().get("videos") or []
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"[ai] Pexels Videos search JSON decode failed: {type(e).__name__}: {e}")
+        return []
+
+
+def _normalize_pexels_video(v: dict, min_width: int = 540) -> dict:
+    """Pexels raw video record → uniform `NormalizedVideo` schema.
+
+    Returns a dict with `id`, `source`, `download_url` (chosen
+    `video_files[]` entry's `link`), `preview_url` (Pexels's
+    static thumbnail `image` field — useful as a poster frame),
+    `page_url` (`videos.url`), plus `duration_sec`, `width`,
+    `height`, `user_name`, `user_url`.
+
+    `download_url` may be empty when:
+      * the record has NO `video_files[]` entries,
+      * every entry's `file_type != 'video/mp4'` (Pexels serves
+        WebM for some resolutions — we don't ship a WebM
+        demuxer in the headless Chromium stack),
+      * every MP4 entry is landscape (`height <= width`) so the
+        chosen one wouldn't fit the 9:16 frame without
+        letterboxing,
+      * every MP4 entry has `width < min_width` (480p and below
+        artefacts under letterboxing for short-form reels).
+
+    Empty `download_url` is the deterministic "skip this clip"
+    signal — the Studio pipeline's `_resolve_scene_videos` reads
+    the empty string and moves on to the next candidate (or to
+    the image fallback).
+    """
+    video_id = v.get("id")
+    str_id = f"pexels_video:{video_id}" if video_id is not None else ""
+    duration = v.get("duration") or 0
+    base_width = v.get("width") or 0
+    base_height = v.get("height") or 0
+    user = v.get("user") or {}
+
+    video_files = v.get("video_files") or []
+    # Round-Video-Backgrounds-v1 tightening — use `>=` (was `>`)
+    # so a 1:1 square MP4 (e.g. 1080×1080) is admitted as a
+    # fallback rather than silently rejected. The reviewer's
+    # evidence was niche-topic searches where portrait-only hits
+    # are sparse and a square MP4 cover-cropped onto 9:16
+    # still produces a usable scene (Remotion's
+    # `<OffthreadVideo objectFit="cover">` clips the sides,
+    # losing about 30 % of the frame's content but keeping
+    # the user's text-card overlay in the centre). The
+    # trade-off: 1:1 will letterbox/lose content compared to
+    # a true portrait, but a silent ``None`` on every scene
+    # is a much worse operator UX.
+    portrait_mp4s = [
+        vf
+        for vf in video_files
+        if (vf.get("file_type") == "video/mp4"
+            and (vf.get("height") or 0) >= (vf.get("width") or 0)
+            and (vf.get("width") or 0) >= min_width)
+    ]
+    # Sort by width ASC. Picking the smallest quality that still
+    # meets `min_width` keeps the per-clip file size low (a 540p
+    # portrait MP4 is typically 3-6 MB vs a 720p equivalent at
+    # 8-12 MB) without sacrificing the visual floor. If a future
+    # operator wants HD-only, raise `min_width` on the
+    # `_resolve_scene_videos` call site — this helper stays
+    # parameter-driven.
+    portrait_mp4s.sort(key=lambda vf: (vf.get("width") or 0))
+
+    chosen = portrait_mp4s[0] if portrait_mp4s else None
+    return {
+        "id": str_id,
+        "source": "pexels_videos",
+        "download_url": (chosen.get("link") if chosen else "") or "",
+        "preview_url": v.get("image") or "",
+        "page_url": v.get("url") or "",
+        "duration_sec": int(duration) if duration else 0,
+        "width": int(chosen.get("width") if chosen else base_width) or 0,
+        "height": int(chosen.get("height") if chosen else base_height) or 0,
+        "user_name": user.get("name") or "",
+        "user_url": user.get("url") or "",
+    }
+
+
+def _download_video_to_disk(
+    url: str,
+    out_path: str,
+    max_bytes: int = _VIDEO_DOWNLOAD_MAX_BYTES,
+) -> tuple[bool, str]:
+    """Stream a remote video URL to ``out_path`` with a hard size cap.
+
+    Returns ``(success, error_message)``. On success the file is
+    fully written; on cap-exceeded the partial file is destroyed
+    BEFORE returning so a future inspect never finds a half-baked
+    MP4 the way `_resolve_scene_videos` would re-pick it via its
+    cache table.
+
+    The 50 MB cap is the round-Video-Backgrounds chosen budget:
+      * Pexels HD portrait MP4 ≈ 5-15 MB (540p-720p)
+      * A 60-second 1080p portrait could exceed 50 MB; we don't
+        render any scene longer than ``MAX_SCENE_SEC = 8`` so a
+        50 MB ceiling is wide enough for one B-roll clip per scene
+        with margin.
+      * Edge case: a malicious or mistakenly huge download
+        (Content-Length header present). The cap is enforced
+        BEYOND the header check, on the streaming side, because
+        upstream CDNs sometimes lie about Content-Length.
+
+    Caller is responsible for `os.makedirs(os.path.dirname(out_path))`
+    — this function does NOT create the directory because the
+    Studio pipeline already does it once per render call (avoids
+    per-scene mkdir stat syscalls). Tested with both an existing
+    parent dir and a fresh one (`os.makedirs` lives at the call
+    site so the test exercises both halves).
+    """
+    if not url:
+        return False, "no url"
+    try:
+        resp = http_requests.get(url, stream=True, timeout=(5, 30))
+    except (http_requests.RequestException, OSError, TimeoutError) as e:
+        return False, f"connect failed: {type(e).__name__}: {e}"
+    if resp.status_code != 200:
+        try:
+            resp.close()
+        except Exception:
+            pass
+        return False, f"upstream returned {resp.status_code}"
+
+    cl_header = resp.headers.get("Content-Length", "")
+    if cl_header and cl_header.isdigit() and int(cl_header) > max_bytes:
+        try:
+            resp.close()
+        except Exception:
+            pass
+        return False, f"size {cl_header}B > cap {max_bytes}B"
+
+    bytes_yielded = 0
+    try:
+        with open(out_path, "wb") as out_file:
+            for chunk in resp.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                bytes_yielded += len(chunk)
+                if bytes_yielded > max_bytes:
+                    # Destroy partial file BEFORE returning so the
+                    # UPSERT path (which would call this helper's
+                    # output media-staging caller) never sees a
+                    # half-baked MP4 in the cache. Failure mode is
+                    # loud (server log) but not user-blocking —
+                    # SceneCard falls through to the image fallback.
+                    try:
+                        out_file.close()
+                        _os.unlink(out_path)
+                    except OSError:
+                        pass
+                    return False, f"streamed > {max_bytes}B cap, partial destroyed"
+                out_file.write(chunk)
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
+    return True, ""

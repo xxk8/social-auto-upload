@@ -9,6 +9,14 @@
 
 后续当主流程和 bug 修复完成后，可以再继续做 PyPI 发布、安装优化、以及更多平台的独立 skill。
 
+## Why this exists
+
+仓库已具备 `sau` CLI + 内置 skill(`douyin-cli`)两层能力,但"skill 分发"具体走"独立 skill 仓库 / PyPI 包内 skill / 独立发布 / Docker 镜像 / install script"哪条路径,对 install 体验 & 版本 contract 影响巨大;不同分发形态对 contributor / end-user / AI-工具集成成本完全不同。 本文是 skill 分发的 trade-off 记录 + 当前推荐方案 + 未来三条正式发布路线(A: PyPI 包 + 包内 skill / B: 独立 skill 仓库 + PyPI 包 / C: Docker + skill),让 reviewer 在新加入的 skill 想要"独立发布"时有同一张决策记录。
+
+## Prereqs
+
+假设 reader 已读过 `docs/install.md` + 实际跑过 `sau douyin login --account <name>` 三遍以上,看到 skill 内置引用的实际 Playwright 行为;并已熟悉 `pip install` + `~/.codex/skills/` 的工作目录约定(对应 `tests/test_sau_skill_install.py`)。
+
 ## 先说结论
 
 `skill` 不一定必须是一个 Python 包。
@@ -284,3 +292,7 @@ sau douyin login --account my-account
 - `social-auto-upload` 作为可安装包
 - `douyin-cli` 作为包内 skill
 - `sau skill install` 作为安装桥梁
+
+## Cross-references
+
+- **Hub**: [docs/dev/INDEX.md#contributors](docs/dev/INDEX.md#contributors) — Contributors (writing code, merging PRs).

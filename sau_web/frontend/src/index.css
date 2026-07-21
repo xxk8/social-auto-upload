@@ -41,195 +41,265 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Stat typography role aliases (round 7) — exposed as Tailwind
+   * utilities so call sites read as e.g. `text-stat-value-sm
+   * sm:text-stat-value` and `tracking-stat-eyebrow`. */
+  --text-stat-eyebrow: var(--stat-eyebrow-font-size);
+  --text-stat-value-sm: var(--stat-value-sm-font-size);
+  --text-stat-value: var(--stat-value-font-size);
+  --text-stat-value-xl: var(--stat-value-xl-font-size);
+  --text-stat-caption-sm: var(--stat-caption-sm-font-size);
+  --text-stat-caption: var(--stat-caption-font-size);
+  --tracking-stat-eyebrow: var(--stat-eyebrow-tracking);
+  --tracking-stat-value: var(--stat-value-tracking);
 }
 
 :root {
   /* ============================================================
-   * DESIGN.md (Linear) — fonts
-   * Outfit: display / headings (geometric, distinctive)
-   * DM Sans: body text (refined, readable)
-   * JetBrains Mono: code, log IDs, timeline titles (substitute for Linear Mono)
+   * DESIGN — fonts
+   * IBM Plex Sans: display + body (industrial grotesk, IBM Carbon
+   * family). Replaces the prior Outfit + DM Sans dual-family stack
+   * — the IBM stack is one typeface tuned for UI density instead of
+   * a marketing-tier display pair.
+   * IBM Plex Mono: code, log timestamps, terminal panels.
+   * --font-heading and --font-body intentionally resolve to the
+   * same Plex family so vertical rhythm doesn't swing between
+   * display sans and DM Sans metrics mid-page.
    * ============================================================ */
-  --font-heading: 'Outfit', ui-sans-serif, system-ui, sans-serif;
-  --font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-jetbrains-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-heading: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-jetbrains-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Linear radii: button-md is 8px, card lg is 12px */
+  /* Tightened radii (industrial-tool density): button-md is 4px,
+   * card-lg is 6px. The xl ceiling (10px) keeps modals/dialogs from
+   * feeling pin-sharp. */
   --radius: 0.5rem;
 
   /* ============================================================
-   * DESIGN.md (Linear) — light theme (inverse of dark canvas)
-   * Linear ships dark-first; light mapped for shadcn parity.
+   * Accent hue — single source of truth for the brand accent.
+   * All --primary / --ring / --chart-* / --sidebar-* tokens derive
+   * hue from this variable. Change it via JS (ThemeProvider) to
+   * switch between preset accent colours without touching the
+   * rest of the palette.
+   * Default 145 = GitHub green. Other presets (amber 45, blue 240,
+   * purple 280, red 15, teal 175) are available in the Preferences
+   * dialog under 个性化 → 主题色.
    * ============================================================ */
-  --background: oklch(0.99 0.002 240);             /* inverse-canvas #ffffff with trace warmth */
-  --foreground: oklch(0.13 0.005 264);             /* inverse-ink #171717 */
-  --card: oklch(0.97 0.003 240);                   /* inverse-surface-1 #f7f8f8 */
-  --card-foreground: oklch(0.13 0.005 264);
-  --popover: oklch(0.97 0.003 240);
-  --popover-foreground: oklch(0.13 0.005 264);
-
-  /* Linear Lavender: #5e6ad2 — same hue on light bg */
-  --primary: oklch(0.55 0.16 264);
-  --primary-foreground: oklch(1 0 0);
-
-  --secondary: oklch(0.95 0.005 240);
-  --secondary-foreground: oklch(0.20 0.005 264);
-
-  --muted: oklch(0.95 0.005 240);
-  --muted-foreground: oklch(0.45 0.005 264);
-
-  --accent: oklch(0.93 0.008 264);
-  --accent-foreground: oklch(0.13 0.005 264);
-
-  --destructive: oklch(0.55 0.22 25);
-
-  /* hairline (light inverse of #23252a) */
-  --border: oklch(0.90 0.005 264);
-  --input: oklch(0.90 0.005 264);
-  --ring: oklch(0.55 0.16 264);
-
-  /* Charts */
-  --chart-1: oklch(0.55 0.16 264);                 /* primary lavender */
-  --chart-2: oklch(0.60 0.16 145);                 /* semantic-success */
-  --chart-3: oklch(0.60 0.12 75);                  /* amber */
-  --chart-4: oklch(0.55 0.20 25);                  /* red */
-  --chart-5: oklch(0.50 0.10 264);                 /* muted accent */
-
-  /* Focus ring alpha — primary at 18% for both modes */
-  --ring-alpha: oklch(0.55 0.16 264 / 0.18);
+  --accent-hue: 145;
 
   /* ============================================================
-   * Status semantic palette (DESIGN.md Linear)
-   * Surfaces (-bg) are pale tinted fills for Badge backgrounds.
-   * Foregrounds (-fg) are mid-saturation colors that read on
-   * either light or dark surfaces.
-   * Borders (-border) are the 30% fg mix that wraps Alert/Toast
-   * banners and modal notices — single source of truth so we can
-   * tune the bounding-box weight in one place.
+   * DESIGN — light theme.
+   * Cold-neutral canvas (slight blue tint at hue=240 with chroma
+   * ≤ 0.003 keeps it from drifting to warm-gray or violet-pastel).
+   * GitHub green as the single chromatic accent (hue 145, chroma
+   * 0.17) reads as fresh, natural signaling. Reserve
+   * to brand mark, sidebar active strip, primary CTA, focus
+   * ring, and link emphasis — never decorative. Migration
+   * history of this palette is documented in DESIGN.md.
    * ============================================================ */
-  --status-success-bg: oklch(0.95 0.04 145);
-  --status-success-fg: oklch(0.45 0.14 145);
-  --status-warning-bg: oklch(0.96 0.04 75);
-  --status-warning-fg: oklch(0.50 0.14 75);
-  --status-info-bg: oklch(0.95 0.04 264);          /* pale lavender (Linear primary) */
-  --status-info-fg: oklch(0.45 0.14 264);
-  --status-error-bg: oklch(0.96 0.03 25);
-  --status-error-fg: oklch(0.52 0.18 25);
+  --background: oklch(0.985 0.002 240);
+  --foreground: oklch(0.18 0.003 240);
+  --card: oklch(0.965 0.002 240);
+  --card-foreground: oklch(0.18 0.003 240);
+  --popover: oklch(0.965 0.002 240);
+  --popover-foreground: oklch(0.18 0.003 240);
+
+  /* Brand accent — hue inherits from --accent-hue */
+  --primary: oklch(0.55 0.17 var(--accent-hue));
+  --primary-foreground: oklch(0.99 0 0);
+
+  --secondary: oklch(0.93 0.005 240);
+  --secondary-foreground: oklch(0.20 0.003 240);
+
+  --muted: oklch(0.93 0.005 240);
+  --muted-foreground: oklch(0.46 0.005 240);
+
+  --accent: oklch(0.93 0.03 var(--accent-hue));                  /* faint accent wash */
+  --accent-foreground: oklch(0.20 0.003 240);
+
+  --destructive: oklch(0.55 0.20 25);
+
+  --border: oklch(0.86 0.005 240);
+  --input: oklch(0.86 0.005 240);
+  --ring: oklch(0.55 0.17 var(--accent-hue));                     /* accent focus ring */
+
+  /* Charts — accent is the primary series, the other three are
+   * reserved semantic channels (success/error/subtle) */
+  --chart-1: oklch(0.55 0.17 var(--accent-hue));                  /* brand accent */
+  --chart-2: oklch(0.55 0.14 var(--accent-hue));
+  --chart-3: oklch(0.50 0.10 var(--accent-hue));
+  --chart-4: oklch(0.55 0.20 25);
+  --chart-5: oklch(0.50 0.05 240);
+
+  /* Focus ring alpha */
+  --ring-alpha: oklch(0.55 0.17 var(--accent-hue) / 0.22);
+
+  /* ============================================================
+   * Status semantic palette (`success` / `warning` / `info` / `error`).
+   * `info` is a low-chroma steel cyan (hue 200) — kept distinct
+   * from primary green across both light AND dark surfaces by
+   * ~55° of hue separation. Warning shares the primary hue
+   * family but at lower chroma so it doesn't compete with the
+   * single accent. Success / error sit on forest-green and red
+   * respectively. The 4-band contract is consumed by
+   * `lib/tone.ts::rateToTone` — do NOT introduce a 5th status.
+   * ============================================================ */
+  --status-success-bg: oklch(0.93 0.04 145);
+  --status-success-fg: oklch(0.42 0.14 145);
+  --status-warning-bg: oklch(0.95 0.06 90);        /* warning shares hue family with primary but lower chroma */
+  --status-warning-fg: oklch(0.48 0.14 90);
+  --status-info-bg: oklch(0.93 0.025 200);
+  --status-info-fg: oklch(0.42 0.10 200);
+  --status-error-bg: oklch(0.93 0.05 25);
+  --status-error-fg: oklch(0.50 0.18 25);
   --status-success-border: color-mix(in oklab, var(--status-success-fg) 40%, transparent);
   --status-warning-border: color-mix(in oklab, var(--status-warning-fg) 40%, transparent);
   --status-info-border: color-mix(in oklab, var(--status-info-fg) 40%, transparent);
   --status-error-border: color-mix(in oklab, var(--status-error-fg) 40%, transparent);
   /* Sidebar (light) */
-  --sidebar: oklch(0.97 0.003 240);
-  --sidebar-foreground: oklch(0.13 0.005 264);
-  --sidebar-primary: oklch(0.55 0.16 264);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.95 0.005 240);
-  --sidebar-accent-foreground: oklch(0.13 0.005 264);
-  --sidebar-border: oklch(0.90 0.005 264);
-  --sidebar-ring: oklch(0.55 0.16 264);
+  --sidebar: oklch(0.965 0.002 240);
+  --sidebar-foreground: oklch(0.18 0.003 240);
+  --sidebar-primary: oklch(0.55 0.17 var(--accent-hue));
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.93 0.005 240);
+  --sidebar-accent-foreground: oklch(0.18 0.003 240);
+  --sidebar-border: oklch(0.86 0.005 240);
+  --sidebar-ring: oklch(0.55 0.17 var(--accent-hue));
+
+  /* ============================================================
+   * Stat typography tokens (round 7) — see DESIGN.md
+   * `typography-stats` block + `src/Components/ui/stat.tsx`.
+   * Sans body only; reserved for value-driven cells (Hero stat
+   * row, Pricing rate block, dashboard task counters, future
+   * /about scale proofs). Every cell needs ATTRIBUTION
+   * (subject · predicate caption). Size-only tokens here; colors
+   * source from the existing --foreground / --muted-foreground
+   * ladder, so dark-mode flipping is automatic.
+   * ============================================================ */
+  --stat-eyebrow-font-size: 0.6875rem;        /* 11px sans 500 + tracking 0.18em uppercase */
+  --stat-eyebrow-tracking: 0.18em;
+  --stat-value-sm-font-size: 1.5rem;          /* 24px → text-2xl */
+  --stat-value-font-size: 1.875rem;           /* 30px → text-3xl */
+  --stat-value-xl-font-size: 2.25rem;         /* 36px → text-4xl (Pricing rate block) */
+  --stat-value-tracking: -0.005em;            /* tighter; mirror of Plex Sans 600 default */
+  --stat-caption-sm-font-size: 0.6875rem;     /* 11px → text-[11px] */
+  --stat-caption-font-size: 0.75rem;          /* 12px → text-xs */
 }
 
 .dark {
   /* ============================================================
-   * DESIGN.md (Linear) — dark canvas (primary surface for this app)
-   *   canvas       #010102 — deepest dark, faint blue tint
-   *   surface-1    #0f1011 — cards
-   *   surface-2    #141516 — popovers, FloatingLogs panel
-   *   surface-3    #18191a — secondary fills (chips, table headers)
-   *   surface-4    #191a1b — deepest lifted
-   *   hairline     #23252a — 1px borders
-   *   hairline-strong #34343a — focus / pressed borders
-   *   ink          #f7f8f8 — primary text
-   *   ink-muted    #d0d6e0 — secondary text
-   *   ink-subtle   #8a8f98 — tertiary text, timestamps
-   *   ink-tertiary #62666d — disabled, footnotes
-   *   primary      #5e6ad2 — Linear Lavender (CTA, brand mark, focus)
-   *   primary-hover #828fff
-   *   primary-focus #5e69d1
-   *   semantic-success #27a644
+   * DESIGN — dark canvas.
+   * Cold deep gray (hue 240 chroma 0.003) — neutral product
+   * canvas. GitHub green (hue 145, chroma 0.17) pops on the dark
+   * surface without competing with light-mode foreground ink.
+   * Surface ladder for hierarchy runs canvas → card → popover →
+   * secondary fill, with incremental luminance lift per level
+   * (dark ladder: 0.16 → 0.20 → 0.23 → 0.24). The lift is
+   * incremental — never a full tone-jump that a section panel
+   * would read as decorative.
+   *   canvas       ~#1c1f22 — deepest dark surface
+   *   surface-1    ~#22272b — cards
+   *   surface-2    ~#2a3036 — popovers
+   *   surface-3    ~#353b42 — secondary fills
+   *   hairline     ~#3d4349 — 1px borders
+   *   ink          #eff1f3 — primary text
+   *   ink-muted    #9ca0a6 — secondary text
+   *   ink-subtle   #5c6066 — tertiary text
+   *   primary      GitHub green — CTA, brand mark, focus
    * ============================================================ */
-  --background: oklch(0.10 0.008 264);             /* canvas ~#010102 */
-  --foreground: oklch(0.97 0.005 264);             /* ink #f7f8f8 */
+  --background: oklch(0.16 0.003 240);
+  --foreground: oklch(0.94 0.003 240);
 
-  --card: oklch(0.16 0.005 264);                   /* surface-1 #0f1011 */
-  --card-foreground: oklch(0.97 0.005 264);
-  --popover: oklch(0.18 0.005 264);                /* surface-2 #141516 */
-  --popover-foreground: oklch(0.97 0.005 264);
+  --card: oklch(0.20 0.003 240);
+  --card-foreground: oklch(0.94 0.003 240);
+  --popover: oklch(0.23 0.003 240);
+  --popover-foreground: oklch(0.94 0.003 240);
 
-  --primary: oklch(0.58 0.16 264);                 /* lavender #5e6ad2 */
-  --primary-foreground: oklch(1 0 0);
+  /* Brand accent — hue inherits from --accent-hue */
+  --primary: oklch(0.72 0.17 var(--accent-hue));
+  --primary-foreground: oklch(0.18 0.003 240);
 
-  --secondary: oklch(0.20 0.005 264);              /* surface-3 #18191a */
-  --secondary-foreground: oklch(0.97 0.005 264);
+  --secondary: oklch(0.26 0.003 240);
+  --secondary-foreground: oklch(0.94 0.003 240);
 
-  --muted: oklch(0.20 0.005 264);
-  --muted-foreground: oklch(0.60 0.01 264);        /* ink-subtle #8a8f98 */
+  --muted: oklch(0.24 0.003 240);
+  --muted-foreground: oklch(0.62 0.005 240);
 
-  --accent: oklch(0.22 0.008 264);
-  --accent-foreground: oklch(0.97 0.005 264);
+  --accent: oklch(0.30 0.03 var(--accent-hue));
+  --accent-foreground: oklch(0.94 0.003 240);
 
-  --destructive: oklch(0.62 0.20 25);
+  --destructive: oklch(0.65 0.20 25);
 
-  /* hairline #23252a */
-  --border: oklch(0.27 0.008 264);
-  --input: oklch(0.27 0.008 264);
-  --ring: oklch(0.58 0.16 264);                    /* primary-focus for focus rings */
+  --border: oklch(0.32 0.005 240);
+  --input: oklch(0.32 0.005 240);
+  --ring: oklch(0.72 0.17 var(--accent-hue));
 
-  /* Charts */
-  --chart-1: oklch(0.58 0.16 264);                 /* primary lavender */
-  --chart-2: oklch(0.65 0.16 145);                 /* success #27a644 family */
-  --chart-3: oklch(0.72 0.12 75);                  /* amber */
-  --chart-4: oklch(0.62 0.20 25);                  /* red */
-  --chart-5: oklch(0.50 0.10 264);                 /* muted accent */
+  --chart-1: oklch(0.72 0.17 var(--accent-hue));
+  --chart-2: oklch(0.65 0.16 var(--accent-hue));
+  --chart-3: oklch(0.70 0.10 var(--accent-hue));
+  --chart-4: oklch(0.65 0.20 25);
+  --chart-5: oklch(0.55 0.05 240);
 
-  /* Focus ring alpha — primary at 18% for both modes */
-  --ring-alpha: oklch(0.58 0.16 264 / 0.20);
+  --ring-alpha: oklch(0.72 0.17 var(--accent-hue) / 0.24);
 
   /* ============================================================
-   * Status semantic palette (DESIGN.md Linear)
-   * Mirror of :root with surface-tinted backgrounds.
-   * Borders mirror the light block — same 30% fg mix recipe.
+   * Status dark palette — info = low-chroma steel cyan, distinct
+   * from primary green.
    * ============================================================ */
-  --status-success-bg: oklch(0.20 0.06 145);
-  --status-success-fg: oklch(0.78 0.16 145);
-  --status-warning-bg: oklch(0.20 0.06 75);
-  --status-warning-fg: oklch(0.80 0.12 75);
-  --status-info-bg: oklch(0.22 0.05 264);          /* lavender-tinted surface */
-  --status-info-fg: oklch(0.78 0.12 264);
-  --status-error-bg: oklch(0.22 0.08 25);
+  --status-success-bg: oklch(0.22 0.06 145);
+  --status-success-fg: oklch(0.74 0.16 145);
+  --status-warning-bg: oklch(0.24 0.07 90);
+  --status-warning-fg: oklch(0.78 0.14 90);
+  --status-info-bg: oklch(0.22 0.04 200);
+  --status-info-fg: oklch(0.72 0.10 200);
+  --status-error-bg: oklch(0.24 0.08 25);
   --status-error-fg: oklch(0.72 0.18 25);
   --status-success-border: color-mix(in oklab, var(--status-success-fg) 40%, transparent);
   --status-warning-border: color-mix(in oklab, var(--status-warning-fg) 40%, transparent);
   --status-info-border: color-mix(in oklab, var(--status-info-fg) 40%, transparent);
   --status-error-border: color-mix(in oklab, var(--status-error-fg) 40%, transparent);
 
-  /* Sidebar (dark) — one step above canvas, sits between bg and surface-1 */
-  --sidebar: oklch(0.13 0.008 264);
-  --sidebar-foreground: oklch(0.97 0.005 264);
-  --sidebar-primary: oklch(0.58 0.16 264);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.20 0.005 264);
-  --sidebar-accent-foreground: oklch(0.97 0.005 264);
-  --sidebar-border: oklch(0.27 0.008 264);
-  --sidebar-ring: oklch(0.58 0.16 264);
+  /* Sidebar (dark) */
+  --sidebar: oklch(0.18 0.003 240);
+  --sidebar-foreground: oklch(0.94 0.003 240);
+  --sidebar-primary: oklch(0.72 0.17 var(--accent-hue));
+  --sidebar-primary-foreground: oklch(0.18 0.003 240);
+  --sidebar-accent: oklch(0.24 0.003 240);
+  --sidebar-accent-foreground: oklch(0.94 0.003 240);
+  --sidebar-border: oklch(0.32 0.005 240);
+  --sidebar-ring: oklch(0.72 0.17 var(--accent-hue));
 }
 
 @layer base {
+  /* Smooth-scroll for in-page `<a href="#…">` anchors. Reduced-motion
+   * media query below overrides to `auto` for accessibility parity
+   * with the rest of the system. */
+  html {
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+  }
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
-    font-feature-settings: 'cv11', 'ss03';
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+  }
+  #root {
+    overflow-x: hidden;
+    min-height: 100vh;
+    overscroll-behavior-x: none;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-heading);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;             /* Plex Sans tracks tighter than DM Sans; ease up vs Outfit's -0.02em */
+    font-weight: 600;                    /* Plex sans 600 reads at the same impact as Outfit 700 */
   }
 
-  /* Linear: mono only in code contexts */
   code, kbd, pre, samp {
     font-family: var(--font-jetbrains-mono);
   }
@@ -242,10 +312,67 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes subtle-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+/* ──────────────────────────────────────────────────────────────────────
+ * Recommended-tier green hairline accent (PricingPage) — placed via
+ * `box-shadow: inset 0 -1px 0 0 ...` so the highlight sits one pixel
+ * inside the rounded card border, not overlapping it. Engineering-tool
+ * honest signal — distinguishable from the existing `border-foreground/45`
+ * ring because the inset shadow lives AT THE BOTTOM only, not as a
+ * full perimeter. The green tint at 45% opacity keeps it tasteful
+ * when stacked against the cold-neutral canvas + hairline-border chrome.
+ * Compositioned onto `<TierCardBlock>` when `tier.highlight` is true.
+ * ────────────────────────────────────────────────────────────────────── */
+.tier-recommended-accent {
+  box-shadow: inset 0 -1px 0 0 color-mix(in oklab, var(--primary) 45%, transparent);
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Brand cursor blink (round 8 motion grammar).
+ *
+ * Distinct from the deleted `.status-running::after halo` (round 1):
+ * cursor-blink is a canonical terminal-prompt metadata rhythm — only
+ * the trailing `_` token of `>_` is affected, and it uses `steps(2, end)`
+ * for an honest on/off cadence rather than a soft fade that would
+ * read as decorative pulse. Reduced-motion respected — the cursor
+ * stays lit when `(prefers-reduced-motion: reduce)` matches.
+ *
+ * CSS pair to the GSAP reveal-stagger choreography defined in
+ * `src/lib/use-reveal-stagger.ts`. Both honour the same token
+ * contract (550ms duration · 70ms stagger · 14px translate · power2.out).
+ * ────────────────────────────────────────────────────────────────────── */
+@keyframes brand-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.brand-cursor {
+  display: inline-block;
+  animation: brand-cursor-blink 1.1s steps(2, end) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-cursor {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Motion tokens (round 8).
+ *
+ * Single source of truth for motion duration / stagger / ease across
+ * the visitor surfaces. CSS keyframes read these via inline values
+ * (the `fade-up` keyframe predates this token block); GSAP tweens
+ * read these as `vars` values in `src/lib/use-reveal-stagger.ts`.
+ * ────────────────────────────────────────────────────────────────────── */
+:root {
+  --motion-duration-reveal: 550ms;
+  --motion-stagger-reveal: 70ms;
+  --motion-translate-y: 14px;
+}
+
+/* `subtle-pulse` keyframe + `.status-running::after` halo were part
+ * of the Linear aesthetic signature. Removed in the industrial-redesign
+ * pass — status dots are static, conveying presence without animation
+ * flattery. Other keyframes (fade-up, accordion-*) are kept. */
 
 @keyframes accordion-down {
   from { height: 0; opacity: 0; }
@@ -274,37 +401,85 @@
   .animate-accordion-up {
     animation: accordion-up 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  /* Linear: hairline via inset shadow for true dark-mode blending */
+  /* Hairline border via inset shadow for true dark-mode blending */
   .hairline-border {
     border: none;
     box-shadow: inset 0 0 0 1px var(--border);
   }
 }
 
-/* ===== Card (Linear: 1px hairline border, hover = surface lift only) =====
- * Per DESIGN.md: Linear avoids drop shadows and translate-Y on dark; the
- * depth ladder is carried by surface elevation + 1px hairline borders.
- * Hover here lifts the card from `--card` (surface-1) to `--secondary`
- * (surface-3) and bumps the border to `hairline-strong`. No shadow. ===== */
+/* ===== Card =====
+ * Per DESIGN: cards float on the canvas via surface-1 tone + 1px
+ * hairline border. Hover deepens the border tint toward the single
+ * amber accent (the --primary token is amber). */
 .card-refined {
   color: var(--card-foreground);
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;                           /* rounded.lg 12px */
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  border-radius: 0.75rem;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .card-refined:hover {
-  background: var(--secondary);
-  border-color: color-mix(in oklab, var(--primary) 20%, var(--border));
+  border-color: color-mix(in oklab, var(--primary) 35%, var(--border));
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--primary) 8%, transparent);
 }
 
 .dark .card-refined:hover {
-  background: var(--secondary);
-  border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+  border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--primary) 14%, transparent);
 }
 
-/* ===== Button (Linear: 8px radius, primary lavender, surface-1 secondary) ===== */
+/* Card outline — single SSoT for outer card border density
+ *
+ * (Subsection comment inside the `/* ===== Card ===== */` block.
+ *  Deliberately uses plain `/* ... */` rather than the 5-equals
+ *  `/* ===== X ===== */` section-header pattern — the SSoT regression
+ *  test at `src/lib/card-outline.test.ts` scans for `\n/* ===== ` as
+ *  a section-boundary anchor, so any subsection comment that mimics
+ *  the section-header shape would prematurely truncate the slice and
+ *  leave the test pinned to the wrong block. Stay plain.)
+ *
+ * Companion utility for the `border` keyword on full-card outer
+ * wrappers on the **dashboard surface**. The 25% alpha on `var(--border)`
+ * reads as a soft hairline in BOTH light and dark mode without
+ * separate per-theme tuning:
+ *
+ *   light:  border (oklch 0.86) over card (oklch 0.965) ~ 0.025 visible
+ *   dark:   border (oklch 0.32) over card (oklch 0.20)  ~ 0.030 visible
+ *
+ * Those are close enough that a single 25% mix reads consistently
+ * across themes — no need for a separate dark rule.
+ *
+ * Use INSTEAD of `border border-border/40` on dashboard outer-card
+ * wrappers — AccountCard / TasksCard / InboxRow / HomepageOverview /
+ * GroupGrid tile / BatchRefreshDialog panel / etc. — so a future
+ * density tweak lives in one place. The contract is pinned by
+ * `src/lib/card-outline.test.ts` — bumping the percent or
+ * accidentally re-declaring it under a non-Card block both trip the
+ * gate.
+ *
+ * NOT to be used on:
+ *   - Inline row dividers (`border-y border-border/N`) — different
+ *     role (separating rows inside a parent card); keep their literal
+ *     /N so the divider density stays intentional.
+ *   - Inputs / buttons / tab strips / segment controls — interactive
+ *     chrome needs functional stroke weight; keep their /40-60 literals.
+ *   - Cards under `pulse-anim` skeletons — the skeleton glow wins,
+ *     outline density is irrelevant.
+ *   - Visitor / marketing surface hero cards — LandingPage / PricingPage
+ *     / AboutPage / HotListPage (uses MarketingTopBar + MarketingFooter,
+ *     so it IS a marketing surface) / MagicSuggestions tile. Those
+ *     use a deliberately stronger `border border-border/40` for visual
+ *     punch against a content-light canvas. Migrating them would
+ *     flatten the marketing aesthetic. The SSoT scope is dashboard
+ *     functional cards; marketing has its own visual language.
+ */
+.card-outline {
+  border-color: color-mix(in oklab, var(--border) 25%, transparent);
+}
+
+/* ===== Button ===== */
 .btn-elegant {
   transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -314,21 +489,7 @@
   transition-duration: 0.1s;
 }
 
-/* ===== Status indicators (Linear: status noise uses subtle-pulse) ===== */
-.status-running {
-  position: relative;
-}
-
-.status-running::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: currentColor;
-  animation: subtle-pulse 2s ease-in-out infinite;
-}
-
-/* ===== Data Tables (Linear: dense, mono caption headers, ink-subtle text) ===== */
+/* ===== Data Tables ===== */
 .table-refined {
   border-collapse: separate;
   border-spacing: 0;
@@ -339,9 +500,9 @@
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: oklch(0.60 0.01 264);                    /* ink-subtle on dark */
+  color: oklch(0.60 0.01 240);
   border-bottom: 1px solid var(--border);
-  background: var(--secondary);                   /* surface-3 */
+  background: var(--secondary);
 }
 
 .table-refined td {
@@ -354,15 +515,15 @@
 }
 
 .table-row-refined:hover {
-  background-color: var(--secondary);             /* surface-3 */
+  background-color: var(--secondary);
 }
 
-/* ===== Form Inputs (Linear: surface-1, 8px radius, hairline border, lavender focus ring) ===== */
+/* ===== Form Inputs ===== */
 .input-refined {
   height: 36px;
-  border-radius: 0.5rem;                         /* rounded.md 8px */
+  border-radius: 0.5rem;
   border: 1px solid var(--border);
-  background: var(--card);                        /* surface-1 */
+  background: var(--card);
   color: var(--foreground);
   padding: 0 0.75rem;
   font-size: 0.875rem;
@@ -373,14 +534,14 @@
 .input-refined:focus {
   outline: none;
   border-color: var(--ring);
-  box-shadow: 0 0 0 3px var(--ring-alpha);            /* primary at 18-20% */
+  box-shadow: 0 0 0 3px var(--ring-alpha);
 }
 
 .input-refined::placeholder {
   color: var(--muted-foreground);
 }
 
-/* ===== Empty states (Linear: minimal, ink-muted) ===== */
+/* ===== Empty states ===== */
 .empty-minimal {
   display: flex;
   flex-direction: column;
@@ -397,7 +558,7 @@
   opacity: 0.4;
 }
 
-/* ===== Input focus ring helper (Linear uses lavender primary) ===== */
+/* ===== Input focus ring ===== */
 .input-elegant {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -407,7 +568,7 @@
   box-shadow: 0 0 0 3px var(--ring-alpha);
 }
 
-/* ===== Scrollbar (Linear: minimal, hairline-strong thumb) ===== */
+/* ===== Scrollbar ===== */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -427,20 +588,20 @@
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: oklch(0.32 0.008 264);               /* hairline-strong on dark */
+  background: oklch(0.32 0.005 240);
   border-radius: 3px;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.42 0.01 264);
+  background: oklch(0.42 0.005 240);
 }
 
-/* ===== Selection (Linear: primary at low alpha) ===== */
+/* ===== Selection ===== */
 ::selection {
   background: color-mix(in oklab, var(--primary) 22%, transparent);
 }
 
-/* ===== Badge (Linear: surface-3 background, ink-muted foreground, full pill) ===== */
+/* ===== Badge ===== */
 .badge-subtle {
   background: var(--secondary);
   color: var(--foreground);
@@ -450,42 +611,26 @@
   padding: 2px 8px;
 }
 
-/* ===== Status badges =====
- * The four `.badge-{success,warning,error,info}` block rules that used to
- * live here have been deleted (drift vs `--status-*-{bg,fg}` tokens; no
- * active consumers after the lib/tone.ts migration).
- *
- * Single source of truth: `@/lib/tone` (`toneChipClasses(tone)` for paired
- * bg+fg on chip surfaces; `toneStyleClasses[tone]` as the documented
- * escape-hatch map). The four `--status-*-{bg,fg}` CSS variables defined
- * above remain canonical and are emitted into Tailwind v4 utility classes
- * by the helpers in `lib/tone.ts`.
- *
- * If a future site needs a different chip shape (e.g. dot-only, ring-only,
- * outline-on-fg) add the helper to `lib/tone.ts` — do NOT add a parallel
- * stylesheet rule here, since two sources of truth will drift again.
- */
-
-/* ===== Tooltip (Linear: ink-canvas with on-ink text) ===== */
+/* ===== Tooltip ===== */
 .tooltip-refined {
-  background: oklch(0.95 0.005 240);              /* inverse-canvas: white chip on dark */
-  color: oklch(0.13 0.005 264);
+  background: oklch(0.95 0.005 240);
+  color: oklch(0.18 0.003 240);
   font-size: 0.75rem;
   padding: 0.375rem 0.625rem;
   border-radius: 0.375rem;
-  border: 1px solid oklch(0.90 0.005 264);
+  border: 1px solid oklch(0.86 0.005 240);
   box-shadow: 0 4px 12px oklch(0 0 0 / 0.2);
   max-width: 280px;
 }
 
 .dark .tooltip-refined {
-  background: var(--foreground);                  /* ink-tooltip: ink on dark text */
+  background: var(--foreground);
   color: var(--background);
 }
 
-/* ===== Dialog (Linear: surface-2 with hairline border, no heavy shadow) ===== */
+/* ===== Dialog ===== */
 .dialog-refined {
-  background: var(--popover);                     /* surface-2 */
+  background: var(--popover);
   border-radius: 0.75rem;
   border: 1px solid var(--border);
   box-shadow: 0 16px 48px oklch(0 0 0 / 0.4);
@@ -506,15 +651,15 @@
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
 }
 
-/* ===== Dashed add button ===== */
+/* ===== Dashed add button — hover tint reads --primary (amber) ===== */
 .btn-dashed {
-  border: 1.5px dashed oklch(0.27 0.008 264);
+  border: 1.5px dashed oklch(0.86 0.005 240);
   background: transparent;
   color: var(--muted-foreground);
   border-radius: 0.5rem;
   padding: 0.625rem 1rem;
   display: flex;
-  align-items: center;
+  align-items-items: center;
   justify-content: center;
   width: 100%;
   cursor: pointer;
@@ -529,7 +674,7 @@
 }
 
 .dark .btn-dashed {
-  border-color: oklch(0.32 0.008 264);
+  border-color: oklch(0.32 0.005 240);
 }
 .dark .btn-dashed:hover {
   border-color: color-mix(in oklab, var(--primary) 50%, transparent);
@@ -564,34 +709,28 @@
   border-radius: 0.625rem;
   transition: all 0.2s ease;
   border: 1px solid transparent;
-  background: oklch(0.20 0.005 264 / 0.40);
-}
-.auth-row:hover {
-  border-color: color-mix(in oklab, var(--primary) 15%, transparent);
-  background: oklch(0.20 0.005 264 / 0.60);
+  background: oklch(0.20 0.003 240 / 0.40);
 }
 
-/* ===== Status dot ===== */
-/* The `.status-dot-{valid,invalid}` block rules that used to live here have
- * been deleted — light-mode hardcoded `oklch(0.65 0.16 145)` /
- * `oklch(0.72 0.18 25)` did not react to dark theme switching (drift vs
- * canonical `--status-{success,error}-fg` tokens). Their second occurrence
- * in the "Light-mode overrides" section below was deleted too: it pulled
- * half from canonical tokens and half from hardcoded oklch, doubling the
- * SSOT surface and locking a separate halo alpha.
- *
- * Single source of truth: `@/lib/tone.ts` `toneDotStyle(tone)` returns the
- * inline-style object `{ background, boxShadow }` driven by the canonical
- * `--status-{tone}-fg` token. Apply via:
- *   `<span className="status-dot" style={toneDotStyle(tone)} />`
- *
- * The `.status-dot` base rule below (size / shape only) is KEPT — carries
- * geometric properties (6×6 px, rounded-50%, flex-shrink) with no color
- * tokens and zero drift risk.
- *
- * If a future site needs a different dot shape (outline, ring, no-halo)
- * add the helper to `lib/tone.ts` — do NOT add a parallel stylesheet rule
- * here, since two sources of truth will drift again. */
+/* Mobile-compact auth-row: tighter padding + gap on small screens */
+@media (max-width: 639px) {
+  .auth-row-compact {
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+  }
+}
+.auth-row:hover {
+  border-color: color-mix(in oklab, var(--primary) 18%, transparent);
+  background: oklch(0.20 0.003 240 / 0.60);
+}
+
+/* ===== Status dot — geometric base only =====
+ * Color (fill + halo) is now served by `toneDotStyle()` in `lib/tone`,
+ * which reads the canonical `--status-{tone}-fg` token. Removing the
+ * pre-migration light/dark `oklch(...)` overrides here was deliberate —
+ * they bypassed the token system and pinned two of four tones to
+ * hard-coded chroma. The dot base shape (6×6, rounded, flex-shrink)
+ * stays since it carries geometric properties only. */
 .status-dot {
   width: 6px;
   height: 6px;
@@ -601,36 +740,30 @@
 
 /* ===== Light-mode overrides for new components ===== */
 .card-refined {
-  background: var(--card);                          /* opaque for light mode */
+  background: var(--card);
   border: 1px solid var(--border);
-}
-.dark .card-refined {
-  background: oklch(0.16 0.005 264 / 0.60);        /* semi-transparent glass on dark */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid oklch(1 0 0 / 0.06);           /* ultra-subtle white hairline */
 }
 
 .auth-row {
   background: var(--muted);
 }
 .dark .auth-row {
-  background: oklch(0.20 0.005 264 / 0.40);
+  background: oklch(0.20 0.003 240 / 0.40);
 }
 .auth-row:hover {
   background: var(--accent);
   border-color: var(--border);
 }
 .dark .auth-row:hover {
-  background: oklch(0.20 0.005 264 / 0.60);
-  border-color: color-mix(in oklab, var(--primary) 15%, transparent);
+  background: oklch(0.20 0.003 240 / 0.60);
+  border-color: color-mix(in oklab, var(--primary) 18%, transparent);
 }
 
 .btn-dashed {
   border-color: var(--border);
 }
 .dark .btn-dashed {
-  border-color: oklch(0.32 0.008 264);
+  border-color: oklch(0.32 0.005 240);
 }
 .btn-dashed:hover {
   border-color: var(--primary);
@@ -652,3 +785,297 @@
 .app-main {
   background: var(--background);
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Landing-page motion layer (round-beautify).
+ *
+ *   1. .mesh-blob / .mesh-blob--N
+ *        3 radial-gradient blobs that drift around the section
+ *        background. Pure-CSS animation (NOT GSAP-driven) because
+ *        the cycle runs continuously — putting it on a GSAP tween
+ *        would create a permanent tween ticking in the background
+ *        that useGSAP would have to clean up on every route
+ *        change. CSS keyframes handle cleanup for free (the
+ *        browser drops them on element unmount).
+ *   2. .shimmer
+ *        Brand-primary light sweep across an element on a 6s loop.
+ *        Used as a `::before` overlay on the hero CTA so the
+ *        button reads as "premium" without being noisy. The
+ *        keyframe translates a soft gradient from -100% → 200%
+ *        along the X axis. Reduced-motion kills the loop; the
+ *        element stays at 0% (no sweep, no flicker).
+ *   3. .badge-pulse
+ *        Scales the leading dot in the eyebrow badge 1 → 1.35
+ *        with a 1.6s ease cycle. Pairs with the existing
+ *        `animate-pulse` Tailwind utility on the dot but with a
+ *        more visible scale change.
+ *   4. .feature-icon-float
+ *        Used as the y-target of a GSAP tween (not directly via
+ *        the @keyframes), but exposed as a CSS variable so a
+ *        future CSS-only fallback can hook into it without a JS
+ *        re-write.
+ *
+ * Reduced-motion: every keyframe block here has a paired
+ * `prefers-reduced-motion: reduce` override that disables the
+ * animation. Belt-and-suspenders against the global rule at
+ * the top of this file (which sets duration to 0.01ms) — this
+ * guarantees the visual at-rest state is the same as the
+ * start-frame.
+ * ────────────────────────────────────────────────────────────────────── */
+.mesh-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  /* 30% primary tint, 70% transparent — the same density the
+   * existing `GlowOrb` uses, so the mesh reads as a softer
+   * (multi-blob) version of the existing single-orb effect. */
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 30%, transparent) 0%,
+    transparent 70%
+  );
+  will-change: transform;
+  transform-origin: center center;
+}
+
+.mesh-blob--1 {
+  top: 5%;
+  left: 15%;
+  width: 50%;
+  height: 60%;
+  animation: mesh-float-1 18s ease-in-out infinite;
+}
+
+.mesh-blob--2 {
+  top: 30%;
+  right: 5%;
+  width: 45%;
+  height: 55%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 24%, transparent) 0%,
+    transparent 70%
+  );
+  animation: mesh-float-2 24s ease-in-out infinite;
+}
+
+.mesh-blob--3 {
+  bottom: 5%;
+  left: 25%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 22%, transparent) 0%,
+    transparent 70%
+  );
+  animation: mesh-float-3 28s ease-in-out infinite;
+}
+
+@keyframes mesh-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(22%, -18%) scale(1.12); }
+  66%      { transform: translate(-15%, 22%) scale(0.92); }
+}
+
+@keyframes mesh-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-22%, 18%) scale(0.9); }
+  66%      { transform: translate(18%, -22%) scale(1.12); }
+}
+
+@keyframes mesh-float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(15%, 22%) scale(1.05); }
+  66%      { transform: translate(-22%, -15%) scale(0.95); }
+}
+
+/* Light-sweep overlay used on the hero primary CTA via a
+ * `::before` pseudo. The base `position: relative;
+ * overflow: hidden` on the button keeps the gradient clipped
+ * to the rounded rectangle. */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    transparent 35%,
+    color-mix(in oklab, var(--primary-foreground) 28%, transparent) 50%,
+    transparent 65%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: shimmer-sweep 6s ease-in-out infinite;
+  pointer-events: none;
+  /* Don't intercept button clicks — pointer-events: none
+   * keeps the underlying <a>/<button> clickable. */
+}
+@keyframes shimmer-sweep {
+  0%   { transform: translateX(-100%); }
+  35%  { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* The leading dot on the eyebrow badge ("多平台分发 · 本地优先")
+ * already uses `animate-pulse` from Tailwind. `.badge-dot-pulse`
+ * is the deeper-scaled replacement (1 → 1.45 vs Tailwind's
+ * 1 → 1.05) that we attach to dots that need more presence
+ * without adding new keyframes per call site. */
+.badge-dot-pulse {
+  animation: badge-dot-pulse 1.6s ease-in-out infinite;
+}
+@keyframes badge-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.45); opacity: 0.7; }
+}
+
+/* 3D-tilt preparation — sets the perspective on the parent
+ * container so the child card can `rotateY` without a separate
+ * `transform-style: preserve-3d` declaration. The `transition`
+ * keeps the tilt in/out smooth when the user moves the mouse
+ * off the card. Currently unused (the platform cards keep their
+ * existing Tailwind hover lift) — reserved for a future
+ * feature-card or pricing-tier 3D-tilt pass. */
+.tilt-3d-perspective {
+  perspective: 1000px;
+}
+.tilt-3d-card {
+  transform-style: preserve-3d;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Dramatic mesh variant — 1.4× the area, +6% primary tint, 14/18/22s
+ * drift cadence. Activated by the `.mesh-blob--variant-dramatic`
+ * wrapper class added by `<MeshGradient intensity="dramatic">`.
+ * Same 3-blob structure as the base variant so the visual rhythm
+ * stays recognizable, but the larger area + higher tint + faster
+ * cadence reads as "more active" without becoming noisy.
+ * ────────────────────────────────────────────────────────────────────── */
+.mesh-blob--variant-dramatic .mesh-blob {
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 38%, transparent) 0%,
+    transparent 65%
+  );
+  filter: blur(100px);
+}
+.mesh-blob--variant-dramatic .mesh-blob--1 {
+  width: 70%;
+  height: 80%;
+  animation: mesh-float-dramatic-1 14s ease-in-out infinite;
+}
+.mesh-blob--variant-dramatic .mesh-blob--2 {
+  width: 65%;
+  height: 75%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 32%, transparent) 0%,
+    transparent 65%
+  );
+  animation: mesh-float-dramatic-2 18s ease-in-out infinite;
+}
+.mesh-blob--variant-dramatic .mesh-blob--3 {
+  width: 70%;
+  height: 70%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--primary) 30%, transparent) 0%,
+    transparent 65%
+  );
+  animation: mesh-float-dramatic-3 22s ease-in-out infinite;
+}
+
+@keyframes mesh-float-dramatic-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(28%, -22%) scale(1.15); }
+  66%      { transform: translate(-20%, 26%) scale(0.88); }
+}
+@keyframes mesh-float-dramatic-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-26%, 22%) scale(0.88); }
+  66%      { transform: translate(22%, -28%) scale(1.18); }
+}
+@keyframes mesh-float-dramatic-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(20%, 26%) scale(1.1); }
+  66%      { transform: translate(-28%, -20%) scale(0.9); }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * .cta-ring — animated box-shadow halo around the primary CTA
+ * button. Pairs with the existing `shadow-lg shadow-primary/20`
+ * baseline by REPLACING it (the new halo + ring width reads as
+ * one continuous glow, not two competing shadows). The 3.2s
+ * ease-in-out cycle makes the halo "breathe" — the same rhythm
+ * as the rest of the CTA section's ambient layer so the page
+ * reads as one organism, not a stack of unrelated effects.
+ *
+ * Hover upgrade: the halo intensifies to full primary at 70%
+ * spread — a 2.5× visual lift without a layout shift (box-
+ * shadow paints, doesn't reserve space). The transition is
+ * 0.25s, fast enough to feel responsive on the click target.
+ *
+ * The class stacks on the existing `.shimmer` so the button
+ * keeps its light-sweep animation — the halo and the sweep
+ * are two separate affordances, both subtle, neither one
+ * overshadowing the other.
+ * ────────────────────────────────────────────────────────────────────── */
+.cta-ring {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--primary) 80%, transparent),
+    0 0 22px 4px color-mix(in oklab, var(--primary) 30%, transparent);
+  animation: cta-ring-pulse 3.2s ease-in-out infinite;
+  transition: box-shadow 0.25s ease, transform 0.18s ease;
+}
+.cta-ring:hover {
+  box-shadow:
+    0 0 0 2px var(--primary),
+    0 0 36px 8px color-mix(in oklab, var(--primary) 55%, transparent);
+  transform: translateY(-1px);
+}
+.cta-ring:active {
+  transform: translateY(0);
+}
+@keyframes cta-ring-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--primary) 80%, transparent),
+      0 0 18px 3px color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--primary),
+      0 0 32px 7px color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mesh-blob--1,
+  .mesh-blob--2,
+  .mesh-blob--3,
+  .mesh-blob--variant-dramatic .mesh-blob--1,
+  .mesh-blob--variant-dramatic .mesh-blob--2,
+  .mesh-blob--variant-dramatic .mesh-blob--3,
+  .shimmer::before,
+  .badge-dot-pulse,
+  .cta-ring {
+    animation: none !important;
+  }
+  .mesh-blob--1 { transform: none; }
+  .mesh-blob--2 { transform: none; }
+  .mesh-blob--3 { transform: none; }
+  .mesh-blob--variant-dramatic .mesh-blob--1 { transform: none; }
+  .mesh-blob--variant-dramatic .mesh-blob--2 { transform: none; }
+  .mesh-blob--variant-dramatic .mesh-blob--3 { transform: none; }
+  .shimmer::before { transform: translateX(0); opacity: 0.4; }
+  .badge-dot-pulse { transform: scale(1); }
+  .cta-ring { box-shadow: 0 0 0 2px var(--primary), 0 0 18px 3px color-mix(in oklab, var(--primary) 30%, transparent); }
+}
+

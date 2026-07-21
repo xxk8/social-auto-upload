@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 from pathlib import Path
@@ -7,79 +8,99 @@ from unittest.mock import patch
 
 import pytest
 
+import web_runner.db as wr_db
+import web_runner.utils as wr_utils
+from web_runner import create_app
+
+
+@pytest.fixture(autouse=True)
+def _clean_tasks():
+    """Wipe the tasks table before AND after each test for isolation.
+
+    Autouse so every test starts (and ends) with a clean state. Matches
+    the test_studio.py::``_clean_tables`` pattern post-SQLite-removal.
+    """
+    try:
+        wr_db.get_database().execute("DELETE FROM tasks")
+    except Exception:
+        # Schema not bootstrapped yet; the conftest's _init_pg_schema
+        # session fixture runs first, but guard against the race.
+        pass
+    yield
+    try:
+        wr_db.get_database().execute("DELETE FROM tasks")
+    except Exception:
+        pass
+
 
 @pytest.fixture
 def app():
-    import web_runner as wr
+    """Flask test client with isolated cookies/uploads dirs.
 
-    wr.app.config["TESTING"] = True
+    Post-SQLite-removal: no per-test temp DB. Uses the production
+    ``get_database()`` against the test PG (``$DATABASE_URL``) and
+    relies on the autouse ``_clean_tasks`` fixture for isolation.
+    """
+    application = create_app()
+    application.config["TESTING"] = True
     with tempfile.TemporaryDirectory() as tmp_dir:
-        orig_cookies_dir = wr.COOKIES_DIR
-        orig_uploads_dir = wr.UPLOADS_DIR
-        wr.COOKIES_DIR = Path(tmp_dir) / "cookies"
-        wr.COOKIES_DIR.mkdir(exist_ok=True)
-        wr.UPLOADS_DIR = Path(tmp_dir) / "uploads"
-        wr.UPLOADS_DIR.mkdir(exist_ok=True)
-        with wr.app.test_client() as client:
-            yield client
-        wr.COOKIES_DIR = orig_cookies_dir
-        wr.UPLOADS_DIR = orig_uploads_dir
+        tmp = Path(tmp_dir)
+        orig_cookies_dir = wr_utils.COOKIES_DIR
+        orig_uploads_dir = wr_utils.UPLOADS_DIR
+        wr_utils.COOKIES_DIR = tmp / "cookies"
+        wr_utils.COOKIES_DIR.mkdir(exist_ok=True)
+        wr_utils.UPLOADS_DIR = tmp / "uploads"
+        wr_utils.UPLOADS_DIR.mkdir(exist_ok=True)
+
+        try:
+            with application.test_client() as client:
+                yield client
+        finally:
+            wr_utils.COOKIES_DIR = orig_cookies_dir
+            wr_utils.UPLOADS_DIR = orig_uploads_dir
 
 
 def _data_uri_png() -> str:
-    """Minimal 1x1 red PNG as data URI for testing — ~20KB."""
-    import base64
-
+    """Minimal 1x1 red PNG as data URI for testing — padded to exceed MIN_UPLOAD_BYTES."""
     raw = (
         b"\x89PNG\r\n\x1a\n"
         b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
         b"\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18"
         b"\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
     )
-    # Pad to exceed MIN_UPLOAD_BYTES (10240)
     raw = raw + b"\x00" * 10240
     return f"data:image/png;base64,{base64.b64encode(raw).decode()}"
 
 
 def _read_task_argv(task_id: str) -> list[str]:
-    """Read the stored argv for a task from the DB."""
-    import web_runner as wr
-    import sqlite3
+    """Read the stored argv for a task from the production PG.
 
-    with sqlite3.connect(wr.DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT argv FROM tasks WHERE task_id = ?", (task_id,)
-        ).fetchone()
+    Uses ``get_database()`` (PG-only) with ``?`` placeholders — the
+    production ``fetch_one`` internally translates them to ``%s``
+    for psycopg via ``_translate_placeholders``.
+    """
+    row = wr_db.get_database().fetch_one(
+        "SELECT argv FROM tasks WHERE task_id = ?", (task_id,)
+    )
     assert row is not None, f"task not found: {task_id}"
     return json.loads(row["argv"])
 
 
 def _read_task_status(task_id: str) -> str:
-    """Read the stored status for a task from the DB."""
-    import web_runner as wr
-    import sqlite3
-
-    with sqlite3.connect(wr.DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
-        ).fetchone()
+    """Read the stored status for a task from the production PG."""
+    row = wr_db.get_database().fetch_one(
+        "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
+    )
     assert row is not None, f"task not found: {task_id}"
     return row["status"]
-
-
-# ---------------------------------------------------------------------------
-# Helper: post a multipart upload and return the response JSON + task argv
-# ---------------------------------------------------------------------------
 
 
 def _post_upload(app, **fields) -> tuple[dict, list[str]]:
     """Submit a video upload, patch _run_sau, return (json_data, argv_list)."""
     with (
-        patch("web_runner._run_sau"),
-        patch("web_runner.task_executor.submit"),
-        patch("web_runner.MIN_UPLOAD_BYTES", 0),
+        patch("web_runner.utils._run_sau"),
+        patch("web_runner.utils.task_executor.submit"),
+        patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
     ):
         # Always include file_data unless 'file' is explicitly set
         if "file_data" not in fields and "file" not in fields:
@@ -140,7 +161,6 @@ class TestBilibiliUploadVideo:
         assert argv[tid_idx + 1] == "233"
 
     def test_tid_explicit(self, app):
-        """Explicit tid should be used."""
         _, argv = _post_upload(
             app,
             platform="bilibili",
@@ -153,7 +173,6 @@ class TestBilibiliUploadVideo:
         assert argv[tid_idx + 1] == "17"
 
     def test_basic_with_tags_and_explicit_tid(self, app):
-        """Bilibili upload with tags and explicit tid."""
         _, argv = _post_upload(
             app,
             platform="bilibili",
@@ -173,10 +192,10 @@ class TestBilibiliUploadVideo:
     def test_schedule_status(self, app):
         """Scheduled bilibili upload should have status 'scheduled'."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
-            patch("web_runner._schedule_task"),
+            patch("web_runner.utils._run_sau"),
+            patch("web_runner.utils.task_executor.submit"),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils._schedule_task"),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -196,12 +215,12 @@ class TestBilibiliUploadVideo:
         assert status == "scheduled"
 
     def test_schedule_argv_has_no_schedule_flag(self, app):
-        """Scheduled task argv must NOT include --schedule (server-side timer handles delay)."""
+        """Scheduled task argv must NOT include --schedule."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
-            patch("web_runner._schedule_task"),
+            patch("web_runner.utils._run_sau"),
+            patch("web_runner.utils.task_executor.submit"),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils._schedule_task"),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -226,7 +245,6 @@ class TestBilibiliUploadVideo:
 
 class TestTencentUploadVideo:
     def test_baseline(self, app):
-        """Basic tencent upload with desc and headless."""
         _, argv = _post_upload(
             app,
             platform="tencent",
@@ -237,11 +255,10 @@ class TestTencentUploadVideo:
         )
         assert argv[0] == "tencent"
         assert "--desc" in argv and "描述" in argv
-        assert "--headless" in argv  # tencent DOES accept headless
+        assert "--headless" in argv
         assert "--draft" not in argv
 
     def test_with_all_extras(self, app):
-        """Tencent with short_title, category, and draft."""
         _, argv = _post_upload(
             app,
             platform="tencent",
@@ -257,7 +274,6 @@ class TestTencentUploadVideo:
         assert "--draft" in argv
 
     def test_without_extras(self, app):
-        """Tencent without optional extras should not include those flags."""
         _, argv = _post_upload(
             app,
             platform="tencent",
@@ -273,7 +289,6 @@ class TestTencentUploadVideo:
         assert "--draft" not in argv
 
     def test_draft_true_variants(self, app):
-        """is_draft 'true' or '1' should both trigger --draft."""
         for draft_val in ("true", "1"):
             _, argv = _post_upload(
                 app,
@@ -286,7 +301,6 @@ class TestTencentUploadVideo:
             assert "--draft" in argv, f"draft not added for is_draft={draft_val!r}"
 
     def test_draft_false_values(self, app):
-        """is_draft false/0/empty should NOT trigger --draft."""
         for draft_val in ("false", "0", ""):
             _, argv = _post_upload(
                 app,
@@ -299,12 +313,11 @@ class TestTencentUploadVideo:
             assert "--draft" not in argv, f"draft incorrectly added for is_draft={draft_val!r}"
 
     def test_schedule_status(self, app):
-        """Scheduled tencent upload should have status 'scheduled'."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
-            patch("web_runner._schedule_task"),
+            patch("web_runner.utils._run_sau"),
+            patch("web_runner.utils.task_executor.submit"),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils._schedule_task"),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -329,13 +342,10 @@ class TestTencentUploadVideo:
 
 
 class TestCrossPlatform:
-    """Tests that apply across multiple platforms."""
-
     PLATFORMS_WITH_HEADLESS = ["douyin", "kuaishou", "xiaohongshu", "tencent", "tiktok", "baijiahao"]
     PLATFORMS_WITHOUT_HEADLESS = ["bilibili"]
 
     def test_headless_passed_for_browser_platforms(self, app):
-        """All browser-based platforms should get --headless."""
         for platform in self.PLATFORMS_WITH_HEADLESS:
             _, argv = _post_upload(
                 app,
@@ -347,7 +357,6 @@ class TestCrossPlatform:
             assert "--headless" in argv, f"{platform} should have --headless"
 
     def test_headed_flag(self, app):
-        """headless=false should produce --headed (for browser platforms)."""
         for platform in self.PLATFORMS_WITH_HEADLESS:
             _, argv = _post_upload(
                 app,
@@ -360,7 +369,6 @@ class TestCrossPlatform:
             assert "--headless" not in argv, f"{platform} should NOT have --headless"
 
     def test_headless_absent_for_bilibili(self, app):
-        """Bilibili should never have --headless even when passed."""
         _, argv = _post_upload(
             app,
             platform="bilibili",
@@ -373,11 +381,10 @@ class TestCrossPlatform:
         assert "--headed" not in argv
 
     def test_headless_absent_when_not_sent(self, app):
-        """When headless is not provided, no --headless/--headed in argv."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils._run_sau"),
+            patch("web_runner.utils.task_executor.submit"),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -394,7 +401,6 @@ class TestCrossPlatform:
         assert "--headed" not in argv
 
     def test_desc_in_desc_platforms(self, app):
-        """All DESC_PLATFORMS should get --desc."""
         desc_platforms = ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent"]
         for platform in desc_platforms:
             _, argv = _post_upload(
@@ -407,7 +413,6 @@ class TestCrossPlatform:
             assert "--desc" in argv, f"{platform} should have --desc"
 
     def test_no_desc_in_non_desc_platforms(self, app):
-        """Platforms without desc support should NOT get --desc."""
         non_desc = ["tiktok", "baijiahao"]
         for platform in non_desc:
             _, argv = _post_upload(
@@ -427,7 +432,6 @@ class TestCrossPlatform:
 
 class TestDouyinUploadVideo:
     def test_product_link_and_title(self, app):
-        """Douyin product_link and product_title should be in argv."""
         _, argv = _post_upload(
             app,
             platform="douyin",
@@ -440,7 +444,6 @@ class TestDouyinUploadVideo:
         assert "--product-title" in argv and "好物推荐" in argv
 
     def test_product_fields_omitted_when_empty(self, app):
-        """Empty product fields should be omitted."""
         _, argv = _post_upload(
             app,
             platform="douyin",
@@ -453,7 +456,6 @@ class TestDouyinUploadVideo:
         assert "--product-title" not in argv
 
     def test_headless_passed(self, app):
-        """Douyin uses browser, so --headless should appear."""
         _, argv = _post_upload(
             app,
             platform="douyin",
@@ -471,7 +473,6 @@ class TestDouyinUploadVideo:
 
 class TestThumbnailUploadVideo:
     def test_thumbnail_in_thumbnail_platform(self, app):
-        """Platforms in THUMBNAIL_PLATFORMS (douyin, kuaishou, xiaohongshu, tencent) get --thumbnail."""
         for platform in ("douyin", "kuaishou", "xiaohongshu", "tencent"):
             _, argv = _post_upload(
                 app,
@@ -483,7 +484,6 @@ class TestThumbnailUploadVideo:
             assert "--thumbnail" in argv, f"{platform} should have --thumbnail"
 
     def test_no_thumbnail_in_non_thumbnail_platform(self, app):
-        """Platforms NOT in THUMBNAIL_PLATFORMS (bilibili, tiktok, baijiahao) should NOT get --thumbnail."""
         for platform in ("bilibili", "tiktok", "baijiahao"):
             _, argv = _post_upload(
                 app,
@@ -495,7 +495,6 @@ class TestThumbnailUploadVideo:
             assert "--thumbnail" not in argv, f"{platform} should NOT have --thumbnail"
 
     def test_dual_thumbnails_for_douyin(self, app):
-        """Douyin (THUMBNAIL_DUAL) gets landscape and portrait thumbnails."""
         _, argv = _post_upload(
             app,
             platform="douyin",
@@ -508,7 +507,6 @@ class TestThumbnailUploadVideo:
         assert "--thumbnail-portrait" in argv
 
     def test_dual_thumbnails_for_tencent(self, app):
-        """Tencent (THUMBNAIL_DUAL) gets landscape and portrait thumbnails."""
         _, argv = _post_upload(
             app,
             platform="tencent",
@@ -522,7 +520,6 @@ class TestThumbnailUploadVideo:
         assert "--thumbnail-portrait" in argv
 
     def test_no_dual_thumbnails_for_kuaishou(self, app):
-        """Kuaishou is NOT in THUMBNAIL_DUAL, so landscape/portrait should be absent."""
         _, argv = _post_upload(
             app,
             platform="kuaishou",
@@ -535,7 +532,6 @@ class TestThumbnailUploadVideo:
         assert "--thumbnail-portrait" not in argv
 
     def test_empty_thumbnail_not_passed(self, app):
-        """Empty thumbnail string should not produce --thumbnail in argv."""
         _, argv = _post_upload(
             app,
             platform="douyin",
@@ -548,7 +544,7 @@ class TestThumbnailUploadVideo:
 
 # ===========================================================================
 #  BOUNDARY / ERROR TESTS
-# =================================================================
+# ===========================================================================
 
 
 class TestUploadVideoErrors:
@@ -565,8 +561,7 @@ class TestUploadVideoErrors:
         assert resp.status_code == 400
 
     def test_missing_file(self, app):
-        """Missing both file and file_data should return 400."""
-        with patch("web_runner.MIN_UPLOAD_BYTES", 0):
+        with patch("web_runner.utils.MIN_UPLOAD_BYTES", 0):
             resp = app.post(
                 "/api/upload/video",
                 data={"platform": "douyin", "account": "test", "title": "test"},
@@ -574,7 +569,6 @@ class TestUploadVideoErrors:
         assert resp.status_code == 400
 
     def test_bilibili_without_headless_works(self, app):
-        """Bilibili should work without headless (since it's not passed)."""
         _, argv = _post_upload(
             app,
             platform="bilibili",
@@ -586,11 +580,10 @@ class TestUploadVideoErrors:
         assert "--headed" not in argv
 
     def test_schedule_passed_time_already_passed_runs_immediately(self, app):
-        """When schedule time has passed, task should run immediately (not scheduled)."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils._run_sau"),
+            patch("web_runner.utils.task_executor.submit"),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -608,4 +601,4 @@ class TestUploadVideoErrors:
         # Schedule in the past → _schedule_task submits _run_sau immediately
         # but since we patch task_executor.submit, status stays "pending"
         # because _run_sau never actually updates it to "running"
-        assert status == "pending"  # past time → _schedule_task re-sets to pending
+        assert status == "pending"

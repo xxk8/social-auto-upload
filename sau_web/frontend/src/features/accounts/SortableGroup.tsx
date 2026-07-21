@@ -1,13 +1,14 @@
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/Components/ui/alert-dialog'
+import { Button } from '@/Components/ui/button'
+import { Card, CardContent, CardHeader } from '@/Components/ui/card'
 import { useSortable } from '@dnd-kit/react/sortable'
-import { GripVertical, Pencil, Plus, Shield, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { GripVertical, Pencil, Plus, Send, Shield, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pctToTone, toneChipClasses, toneDotStyle, toneFgVar, toneTextClass, validityTone } from '@/lib/tone'
 import type { AccountGroup } from '@/api/client'
-import { useAccountsDispatch } from './AccountsProvider'
-import { SortableAuthorizationList } from './SortableAuthorizationList'
+import { ROUTES } from '@/routes'
+import {useAccountsDispatch} from './AccountsProvider.helpers';import { SortableAuthorizationList } from './SortableAuthorizationList'
 
 interface SortableGroupProps {
   group: AccountGroup
@@ -129,18 +130,23 @@ function GroupDeleteDialog({
 
 export function SortableGroup({ group, index }: SortableGroupProps) {
   const dispatch = useAccountsDispatch()
+  const navigate = useNavigate()
   const { ref, handleRef, isDragging } = useSortable({
     id: `group:${group.id}`,
     index,
   })
 
   const validCount = group.authorizations.filter((a) => a.valid).length
+  const hasStale = group.authorizations.some((a) => a.stale)
   const totalCount = group.authorizations.length
   // Hoist the chip tone to component scope so the chip body (`toneChipClasses`)
   // and inner dot (`toneDotStyle`) helpers share a single mapper call — both
   // helpers absorb `Tone | null | undefined` gracefully so the JSX-level
   // `{totalCount > 0 && <chip>}` guard is the only shape-relevant check.
-  const chipTone = validityTone(validCount, totalCount)
+  // Downgrade to warning if any auth is stale (cookie expired but file OK).
+  const chipTone = validityTone(validCount, totalCount) === 'success' && hasStale
+    ? 'warning' as const
+    : validityTone(validCount, totalCount)
 
   return (
     <Card
@@ -194,31 +200,79 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover/card:opacity-100 transition-opacity duration-200">
+          {/*
+            Action cluster — split into two visual tiers so the primary
+            "去发布此分组" affordance is always discoverable while the
+            secondary admin actions (rename / add auth / delete) stay
+            hover-reveal on desktop:
+
+              1. PRIMARY — Send icon button. ALWAYS visible (not hover-
+                 gated) because the whole point of this affordance is
+                 "引导用户往前一步 from group list to publish wizard".
+                 Visually same `Button size="icon"` shape as the secondary
+                 cluster so the cluster reads as a unified toolbar; the
+                 always-visible vs hover-gated opacity is the only signal
+                 of the visual tier.
+
+              2. SECONDARY (hover-reveal on md+) — pencil / + / trash.
+                 Existing behavior kept as-is so a power user who lingers
+                 on the card and sees the hover cluster is not surprised
+                 by a future change. Visible on mobile because hover is
+                 not a mobile affordance.
+
+            The two tiers are visually separated by a 1px hairline border-l
+            so the eye groups them as "(primary | secondary)" rather than
+            "(1 + 2 + 3) undifferentiated". `data-testid` on the primary
+            button locks the affordance for E2E specs without coupling to
+            the i18n'ed `aria-label` string.
+          */}
+          <div className="flex items-center gap-0.5">
             <Button
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
-              onClick={() => dispatch.handleStartRename(group.id, group.name)}
-              aria-label="Rename group"
+              onClick={() =>
+                navigate(`${ROUTES.dashboard.publish}?group_id=${group.id}`)
+              }
+              aria-label="去发布中心 · 预选此分组"
+              data-testid="go-to-publish-from-group-grid"
             >
-              <Pencil className="h-3.5 w-3.5" />
+              <Send className="h-3.5 w-3.5" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
-              onClick={() => dispatch.handleStartAuthorize(group.id)}
-              aria-label="Add authorization"
-              data-tour="add-auth"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            <GroupDeleteDialog
-              name={group.name}
-              authCount={group.authorizations.length}
-              onConfirm={() => void dispatch.handleDeleteGroup(group.id, group.name)}
-            />
+            {/* Single 2px between Send and the secondary wrapper comes from
+                the outer `gap-0.5`. `border-l border-border/60` (vs the
+                lighter /40) keeps the hairline crisp on DPR≥2 viewports
+                — DESIGN.md hairline rule treats single-px lines as 60%+
+                opacity so retina subpixel render doesn't smear.
+                `md:group-focus-within/card:opacity-100` mirrors hover-
+                reveal so keyboard-tab users on desktop still see the
+                secondary cluster when focus enters the card. */}
+            <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover/card:opacity-100 md:group-focus-within/card:opacity-100 transition-opacity duration-200 border-l border-border/60 pl-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+                onClick={() => dispatch.handleStartRename(group.id, group.name)}
+                aria-label="Rename group"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+                onClick={() => dispatch.handleStartAuthorize(group.id)}
+                aria-label="Add authorization"
+                data-tour="add-auth"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+              <GroupDeleteDialog
+                name={group.name}
+                authCount={group.authorizations.length}
+                onConfirm={() => void dispatch.handleDeleteGroup(group.id, group.name)}
+              />
+            </div>
           </div>
         </div>
       </CardHeader>

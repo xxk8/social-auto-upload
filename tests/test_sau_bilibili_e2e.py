@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -23,10 +22,14 @@ def _dummy_cookie(cookies_dir: Path, account: str) -> str:
     """Create a dummy bilibili cookie file and return its path."""
     cookie_path = cookies_dir / f"bilibili_{account}.json"
     cookie_path.parent.mkdir(parents=True, exist_ok=True)
-    cookie_path.write_text(json.dumps([
-        {"name": "SESSDATA", "value": "mock-sessdata", "domain": ".bilibili.com", "path": "/", "expires": -1},
-        {"name": "bili_jct", "value": "mock-csrf", "domain": ".bilibili.com", "path": "/", "expires": -1},
-    ]))
+    cookie_path.write_text(
+        json.dumps(
+            [
+                {"name": "SESSDATA", "value": "mock-sessdata", "domain": ".bilibili.com", "path": "/", "expires": -1},
+                {"name": "bili_jct", "value": "mock-csrf", "domain": ".bilibili.com", "path": "/", "expires": -1},
+            ]
+        )
+    )
     return str(cookie_path)
 
 
@@ -54,27 +57,40 @@ class TestBilibiliE2ESmoke:
             _dummy_cookie(cookies_dir, "testup")
 
             # Mock the biliup command to capture arguments
-            mock_run = MagicMock(return_value=subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="upload ok\n", stderr="",
-            ))
+            mock_run = MagicMock(
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="upload ok\n",
+                    stderr="",
+                )
+            )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
                 patch("cli.platforms.bilibili.bilibili_cookie_auth", new=AsyncMock(return_value=True)),
                 patch("cli.platforms.bilibili.run_biliup_command", mock_run),
             ):
-                rc = sau_main([
-                    "bilibili",
-                    "upload-video",
-                    "--account", "testup",
-                    "--file", str(video_path),
-                    "--title", "测试B站视频",
-                    "--desc", "这是视频描述",
-                    "--tid", "171",
-                    "--tags", "教程,Python",
-                ])
+                rc = sau_main(
+                    [
+                        "bilibili",
+                        "upload-video",
+                        "--account",
+                        "testup",
+                        "--file",
+                        str(video_path),
+                        "--title",
+                        "测试B站视频",
+                        "--desc",
+                        "这是视频描述",
+                        "--tid",
+                        "171",
+                        "--tags",
+                        "教程,Python",
+                    ]
+                )
 
             assert rc == 0, f"expected exit 0, got {rc}"
             mock_run.assert_called_once()
@@ -112,27 +128,40 @@ class TestBilibiliE2ESmoke:
                 return cookies_dir / f"{platform}_{account_name}.json"
 
             _dummy_cookie(cookies_dir, "testup")
-            mock_run = MagicMock(return_value=subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr="",
-            ))
+            mock_run = MagicMock(
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+            )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
                 patch("cli.platforms.bilibili.bilibili_cookie_auth", new=AsyncMock(return_value=True)),
                 patch("cli.platforms.bilibili.run_biliup_command", mock_run),
             ):
-                rc = sau_main([
-                    "bilibili",
-                    "upload-video",
-                    "--account", "testup",
-                    "--file", str(video_path),
-                    "--title", "默认TID",
-                    "--desc", "desc",
-                    "--tid", "233",
-                    "--tags", "",
-                ])
+                rc = sau_main(
+                    [
+                        "bilibili",
+                        "upload-video",
+                        "--account",
+                        "testup",
+                        "--file",
+                        str(video_path),
+                        "--title",
+                        "默认TID",
+                        "--desc",
+                        "desc",
+                        "--tid",
+                        "233",
+                        "--tags",
+                        "",
+                    ]
+                )
 
             assert rc == 0
             biliup_args: list[str] = mock_run.call_args[0][0]
@@ -151,27 +180,40 @@ class TestBilibiliE2ESmoke:
                 return cookies_dir / f"{platform}_{account_name}.json"
 
             _dummy_cookie(cookies_dir, "testup")
-            mock_run = MagicMock(return_value=subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr="",
-            ))
+            mock_run = MagicMock(
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+            )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
                 patch("cli.platforms.bilibili.bilibili_cookie_auth", new=AsyncMock(return_value=True)),
                 patch("cli.platforms.bilibili.run_biliup_command", mock_run),
             ):
-                rc = sau_main([
-                    "bilibili",
-                    "upload-video",
-                    "--account", "testup",
-                    "--file", str(video_path),
-                    "--title", "定时发布",
-                    "--desc", "desc",
-                    "--tid", "17",
-                    "--schedule", "2099-12-31 23:59",
-                ])
+                rc = sau_main(
+                    [
+                        "bilibili",
+                        "upload-video",
+                        "--account",
+                        "testup",
+                        "--file",
+                        str(video_path),
+                        "--title",
+                        "定时发布",
+                        "--desc",
+                        "desc",
+                        "--tid",
+                        "17",
+                        "--schedule",
+                        "2099-12-31 23:59",
+                    ]
+                )
 
             assert rc == 0
             biliup_args: list[str] = mock_run.call_args[0][0]
@@ -180,6 +222,7 @@ class TestBilibiliE2ESmoke:
             # Verify it's a reasonable timestamp (year 2099)
             dtime_val = int(biliup_args[dtime_idx + 1])
             from datetime import datetime
+
             dt = datetime.fromtimestamp(dtime_val)
             assert dt.year == 2099
             assert dt.month == 12
@@ -197,27 +240,40 @@ class TestBilibiliE2ESmoke:
                 return cookies_dir / f"{platform}_{account_name}.json"
 
             _dummy_cookie(cookies_dir, "testup")
-            mock_run = MagicMock(return_value=subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr="",
-            ))
+            mock_run = MagicMock(
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+            )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
                 patch("cli.platforms.bilibili.bilibili_cookie_auth", new=AsyncMock(return_value=True)),
                 patch("cli.platforms.bilibili.run_biliup_command", mock_run),
             ):
-                rc = sau_main([
-                    "bilibili",
-                    "upload-video",
-                    "--account", "testup",
-                    "--file", str(video_path),
-                    "--title", "无标签",
-                    "--desc", "no tags",
-                    "--tid", "233",
-                    "--tags", "",
-                ])
+                rc = sau_main(
+                    [
+                        "bilibili",
+                        "upload-video",
+                        "--account",
+                        "testup",
+                        "--file",
+                        str(video_path),
+                        "--title",
+                        "无标签",
+                        "--desc",
+                        "no tags",
+                        "--tid",
+                        "233",
+                        "--tags",
+                        "",
+                    ]
+                )
 
             assert rc == 0
             biliup_args: list[str] = mock_run.call_args[0][0]
@@ -236,22 +292,29 @@ class TestBilibiliE2ESmoke:
 
             # Do NOT create cookie file
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
                 patch("cli.platforms.bilibili.bilibili_cookie_auth", new=AsyncMock(return_value=True)),
                 patch("cli.platforms.bilibili.run_biliup_command") as mock_run,
             ):
-                rc = sau_main([
-                    "bilibili",
-                    "upload-video",
-                    "--account", "nonexistent",
-                    "--file", str(video_path),
-                    "--title", "test",
-                    "--desc", "test",
-                    "--tid", "233",
-                ])
+                rc = sau_main(
+                    [
+                        "bilibili",
+                        "upload-video",
+                        "--account",
+                        "nonexistent",
+                        "--file",
+                        str(video_path),
+                        "--title",
+                        "test",
+                        "--desc",
+                        "test",
+                        "--tid",
+                        "233",
+                    ]
+                )
 
             # Should fail with non-zero exit code
             assert rc != 0
@@ -270,26 +333,38 @@ class TestBilibiliE2ESmoke:
                 return cookies_dir / f"{platform}_{account_name}.json"
 
             _dummy_cookie(cookies_dir, "testup")
-            mock_run = MagicMock(return_value=subprocess.CompletedProcess(
-                args=[], returncode=1, stdout="", stderr="upload failed: network error",
-            ))
+            mock_run = MagicMock(
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout="",
+                    stderr="upload failed: network error",
+                )
+            )
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),
                 patch("cli.platforms.bilibili.bilibili_cookie_auth", new=AsyncMock(return_value=True)),
                 patch("cli.platforms.bilibili.run_biliup_command", mock_run),
             ):
-                rc = sau_main([
-                    "bilibili",
-                    "upload-video",
-                    "--account", "testup",
-                    "--file", str(video_path),
-                    "--title", "test",
-                    "--desc", "test",
-                    "--tid", "171",
-                ])
+                rc = sau_main(
+                    [
+                        "bilibili",
+                        "upload-video",
+                        "--account",
+                        "testup",
+                        "--file",
+                        str(video_path),
+                        "--title",
+                        "test",
+                        "--desc",
+                        "test",
+                        "--tid",
+                        "171",
+                    ]
+                )
 
             assert rc != 0  # upload should fail
             mock_run.assert_called_once()
@@ -315,24 +390,35 @@ class TestBilibiliWebToCliIntegration:
                 return cookies_dir / f"{platform}_{account_name}.json"
 
             _dummy_cookie(cookies_dir, "webuser")
-            mock_run = MagicMock(return_value=subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr="",
-            ))
+            mock_run = MagicMock(
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+            )
 
             # Simulate the argv that web_runner's upload_video builds for bilibili
             argv = [
                 "bilibili",
                 "upload-video",
-                "--account", "webuser",
-                "--title", "Web上传的视频",
-                "--tags", "技术,前端",
-                "--desc", "通过Web端上传",  # always passed for bilibili
-                "--file", str(video_path),
-                "--tid", "217",  # 217 = 动物圈
+                "--account",
+                "webuser",
+                "--title",
+                "Web上传的视频",
+                "--tags",
+                "技术,前端",
+                "--desc",
+                "通过Web端上传",  # always passed for bilibili
+                "--file",
+                str(video_path),
+                "--tid",
+                "217",  # 217 = 动物圈
             ]
             # Note: --headless is NOT in argv (web skips it for bilibili)
 
-            from sau_cli import main as sau_main
+            from cli.main import main as sau_main
 
             with (
                 patch("cli.platforms.bilibili.resolve_account_file", side_effect=_mock_resolve_account),

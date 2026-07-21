@@ -1,10 +1,61 @@
+// ─────────────────────────────────────────────────────────────────────────
+// verbatimModuleSyntax: true (also noUnusedLocals/Parameters +
+// erasableSyntaxOnly) — "bundler strict mode". Treats each import /
+// export in source verbatim — `import type` for types-only is stripped
+// at compile time and never reaches the bundler; value imports cannot
+// accidentally bring a type along (or vice-versa).
+//
+// What this gives us:
+//   1. Module-local cva receipts (button.tsx / badge.tsx / sheet.tsx /
+//      alert.tsx) stay self-contained — drift between modules is
+//      impossible because the const is never reachable cross-file.
+//   2. Test helpers like `src/test/login-render-helper.types.ts`
+//      `import type { mockNavigate } from './auth-router-spies'` keep
+//      `mockNavigate` from polluting production bundles.
+//   3. The lint-baseline floor (scripts/.lint-baseline-after-render-harness.json)
+//      depends on this mode being ON; flipping it OFF would change the
+//      import-shape violations the snapshot records.
+//
+// Fallback ladder (use sparingly; order matters — top of the ladder
+// is the cheaper fix):
+//
+//   1. Use `import type { ... }` for types-only.
+//   2. Use mixed imports when one binding is type + another is value:
+//        `import { type Foo, bar } from '...'`
+//   3. For vi.mock factories that need value + type from same module,
+//      keep the value import `import { real } from '...'` and create a
+//      separate type-only `import type { Real }` line. Two imports
+//      from one module is allowed.
+//   4. If a test fundamentally cannot express its needs without
+//      implicit value/type mixing (rare — usually VM internals like
+//      `Parameters<typeof SomeFn>` on a runtime `vi.fn()`), inline the
+//      type at the call site: `Parameters<SomeFn extends (...a: any) => any ? SomeFn : never>`.
+//
+// When to consider splitting tsconfig.app.json into
+// `tsconfig.app.json` + `tsconfig.test.json`:
+//   - A test file legitimately needs to disable `verbatimModuleSyntax`
+//     AND the per-file `import type` fix is more disruptive than the
+//     split cost.
+//   - Step 1 in that case: add a tsconfig.test.json with the relaxed
+//     flags, `extends: ./tsconfig.app.json`, and reroute vitest.config.ts
+//     `tsconfig.path` to it.
+//
+// Why we keep this ON for tests by default:
+//   - The drift-detection guarantee comes from a single shared mode.
+//   - Splitting configs raises the bar for new tests — every test file
+//     starts needing to know which tsconfig it lives under.
+//
+// Companion / fall-back:
+//   - tsconfig.node.json handles v0 Node-side build (vite.config.ts).
+//   - Run `pnpm exec tsc --noEmit` to verify a fallback choice before
+//     committing — the final tsc check IS the grader.
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client"],
+    "types": ["vite/client", "vitest/globals", "node"],
     "skipLibCheck": true,
 
     /* Bundler mode */

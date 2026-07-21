@@ -1,0 +1,12 @@
+{
+  "id": "media-crawler-integration",
+  "title": "MediaCrawler 单体集成 — 评论爬取与竞品分析",
+  "status": "proposed",
+  "created": "2026-07-13",
+  "proposal": "proposal.md",
+  "design": "design.md",
+  "tasks": "tasks.md",
+  "specs": [
+    "specs/crawler-core/spec.md"
+  ]
+}

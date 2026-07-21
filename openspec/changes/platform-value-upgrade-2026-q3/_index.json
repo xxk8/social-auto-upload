@@ -1,0 +1,67 @@
+{
+  "name": "platform-value-upgrade-2026-q3",
+  "created": "2026-06-25T19:32:08+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Comprehensive platform upgrade covering feature completeness (draft templates, analytics dashboard, scheduled timeline, content preview), UX (multi-step wizard, auto-save, in-place re-login), performance (bundle splitting, virtual scrolling, executor refactor), and commercial viability (usage metering, license system, Free/Pro tiers).",
+    "design": "7 key decisions: localStorage drafts + DB templates, SQL aggregation analytics with recharts, PriorityQueue executor with per-platform semaphores, Vite manualChunks optimization, middleware-based usage metering, HMAC license keys, Zustand state machine publish wizard.",
+    "tasks": { "total": 89, "completed": 0 }
+  },
+  "layers": ["api", "frontend"],
+  "platforms": ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent", "tiktok", "baijiahao"],
+  "applyReady": false,
+  "templates": {
+    "routes": [
+      { "path": "/analytics", "component": "AnalyticsPage", "apiMethod": "api.analytics.summary()" }
+    ],
+    "apiEndpoints": [
+      "GET /api/analytics/summary",
+      "GET /api/analytics/accounts",
+      "GET /api/analytics/export",
+      "POST /api/license/activate",
+      "GET /api/license/status",
+      "POST /api/license/deactivate",
+      "POST /api/license/generate",
+      "GET /api/templates",
+      "POST /api/templates",
+      "PUT /api/templates/<id>",
+      "DELETE /api/templates/<id>",
+      "POST /api/templates/import",
+      "GET /api/templates/export",
+      "GET /api/usage/quota",
+      "POST /api/tasks/reschedule",
+      "GET /api/tasks/scheduled"
+    ],
+    "newComponents": [
+      "PublishWizard",
+      "StepIndicator",
+      "UploadStep",
+      "ContentStep",
+      "ReviewStep",
+      "ContentPreview",
+      "VideoPreviewCard",
+      "NotePreviewCard",
+      "AnalyticsPage",
+      "StatsCards",
+      "VolumeTrendChart",
+      "PlatformPieChart",
+      "FailureReasonChart",
+      "AccountActivityTable",
+      "ScheduleTimeline",
+      "TimelineHeader",
+      "TaskCard",
+      "DraftRestoreToast",
+      "TemplateChipRow",
+      "SaveTemplateDialog",
+      "QuotaIndicator",
+      "QuotaBanner",
+      "LicenseSection",
+      "TierBadge"
+    ],
+    "newStores": [
+      "publishWizardStore",
+      "useTemplatesStore",
+      "useLicenseStore"
+    ]
+  }
+}

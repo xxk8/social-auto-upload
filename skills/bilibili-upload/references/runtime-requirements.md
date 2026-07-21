@@ -43,7 +43,7 @@ python sau_cli.py bilibili --help
 - 如果网络无法访问 GitHub Release，Bilibili 命令会失败
 - 一旦本地已经准备好 `biliup`，后续命令会直接复用
 - `sau bilibili login --account <name>` 需要用户自己在本地真实终端里执行
-- 如果终端二维码显示不完整，通常可以直接打开当前目录下的 `qrcode.png` 扫码
+- 如果终端二维码显示不完整，**不要**打开 `qrcode.png`（已不再生成）— 改用 Web Shell 扫码（默认渲染内联 `<img src={data:image/...}>`），或在本地终端去掉 `--headless` 让浏览器里直接展示平台自己的二维码
 - 如果国内网络访问 GitHub Release 较慢，可先用 `https://gh-proxy.com/` 或 `https://gh-proxy.org/` 辅助访问对应 release 地址排障
 - 示例：
   - `https://gh-proxy.org/https://github.com/biliup/biliup/releases/download/v1.1.29/biliupR-v1.1.29-aarch64-linux.tar.xz`

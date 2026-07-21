@@ -1,0 +1,34 @@
+{
+  "name": "inbox-multi-platform",
+  "created": "2026-07-02T00:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Inbox URL 解析从 4 域名扩展到 13 域名,覆盖 tiktok/baijiahao/youtube,yt-dlp + patchright 双下载路径按平台路由",
+    "design": "按平台特性选 ytdlp 或 patchright、失败回落、URL 自动识别按 hostname first",
+    "tasks": {
+      "total": 23,
+      "completed": 0
+    }
+  },
+  "layers": [
+    "api",
+    "frontend"
+  ],
+  "platforms": [
+    "tiktok",
+    "baijiahao",
+    "youtube",
+    "douyin",
+    "kuaishou",
+    "xiaohongshu",
+    "bilibili",
+    "tencent"
+  ],
+  "applyReady": true,
+  "specs": [
+    "specs/inbox-tiktok/spec.md",
+    "specs/inbox-baijiahao/spec.md",
+    "specs/inbox-youtube/spec.md",
+    "specs/inbox-url-auto-detect/spec.md"
+  ]
+}

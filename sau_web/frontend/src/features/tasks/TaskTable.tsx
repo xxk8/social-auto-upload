@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Badge,
   Button,
@@ -15,7 +16,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/index'
+} from '@/Components/ui/index'
 import { BarChart3, Loader2, Plus, RefreshCw } from 'lucide-react'
 import type { TaskItem } from '../../api/client'
 import { TaskTableRow, TaskTableRowSkeleton } from './TaskTableRow'
@@ -58,6 +59,7 @@ export const TaskTable = memo(function TaskTable({
   onRefresh: () => void
   onAddTask: () => void
 }) {
+  const { t } = useTranslation()
   const allVisibleSelected = useMemo(
     () => filtered.length > 0 && filtered.every((t) => selectedIds.has(t.task_id)),
     [filtered, selectedIds],
@@ -81,16 +83,16 @@ export const TaskTable = memo(function TaskTable({
               <Checkbox
                 checked={headerChecked}
                 onCheckedChange={(checked) => onToggleAll(checked === true)}
-                aria-label="全选"
+                aria-label={t('tasks.table.header_select_all', '全选')}
               />
             </TableHead>
-            <TableHead className="w-[220px]">任务 ID</TableHead>
-            <TableHead className="w-[110px]">平台</TableHead>
-            <TableHead className="w-[140px]">动作</TableHead>
-            <TableHead className="w-[140px]">账号</TableHead>
-            <TableHead className="w-[110px]">状态</TableHead>
-            <TableHead className="w-[180px]">创建时间</TableHead>
-            <TableHead className="w-[240px] border-l">操作</TableHead>
+            <TableHead className="w-[220px]">{t('tasks.table.header_task_id', '任务 ID')}</TableHead>
+            <TableHead className="w-[110px]">{t('tasks.table.header_platform', '平台')}</TableHead>
+            <TableHead className="w-[140px]">{t('tasks.table.header_action', '动作')}</TableHead>
+            <TableHead className="w-[140px]">{t('tasks.table.header_account', '账号')}</TableHead>
+            <TableHead className="w-[110px]">{t('tasks.table.header_status', '状态')}</TableHead>
+            <TableHead className="w-[180px]">{t('tasks.table.header_created', '创建时间')}</TableHead>
+            <TableHead className="w-[240px] border-l">{t('tasks.table.header_operations', '操作')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -101,13 +103,13 @@ export const TaskTable = memo(function TaskTable({
               <TableCell colSpan={8}>
                 <EmptyState
                   icon={<BarChart3 className="h-6 w-6" />}
-                  title="暂无任务"
-                  description="创建任务后会在这里显示"
+                  title={t('tasks.table.empty_title', '暂无任务')}
+                  description={t('tasks.table.empty_description', '创建任务后会在这里显示')}
                   action={
                     <div className="flex items-center gap-2">
                       <Button size="sm" onClick={onAddTask}>
                         <Plus className="h-4 w-4 mr-1" />
-                        新建任务
+                        {t('tasks.page.new_task_button', '新建任务')}
                       </Button>
                       <Button size="sm" variant="outline" onClick={onRefresh}>
                         {manualRefreshing ? (
@@ -115,7 +117,7 @@ export const TaskTable = memo(function TaskTable({
                         ) : (
                           <RefreshCw className="h-4 w-4 mr-1" />
                         )}
-                        刷新列表
+                        {t('tasks.table.empty_refresh_button', '刷新列表')}
                       </Button>
                     </div>
                   }
@@ -142,43 +144,6 @@ export const TaskTable = memo(function TaskTable({
     </div>
   )
 })
-
-/** Re-export the toolbar badges so TasksPage can render the polling chip and shortcut hints. */
-export function TaskToolbarExtras({ manualRefreshing }: { manualRefreshing: boolean }) {
-  return (
-    <>
-      {manualRefreshing ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <RefreshCw className="h-4 w-4" />
-      )}
-      <Badge variant="secondary" className="text-xs">
-        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-        轮询中
-      </Badge>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="outline" className="text-[10px] cursor-help hidden sm:inline-flex">
-            R·N·/
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent>
-          <div className="space-y-1 text-xs">
-            <div>
-              <kbd className="px-1 py-0.5 rounded bg-muted border">R</kbd> 刷新列表
-            </div>
-            <div>
-              <kbd className="px-1 py-0.5 rounded bg-muted border">N</kbd> 新建任务
-            </div>
-            <div>
-              <kbd className="px-1 py-0.5 rounded bg-muted border">/</kbd> 聚焦搜索
-            </div>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </>
-  )
-}
 
 /** Compact Card wrapper used by TasksPage to host the table and batch panel. */
 export function TaskTableCard({ children }: { children: React.ReactNode }) {

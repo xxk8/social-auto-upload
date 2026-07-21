@@ -1,4 +1,6 @@
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import {
   Badge,
   Button,
@@ -18,12 +20,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/index'
-import { Loader2, RotateCcw, Trash2 } from 'lucide-react'
+} from '@/Components/ui/index'
+import { Loader2, RotateCcw, Repeat, Trash2 } from 'lucide-react'
 import type { TaskItem } from '../../api/client'
 import { formatDateTime, shortenId } from '@/lib/features'
 import { STATUS_META, type StatusType } from './shared'
 
+import { ROUTES } from '@/routes'
 /**
  * Single table row. Memoized because table polls every 3s — without memo,
  * every row would re-render even when only one status badge changed. TanStack
@@ -51,7 +54,14 @@ export const TaskTableRow = memo(function TaskTableRow({
   onStatusFilter: (status: StatusType) => void
   retrying: string | null
 }) {
+  const navigate = useNavigate()
+  const { t } = useTranslation()
   const meta = STATUS_META[task.status ?? 'pending'] ?? STATUS_META.pending
+  // Resolve the status label at render time — STATUS_META is a
+  // module-level manifest with `labelKey + labelFallback` (no React
+  // coupling), so the per-row t() call is the resolution site. Mirrors
+  // the DASHBOARD_NAV_DEFS pattern in AppShell.tsx.
+  const statusLabel = t(meta.labelKey, meta.labelFallback)
   const canDelete =
     task.status === 'success' ||
     task.status === 'failed' ||
@@ -65,7 +75,7 @@ export const TaskTableRow = memo(function TaskTableRow({
         <Checkbox
           checked={selected}
           onCheckedChange={(checked) => _onToggle(task.task_id, checked === true)}
-          aria-label={`选择任务 ${shortenId(task.task_id)}`}
+          aria-label={t('tasks.row.select_aria', '选择任务 {{id}}', { id: shortenId(task.task_id) })}
         />
       </TableCell>
       <TableCell>
@@ -74,7 +84,7 @@ export const TaskTableRow = memo(function TaskTableRow({
             <button
               type="button"
               className="cursor-pointer hover:text-primary hover:underline transition-colors"
-              aria-label="查看任务详情"
+              aria-label={t('tasks.row.view_detail_aria', '查看任务详情')}
               onClick={() => onOpenDrawer(task)}
             >
               <code className="text-xs bg-muted px-2 py-1 rounded">{shortenId(task.task_id)}</code>
@@ -94,16 +104,16 @@ export const TaskTableRow = memo(function TaskTableRow({
             const nextStatus = (task.status ?? 'pending') as StatusType
             onStatusFilter(nextStatus)
           }}
-          title={`筛选「${meta.label}」任务`}
+          title={t('tasks.table.filter_title', '筛选「{{status}}」任务', { status: statusLabel })}
         >
-          {meta.label}
+          {meta.icon ?? statusLabel}
         </Badge>
       </TableCell>
       <TableCell className="whitespace-nowrap">{formatDateTime(task.created)}</TableCell>
       <TableCell className="border-l">
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={() => onOpenDrawer(task)}>
-            详情
+            {t('tasks.row.detail_button', '详情')}
           </Button>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -112,7 +122,7 @@ export const TaskTableRow = memo(function TaskTableRow({
                 size="sm"
                 disabled={!canRetry}
                 onClick={() => onRetry(task)}
-                aria-label="Retry task"
+                aria-label={t('tasks.row.retry_aria', '重新执行此任务')}
               >
                 {retrying === task.task_id ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -121,7 +131,20 @@ export const TaskTableRow = memo(function TaskTableRow({
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>重新执行此任务</TooltipContent>
+            <TooltipContent>{t('tasks.row.retry_tooltip', '重新执行此任务')}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(`${ROUTES.dashboard.publish}?from_task=${task.task_id}`)}
+                aria-label={t('tasks.row.republish_aria', '用此任务参数重新发布')}
+              >
+                <Repeat className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('tasks.row.republish_tooltip', '用此任务参数重新发布')}</TooltipContent>
           </Tooltip>
           {canDelete && (
             <AlertDialog>
@@ -130,19 +153,19 @@ export const TaskTableRow = memo(function TaskTableRow({
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive"
-                  aria-label="Delete task"
+                  aria-label={t('tasks.row.delete_aria', '删除任务')}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>确认删除</AlertDialogTitle>
-                  <AlertDialogDescription>确认删除此任务？</AlertDialogDescription>
+                  <AlertDialogTitle>{t('tasks.row.delete_dialog.title', '确认删除')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('tasks.row.delete_dialog.description', '确认删除此任务?')}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => onDelete(task.task_id)}>删除</AlertDialogAction>
+                  <AlertDialogCancel>{t('tasks.row.delete_dialog.cancel', '取消')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onDelete(task.task_id)}>{t('tasks.row.delete_dialog.confirm', '删除')}</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

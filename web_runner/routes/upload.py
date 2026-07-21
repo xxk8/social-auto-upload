@@ -1,16 +1,18 @@
 """Upload routes."""
+
 from __future__ import annotations
 
 import json
 import queue as _queue
 import uuid
+from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
-from typing import Generator
 
 from flask import Blueprint, Response, jsonify, request
 
 from web_runner.utils import (
+    _SSE_TIMEOUT_SECONDS,
     DESC_PLATFORMS,
     MIN_UPLOAD_BYTES,
     NOTE_PLATFORMS,
@@ -20,8 +22,8 @@ from web_runner.utils import (
     UPLOADS_DIR,
     _db_get_task,
     _db_insert_task,
-    _db_update_task,
     _headless_flag,
+    _make_accepted_response,
     _new_task_id,
     _normalise_schedule,
     _progress_sub_lock,
@@ -29,17 +31,32 @@ from web_runner.utils import (
     _run_sau,
     _save_data_uri,
     _schedule_task,
-    _store_result,
-    _SSE_TIMEOUT_SECONDS,
     log,
     task_executor,
 )
+from web_runner import idempotency as _idem
 
 bp = Blueprint("upload", __name__)
 
 
 @bp.post("/api/upload/video")
 def upload_video():
+    # Idempotency-Key protocol (round-OPT-idem-keys): if the
+    # client supplied an Idempotency-Key header, check the cache
+    # BEFORE doing any side effect (file write, task row insert,
+    # executor submit). A replay returns the cached 202 with an
+    # Idempotency-Replayed: true marker; an in-flight retry
+    # returns 409; a key+different-payload returns 422.
+    #
+    # The hash signature for multipart uploads is
+    # (platform, account, title, file_name, file_size, file_mime)
+    # — file CONTENT is intentionally not hashed (200MB I/O would
+    # cost ~500ms and ~1MB of RAM). The route uses request.files
+    # metadata that's available before the .read() call, so the
+    # hash is computed in O(1) on the request header fields.
+    _idem_key = _idem.read_key_from_request()
+    _idem_user = _idem.current_user_id()
+    _idem_route = _idem.current_route()
     if request.is_json:
         data = request.get_json(silent=True) or {}
         platform = data.get("platform")
@@ -83,6 +100,43 @@ def upload_video():
     if not platform or not account or not title:
         return jsonify({"success": False, "message": "platform, account and title are required"}), 400
 
+    # Idempotency claim — happens AFTER the basic required-field
+    # check (so a 4xx for missing platform/account/title doesn't
+    # lock a key) but BEFORE the file read (so a replay doesn't
+    # pay the disk I/O cost or write a duplicate file).
+    # ``_idem_key`` was read once at the top of the function;
+    # reusing it here avoids a redundant header lookup.
+    if _idem_key:
+        # Hash signature: (platform, account, title, file_name,
+        # file_size, file_mime). File CONTENT is intentionally NOT
+        # hashed — 200MB I/O would cost ~500ms and ~1MB of RAM.
+        # For JSON-path uploads the file lives in the body as a
+        # data URI; we hash its declared length + the literal
+        # "data-uri" marker so a JSON + multipart version of the
+        # same publish intent don't dedup-collide.
+        if request.is_json:
+            _idem_file_name = ""
+            _idem_file_size = len(file_data) if file_data else 0
+            _idem_file_mime = "data-uri"
+        else:
+            _idem_uploaded = request.files.get("file")
+            _idem_file_name = _idem_uploaded.filename if _idem_uploaded else ""
+            _idem_file_size = (_idem_uploaded.content_length or 0) if _idem_uploaded else 0
+            _idem_file_mime = _idem_uploaded.mimetype if _idem_uploaded else ""
+        _idem_hash = _idem.payload_hash(
+            [
+                platform,
+                account,
+                title,
+                _idem_file_name,
+                str(_idem_file_size),
+                _idem_file_mime,
+            ]
+        )
+        early = _idem.check_and_claim(_idem.current_user_id(), _idem.current_route(), _idem_key, _idem_hash)
+        if early is not None:
+            return early
+
     argv = [platform, "upload-video", "--account", account, "--title", title, "--tags", tags]
     hflag = _headless_flag(headless)
     if hflag and platform != "bilibili":
@@ -95,7 +149,19 @@ def upload_video():
         raw = uploaded_file.read()
         ext = Path(uploaded_file.filename).suffix
         if len(raw) < MIN_UPLOAD_BYTES:
-            return jsonify({"success": False, "message": f"Uploaded file is too small: {len(raw)} bytes (min {MIN_UPLOAD_BYTES})"}), 400
+            # Post-claim 4xx — release the key so the user can
+            # correct the upload and retry with the same UUID.
+            if _idem_key:
+                _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": f"Uploaded file is too small: {len(raw)} bytes (min {MIN_UPLOAD_BYTES})",
+                    }
+                ),
+                400,
+            )
         name = f"{uuid.uuid4().hex}{ext}"
         file_path = UPLOADS_DIR / name
         file_path.write_bytes(raw)
@@ -104,7 +170,18 @@ def upload_video():
         file_path = _save_data_uri(file_data) if file_data else None
 
     if not file_path:
-        return jsonify({"success": False, "message": "file_data is required (base64 / data URI or multipart file field 'file')"}), 400
+        # Post-claim 4xx — release the key.
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "file_data is required (base64 / data URI or multipart file field 'file')",
+                }
+            ),
+            400,
+        )
     argv += ["--file", str(file_path)]
 
     if thumbnail and platform in THUMBNAIL_PLATFORMS:
@@ -141,17 +218,56 @@ def upload_video():
     task_id = _new_task_id("upload-video")
     if schedule:
         normalised = _normalise_schedule(schedule)
-        parsed = datetime.strptime(normalised, '%Y-%m-%d %H:%M')
-        _db_insert_task(task_id=task_id, status="scheduled", platform=platform, action="upload-video", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        parsed = datetime.strptime(normalised, "%Y-%m-%d %H:%M")
+        _db_insert_task(
+            task_id=task_id,
+            status="scheduled",
+            platform=platform,
+            action="upload-video",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+        )
         _schedule_task(task_id, argv, parsed)
     else:
-        _db_insert_task(task_id=task_id, status="pending", platform=platform, action="upload-video", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        _db_insert_task(
+            task_id=task_id,
+            status="pending",
+            platform=platform,
+            action="upload-video",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+        )
         task_executor.submit(_run_sau, task_id, argv)
-    return jsonify({"success": True, "data": {"task_id": task_id}})
+    # Log usage for quota tracking
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        from web_runner.routes.auth import _current_user_id
+
+        uid = _current_user_id()
+        if uid:
+            log_action(uid, "publish")
+    except Exception:
+        pass
+    response = _make_accepted_response(task_id)
+    # Idempotency finalize — cache the 202 + Location for
+    # future replays. ``finalize`` is a no-op when ``_idem_key``
+    # is empty (the client didn't send a key header).
+    if _idem_key:
+        _idem.finalize(
+            _idem.current_user_id(),
+            _idem.current_route(),
+            _idem_key,
+            response,
+            task_id=task_id,
+        )
+    return response
 
 
 @bp.post("/api/upload/note")
 def upload_note():
+    _idem_key = _idem.read_key_from_request()
     if request.is_json:
         payload = request.get_json(silent=True) or {}
         platform = payload.get("platform")
@@ -200,11 +316,50 @@ def upload_note():
             idx += 1
 
     if not saved_images:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": "至少需要一张有效图片"}), 400
     if platform not in NOTE_PLATFORMS:
+        if _idem_key:
+            _idem.release(_idem.current_user_id(), _idem.current_route(), _idem_key)
         return jsonify({"success": False, "message": f"平台 {platform} 不支持图文上传"}), 400
 
-    argv = [platform, "upload-note", "--account", account, "--title", title, "--note", note, "--tags", tags, "--images", *saved_images]
+    # Idempotency claim — happens AFTER the basic required-field
+    # check + image save but BEFORE the argv build / task row
+    # insert / executor submit. The hash signature for note
+    # uploads is (platform, account, title, image_count,
+    # image_total_size, image_names_joined) so a replay of the
+    # same intent is recognized even if the multipart stream
+    # delivers images in a slightly different order.
+    if _idem_key:
+        _idem_hash = _idem.payload_hash(
+            [
+                platform,
+                account,
+                title,
+                str(len(saved_images)),
+                str(sum(Path(p).stat().st_size for p in saved_images if Path(p).exists())),
+                "|".join(Path(p).name for p in saved_images),
+            ]
+        )
+        early = _idem.check_and_claim(_idem.current_user_id(), _idem.current_route(), _idem_key, _idem_hash)
+        if early is not None:
+            return early
+
+    argv = [
+        platform,
+        "upload-note",
+        "--account",
+        account,
+        "--title",
+        title,
+        "--note",
+        note,
+        "--tags",
+        tags,
+        "--images",
+        *saved_images,
+    ]
     hflag = _headless_flag(headless)
     if hflag:
         argv.append("--headless" if hflag == "true" else "--headed")
@@ -212,24 +367,67 @@ def upload_note():
         argv.append("--debug")
     if platform == "tencent":
         data_input = request.get_json(silent=True) if request.is_json else None
-        is_draft_raw = (data_input.get("is_draft", "") if isinstance(data_input, dict) else request.form.get("is_draft", ""))
+        is_draft_raw = (
+            data_input.get("is_draft", "") if isinstance(data_input, dict) else request.form.get("is_draft", "")
+        )
         if str(is_draft_raw).lower() in ("true", "1", "yes", "on"):
             argv.append("--draft")
 
     task_id = _new_task_id("upload-note")
     if schedule:
         normalised = _normalise_schedule(schedule)
-        parsed = datetime.strptime(normalised, '%Y-%m-%d %H:%M')
-        _db_insert_task(task_id=task_id, status="scheduled", platform=platform, action="upload-note", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        parsed = datetime.strptime(normalised, "%Y-%m-%d %H:%M")
+        _db_insert_task(
+            task_id=task_id,
+            status="scheduled",
+            platform=platform,
+            action="upload-note",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+        )
         _schedule_task(task_id, argv, parsed)
     else:
-        _db_insert_task(task_id=task_id, status="pending", platform=platform, action="upload-note", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        _db_insert_task(
+            task_id=task_id,
+            status="pending",
+            platform=platform,
+            action="upload-note",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+        )
         task_executor.submit(_run_sau, task_id, argv)
-    return jsonify({"success": True, "data": {"task_id": task_id}})
+    # Log usage for quota tracking
+    try:
+        from web_runner.middleware.usage_metering import log_action
+        from web_runner.routes.auth import _current_user_id
+
+        uid = _current_user_id()
+        if uid:
+            log_action(uid, "publish")
+    except Exception:
+        pass
+    response = _make_accepted_response(task_id)
+    if _idem_key:
+        _idem.finalize(
+            _idem.current_user_id(),
+            _idem.current_route(),
+            _idem_key,
+            response,
+            task_id=task_id,
+        )
+    return response
 
 
 @bp.get("/api/upload/progress")
 def upload_progress_sse():
+    from web_runner.routes.auth import _is_auth_enabled, authenticate_sse_request
+
+    if _is_auth_enabled():
+        _sse_uid = authenticate_sse_request(request)
+        if _sse_uid is None:
+            return jsonify({"success": False, "message": "未登录"}), 401
     task_id = request.args.get("task_id", "")
     if not task_id:
         return jsonify({"success": False, "message": "task_id is required"}), 400
@@ -239,7 +437,17 @@ def upload_progress_sse():
 
     terminal_statuses = {"success", "failed", "error"}
     if task.get("status") in terminal_statuses:
-        return jsonify({"success": True, "data": {"status": task["status"], "code": task.get("code"), "error": task.get("error"), "result": task.get("result")}})
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "status": task["status"],
+                    "code": task.get("code"),
+                    "error": task.get("error"),
+                    "result": task.get("result"),
+                },
+            }
+        )
 
     with _progress_sub_lock:
         active_count = sum(len(qs) for qs in _progress_subscribers.values())
@@ -253,6 +461,7 @@ def upload_progress_sse():
     def generate() -> Generator:
         yield f": {' ' * 4096}\n\n"
         import time
+
         start_time = time.time()
         try:
             while True:
@@ -278,4 +487,8 @@ def upload_progress_sse():
                 if not subs:
                     _progress_subscribers.pop(task_id, None)
 
-    return Response(generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )

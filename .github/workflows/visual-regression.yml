@@ -1,0 +1,84 @@
+name: Visual Regression
+
+# Runs the PageWrapper screenshot-diff suite. Fails when a layout
+# change causes a pixel diff against the committed baselines.
+#
+# To update baselines after an intentional visual change, run locally:
+#   cd sau_web/frontend
+#   E2E_BOOT_SERVER=1 npm run e2e:visual:update
+# Then commit the changed PNGs under tests/e2e/pagewrapper-visual-regression.spec.ts-snapshots/
+
+on:
+  # Nightly smoke + on-demand re-run. Visual diffs are inherently
+  # noisy; running on every PR creates false failures. Maintainers
+  # can trigger manually after an intentional visual change.
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+# Only one visual-regression run needs to be active at a time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pagewrapper-screenshots:
+    # Baselines are generated on macOS (chromium-darwin) to match the
+    # local dev environment. Running on macOS avoids cross-platform font
+    # rendering diffs. If you regenerate baselines on Linux, switch
+    # this to ubuntu-latest and commit the new PNGs.
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: sau_web/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sau_web/frontend/package-lock.json
+
+      # The Playwright webServer block boots `bash ../sau_web/start.sh`
+      # which runs the Flask backend. Install Python deps so the backend
+      # can start in CI.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python deps (Flask backend)
+        run: pip install -e '.[dev]'
+        working-directory: ${{ github.workspace }}
+
+      - name: Install Node deps (frontend)
+        run: npm ci
+
+      - name: Install Playwright Chromium + system deps
+        run: npx playwright install --with-deps chromium
+
+      - name: Run PageWrapper visual regression tests
+        run: E2E_BOOT_SERVER=1 npm run e2e:visual
+        env:
+          CI: true
+          SAU_MOCK_AUTHORIZE: 'true'
+
+      - name: Upload Playwright report + diff artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        # Run from the repo root so artifact paths resolve cleanly
+        # regardless of the frontend default working directory.
+        with:
+          name: visual-regression-report
+          path: |
+            sau_web/frontend/playwright-report
+            sau_web/frontend/test-results
+            tests/e2e/pagewrapper-visual-regression.spec.ts-snapshots
+          if-no-files-found: ignore
+          retention-days: 7
+        working-directory: ${{ github.workspace }}

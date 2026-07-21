@@ -1,0 +1,15 @@
+{
+  "name": "phase2a-publish-intelligence",
+  "created": "2026-07-12",
+  "status": "proposed",
+  "parent": "product-roadmap-2026q3",
+  "artifacts": {
+    "proposal": "Phase 2a 落地：智能排期推荐（smart-scheduling）+ 可复用内容模板（content-templates）",
+    "design": "publish_insights 预聚合最佳时段 + content_templates JSONB 存储 + PublishPage 排期热力图 + 模板选择器",
+    "tasks": { "total": 23, "completed": 0 }
+  },
+  "capabilities": ["smart-scheduling", "content-templates"],
+  "layers": ["api", "frontend", "db", "scheduler"],
+  "platforms": ["douyin", "bilibili", "xiaohongshu", "kuaishou", "tencent", "tiktok", "baijiahao"],
+  "applyReady": true
+}

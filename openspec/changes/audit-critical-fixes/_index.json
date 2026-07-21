@@ -1,0 +1,13 @@
+{
+  "name": "audit-critical-fixes",
+  "created": "2026-06-24T22:07:29+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Fix 5 critical + 5 high severity audit findings: git hygiene, runtime bugs, Dockerfile, security defaults, DB layer consistency",
+    "design": "6 key decisions: git rm --cached, Dockerfile rewrite with uv+patchright, debug=False default, account_groups migration to get_database(), insert_returning_id in Protocol, config alignment",
+    "tasks": { "total": 28, "completed": 0 }
+  },
+  "layers": ["cli", "api"],
+  "platforms": [],
+  "applyReady": true
+}

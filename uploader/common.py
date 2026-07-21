@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Shared utility functions for all platform uploaders."""
 
 from __future__ import annotations
@@ -6,6 +5,16 @@ from __future__ import annotations
 import inspect
 
 from patchright.async_api import Page
+
+# ── Polling retry limits ─────────────────────────────────────────────────
+# Replaces bare ``while True`` loops that could spin forever if the expected
+# UI state never appeared. Each constant is the max iteration count; the
+# effective timeout depends on per-iteration wait_for_url timeouts + sleep.
+# Worst case ≈ count × (inner_timeout + sleep). These are safety nets —
+# normal flows break out in 5-15 iterations.
+MAX_UPLOAD_POLL = 120   # × ~2s   ≈ 4 min  — upload completion polling
+MAX_PUBLISH_POLL = 60   # × ~1s   ≈ 1 min  — publish button click retry
+MAX_NAV_POLL = 40       # × ~6.5s  ≈ 4 min  — page navigation (2× wait_for_url(3s) + 0.5s sleep)
 
 
 def _msg(emoji: str, text: str) -> str:
@@ -79,3 +88,5 @@ async def _all_login_markers_hidden(page: Page, markers: list[str]) -> bool:
         except Exception:
             continue
     return True
+
+

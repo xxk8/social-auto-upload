@@ -1,13 +1,12 @@
 """Baijiahao platform operations."""
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from cli.models import BaijiahaoVideoUploadRequest
 from cli.utils import resolve_account_file
-from uploader.baijiahao_uploader.main import BaiJiaHaoVideo, cookie_auth, baijiahao_setup
+from uploader.baijiahao_uploader.main import BaiJiaHaoVideo, baijiahao_setup, cookie_auth
 
 
 async def login(account_name: str, headless: bool = True, qrcode_callback=None) -> Any:
@@ -39,7 +38,10 @@ async def upload_video(request: BaijiahaoVideoUploadRequest) -> Path:
             f'Baijiahao cookie is missing or expired: {account_file}. '
             f'Run `sau baijiahao login --account {request.account_name}` first.'
         )
-    publish_date = request.publish_date if isinstance(request.publish_date, datetime) else datetime.now()
+    # Phase 3: pass request.publish_date through as-is (0 for immediate, datetime for scheduled).
+    # Previously this coerced to `datetime.now()` which broke after the uploader gained
+    # `validate_publish_date` (would raise on past dates). Mirrors tiktok's pass-through pattern.
+    publish_date = request.publish_date or 0
     app = BaiJiaHaoVideo(
         title=request.title,
         file_path=str(request.video_file),

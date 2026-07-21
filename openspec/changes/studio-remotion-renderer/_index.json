@@ -1,0 +1,12 @@
+{
+  "name": "studio-remotion-renderer",
+  "title": "Studio Render Backend — Switch to Remotion (React + Headless Chromium)",
+  "status": "in-progress",
+  "created": "2026-07-10",
+  "owners": ["studio-platform"],
+  "summary": "Replace the broken hyperframes/Node-bridge studio render path with a Remotion-based pipeline: React compositions rendered server-side via @remotion/bundler + @remotion/renderer. Fixes /api/studio/projects/{id}/render 500s caused by hyperframes npm package being absent, and unlocks the OpenRouter integration roadmap (image/video backgrounds per scene).",
+  "specs": [
+    "specs/studio-renderer/spec.md"
+  ],
+  "tasks": "tasks.md"
+}

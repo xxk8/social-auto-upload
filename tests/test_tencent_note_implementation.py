@@ -9,8 +9,10 @@ implemented:
    methods (no longer raising NotImplementedError).
 2. ``TencentNote.validate_upload_args`` enforces the 18-image cap and accepts
    well-formed input.
-3. ``sau_cli`` exposes ``tencent upload-note`` as a CLI subcommand with the
-   expected argument surface.
+3. ``cli.parser`` exposes ``tencent upload-note`` as a CLI subcommand with the
+   expected argument surface (``sau_cli.py`` is a 10-line shim that delegates
+   to ``cli.main.main`` so it shares the same parser — see Phase 2 of
+   ``openspec/changes/cli-uploader-architecture-consistency``).
 4. ``web_runner.PLATFORM_CONFIG['tencent']['note']`` now advertises note
    support so the backend /api/upload/note route can accept a tencent request.
 """
@@ -20,8 +22,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 from pathlib import Path
-
-import pytest
 
 
 def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool = True) -> object:
@@ -55,7 +55,7 @@ def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool
         async def click(self, *_args, **_kwargs) -> None:
             return None
 
-        async def first(self) -> "_Locator":
+        async def first(self) -> _Locator:
             return self
 
     class _Page:
@@ -65,7 +65,7 @@ def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool
 
         def locator(self, selector: str) -> _Locator:
             self.calls.append(selector)
-            if "input[type=\"file\"]" in selector:
+            if 'input[type="file"]' in selector:
                 return _Locator(count=1 if has_image_input else 0, visible=has_image_input)
             if "div.weui-desktop-loading" in selector or "uploading" in selector:
                 # Pretend nothing is loading and publish button is enabled.
@@ -74,7 +74,7 @@ def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool
                 return _Locator(count=1, visible=True, attr="weui-desktop-btn weui-desktop-btn_primary")
             if "div.input-editor" in selector:
                 return _Locator(count=1, visible=True)
-            if "div:has-text" in selector or "get_by_text" in selector or "[role=\"tab\"]" in selector:
+            if "div:has-text" in selector or "get_by_text" in selector or '[role="tab"]' in selector:
                 return _Locator(count=1 if upload_selectors_visible else 0, visible=upload_selectors_visible)
             return _Locator(count=0, visible=False)
 
@@ -105,7 +105,7 @@ def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool
 
 def _build_tencent_note(tmp_path: Path, image_count: int = 2) -> tuple:
     """Lazy import to keep collection resilient against missing playwright deps."""
-    from uploader.tencent_uploader.main import TencentNote, TENCENT_NOTE_MAX_IMAGES
+    from uploader.tencent_uploader.main import TENCENT_NOTE_MAX_IMAGES, TencentNote
 
     cookie_file = tmp_path / "cookies" / "tencent_account.json"
     cookie_file.parent.mkdir(parents=True, exist_ok=True)
@@ -151,13 +151,13 @@ def test_tencent_note_validate_caps_excess_images(tmp_path: Path) -> None:
 
 def test_switch_to_note_mode_no_crash_with_truthy_locators(tmp_path: Path) -> None:
     """``switch_to_note_mode`` URL-direct or text-based switch returns cleanly even when mode detection can't be confirmed."""
-    from uploader.tencent_uploader.main import TencentNote
 
     note, _ = _build_tencent_note(tmp_path)
     fake_page = _make_fake_page(upload_selectors_visible=True)
     asyncio.run(note.switch_to_note_mode(fake_page))  # should not raise
-    assert any(selector.startswith("http") or "图文" in selector or "tab" in selector for selector in fake_page.calls) or \
-           fake_page.url.endswith("?type=image")
+    assert any(
+        selector.startswith("http") or "图文" in selector or "tab" in selector for selector in fake_page.calls
+    ) or fake_page.url.endswith("?type=image")
 
 
 def test_tencent_upload_note_images_runs_with_stubbed_page(tmp_path: Path) -> None:
@@ -175,20 +175,27 @@ def test_fill_note_title_and_tags_types_through_stubbed_page(tmp_path: Path) -> 
 
 
 def test_cli_tencent_upload_note_parser_has_expected_flags() -> None:
-    """sau_cli must register tencent upload-note with --images/--title/--note/--tags/--schedule/--draft."""
-    import sau_cli
+    """``cli.parser`` (consumed via the ``sau_cli`` shim) must register ``tencent upload-note`` with ``--images/--title/--note/--tags/--schedule/--draft``."""
+    from cli.parser import build_parser
 
-    parser = sau_cli.build_parser()
+    parser = build_parser()
     args = parser.parse_args(
         [
             "tencent",
             "upload-note",
-            "--account", "demo",
-            "--images", "/tmp/a.png", "/tmp/b.png",
-            "--title", "demo",
-            "--note", "正文",
-            "--tags", "a,b",
-            "--schedule", "2099-01-01 10:00",
+            "--account",
+            "demo",
+            "--images",
+            "/tmp/a.png",
+            "/tmp/b.png",
+            "--title",
+            "demo",
+            "--note",
+            "正文",
+            "--tags",
+            "a,b",
+            "--schedule",
+            "2099-01-01 10:00",
             "--draft",
             "--headless",
         ]
@@ -209,6 +216,7 @@ def test_web_runner_marks_tencent_supporting_notes() -> None:
     """Backend must report tencent.note=True so /api/upload/note can dispatch a tencent request."""
     # Lazy import: load lazily to avoid running Flask app init side-effects on collection.
     import importlib
+
     web_runner = importlib.import_module("web_runner")  # noqa: WPS433 - intentional lazy import
 
     cfg = web_runner.PLATATFORM_CONFIG["tencent"]

@@ -13,7 +13,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ─── Fixture ──────────────────────────────────────────────────────────────
 
 
@@ -176,16 +175,14 @@ class TestSingleTurnFallbackPreserved:
 
     @patch("web_runner.routes.ai._has_any_api_key", return_value=True)
     @patch("web_runner.routes.ai._stream_openrouter")
-    def test_empty_messages_list_falls_back_when_prompt_given(
-        self, mock_stream, _keys, app
-    ):
+    def test_empty_messages_list_falls_back_when_prompt_given(self, mock_stream, _keys, app):
         mock_stream.return_value = iter([_done_event("ok")])
 
         resp = app.post(
             "/api/ai/generate/stream",
             json={
                 "model": "m",
-                "messages": [],            # empty list → NOT the multi-turn path
+                "messages": [],  # empty list → NOT the multi-turn path
                 "prompt": "give me a title",
                 "platform": "douyin",
             },
@@ -202,9 +199,7 @@ class TestSingleTurnFallbackPreserved:
 
     @patch("web_runner.routes.ai._has_any_api_key", return_value=True)
     @patch("web_runner.routes.ai._stream_openrouter")
-    def test_missing_messages_field_falls_back_with_default_platform_prompt(
-        self, mock_stream, _keys, app
-    ):
+    def test_missing_messages_field_falls_back_with_default_platform_prompt(self, mock_stream, _keys, app):
         mock_stream.return_value = iter([_done_event("ok")])
 
         resp = app.post(
@@ -223,9 +218,7 @@ class TestSingleTurnFallbackPreserved:
 
     @patch("web_runner.routes.ai._has_any_api_key", return_value=True)
     @patch("web_runner.routes.ai._stream_openrouter")
-    def test_missing_messages_field_with_images_assembles_multimodal(
-        self, mock_stream, _keys, app
-    ):
+    def test_missing_messages_field_with_images_assembles_multimodal(self, mock_stream, _keys, app):
         mock_stream.return_value = iter([_done_event("ok")])
 
         resp = app.post(
@@ -250,9 +243,7 @@ class TestSingleTurnFallbackPreserved:
 
     @patch("web_runner.routes.ai._has_any_api_key", return_value=True)
     @patch("web_runner.routes.ai._stream_openrouter")
-    def test_explicit_system_prompt_in_single_turn_path(
-        self, mock_stream, _keys, app
-    ):
+    def test_explicit_system_prompt_in_single_turn_path(self, mock_stream, _keys, app):
         """Caller-supplied `system_prompt` overrides PLATFORM_PROMPTS default."""
         mock_stream.return_value = iter([_done_event("ok")])
 
@@ -299,9 +290,7 @@ class TestEmptyRequestGuard:
 
     @patch("web_runner.routes.ai._has_any_api_key", return_value=True)
     @patch("web_runner.routes.ai._stream_openrouter")
-    def test_empty_messages_and_no_prompt_emits_sse_error(
-        self, mock_stream, _keys, app
-    ):
+    def test_empty_messages_and_no_prompt_emits_sse_error(self, mock_stream, _keys, app):
         # Both multi-turn path and single-turn path have nothing.
         resp = app.post(
             "/api/ai/generate/stream",

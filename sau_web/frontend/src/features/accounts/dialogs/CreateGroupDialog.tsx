@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/Components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -7,9 +7,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from '@/Components/ui/dialog'
+import { Input } from '@/Components/ui/input'
+import { Label } from '@/Components/ui/label'
 import { Loader2 } from 'lucide-react'
 import { useAccountsDispatch, useAccountsState, validateGroupName } from '../AccountsProvider'
 import { cn } from '@/lib/utils'
@@ -24,6 +24,7 @@ export function CreateGroupDialog() {
   const dispatch = useAccountsDispatch()
 
   const [touched, setTouched] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (state.createDialogOpen) setTouched(false)
   }, [state.createDialogOpen])

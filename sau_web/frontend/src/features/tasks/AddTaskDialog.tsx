@@ -14,7 +14,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/index'
+} from '@/Components/ui/index'
 import { PLATFORMS } from '../../api/client'
 
 export type AddTaskFormState = {
@@ -55,9 +55,9 @@ export const AddTaskDialog = memo(function AddTaskDialog({
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>平台</Label>
+            <Label htmlFor="task-new-platform">平台</Label>
             <Select value={values.platform} onValueChange={(v) => onChange({ ...values, platform: v })}>
-              <SelectTrigger>
+              <SelectTrigger id="task-new-platform" aria-label="平台">
                 <SelectValue placeholder="选择平台" />
               </SelectTrigger>
               <SelectContent>
@@ -70,9 +70,9 @@ export const AddTaskDialog = memo(function AddTaskDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>操作</Label>
+            <Label htmlFor="task-new-action">操作</Label>
             <Select value={values.action} onValueChange={(v) => onChange({ ...values, action: v })}>
-              <SelectTrigger>
+              <SelectTrigger id="task-new-action" aria-label="操作">
                 <SelectValue placeholder="选择操作" />
               </SelectTrigger>
               <SelectContent>
@@ -84,19 +84,32 @@ export const AddTaskDialog = memo(function AddTaskDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>账号</Label>
+            <Label htmlFor="task-new-account">账号</Label>
             <Input
+              id="task-new-account"
+              name="account"
               placeholder="输入账号名称"
               value={values.account}
               onChange={(e) => onChange({ ...values, account: e.target.value })}
+              // `account` reads as a system-account handle (not a credential), so we
+              // intentionally opt OUT of credential autofill — password managers key
+              // off `username` + `current-password` and would otherwise surface unrelated
+              // personal-account entries. Switch to `username` if/when this field
+              // ever accepts the user's OWN credential handle.
+              autoComplete="off"
+              spellCheck={false}
+              data-form-type="other"
             />
           </div>
           <div className="space-y-2">
-            <Label>标题</Label>
+            <Label htmlFor="task-new-title">标题</Label>
             <Input
+              id="task-new-title"
+              name="title"
               placeholder="输入标题（上传操作需要）"
               value={values.title}
               onChange={(e) => onChange({ ...values, title: e.target.value })}
+              maxLength={120}
             />
           </div>
         </div>

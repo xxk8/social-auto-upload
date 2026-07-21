@@ -6,9 +6,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from '@/components/ui/dialog'
-import { Progress } from '@/components/ui/progress'
-import { useToast } from '@/components/ui/toast'
+} from '@/Components/ui/dialog'
+import { Progress } from '@/Components/ui/progress'
+import { useToast } from '@/Components/ui/toast'
 import {
   useAuthorizeAccountGroup,
   useConfirmAuthorizeAccountGroup,
@@ -29,8 +29,8 @@ import {
   Terminal,
   Shield,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { CliCommandBlock } from '@/components/CliCommand'
+import { Button } from '@/Components/ui/button'
+import { CliCommandBlock } from '@/Components/CliCommand'
 import { toneBgClass, toneBorderClass, toneTextClass } from '@/lib/tone'
 
 // ── Step definitions ─────────────────────────────────────────────────────
@@ -140,14 +140,13 @@ export function LoginProgressModal({
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
-  }, [])
-
-  // ── Start flow when modal opens ──────────────────────────────────────
+  }, [])    // ── Start flow when modal opens ──────────────────────────────────────
 
   useEffect(() => {
     if (!open) {
       cancelledRef.current = true
       cleanup()
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentStepIndex(0)
       setQrCodeUrl(null)
       setErrorMessage(null)
@@ -157,6 +156,7 @@ export function LoginProgressModal({
     }
 
     cancelledRef.current = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentStepIndex(0)
     setQrCodeUrl(null)
     setErrorMessage(null)
@@ -184,13 +184,17 @@ export function LoginProgressModal({
       }
     }
     authorizeGroup.mutateAsync({ groupId, platform, headless: true })
-      .then((result) => {
+      .then(async (result) => {
         if (isEffectCancelled || cancelledRef.current) return
 
         if (result.success && result.data) {
           goToStep(1) // → fetching QR
 
-          const sseUrl = `${api.getBaseUrl()}/api/accounts/login/sse?platform=${platform}&account=${encodeURIComponent(result.data.group_name)}&headless=true`
+          // Fetch SSE token for authenticated connection
+          const { authApi } = await import('@/features/auth/authApi')
+          const tokenRes = await authApi.getSseToken().catch(() => null)
+          const sseTokenParam = tokenRes?.success && tokenRes.data ? `&sse_token=${tokenRes.data.token}` : ''
+          const sseUrl = `${api.getBaseUrl()}/api/accounts/login/sse?platform=${platform}&account=${encodeURIComponent(result.data.group_name)}&headless=true${sseTokenParam}`
           const eventSource = new EventSource(sseUrl)
           // Stale-ES guard: if a previous setup's .then() (or a prior mutation chain)
           // already assigned a different EventSource to the ref, the live one is that
@@ -507,6 +511,7 @@ export function LoginProgressModal({
                         src={qrCodeUrl}
                         alt={`${platformLabel} 登录二维码`}
                         className="w-52 h-52 rounded-xl border border-border shadow-sm"
+                        draggable={false}
                       />
                       <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 translate-y-full mt-2 whitespace-nowrap">
                         <span className={cn('text-[10px] flex items-center gap-1', toneTextClass('warning'))}>
@@ -515,6 +520,21 @@ export function LoginProgressModal({
                         </span>
                       </div>
                     </div>
+
+                    {/* Save-as-PNG affordance — converts the SSE image_data_url
+                        (data: URL) into a Blob and triggers a programmatic download.
+                        Native <a download href="data:..."> is unreliable across
+                        browsers; the Blob dance works in all of them. */}
+                    {/* Save-as-PNG affordance removed: per round-OPT-acct-qr
+                       cleanup (2026-07-10), the Web Shell's QR flow is
+                       data-URL only (no local image capture / no PNG
+                       round-trip). Users who can't see the inline <img>
+                       should switch to the headed browser (where the
+                       platform's own QR <img> is visible) or copy the
+                       URL directly from DevTools. Adding a
+                       "保存为 PNG" button here would re-introduce the
+                       local file artifact that the user asked us to
+                       remove end-to-end. */}
                   </div>
                 </motion.div>
               )}
@@ -546,13 +566,13 @@ export function LoginProgressModal({
                 <div className="flex items-start gap-2.5">
                   <AlertCircle className={cn('h-4 w-4 mt-0.5 shrink-0', toneTextClass('warning'))} />
                   <div>
-                    <p className={cn('text-xs font-medium', toneTextClass('warning'))}>
+                    <p className={cn('text-xs font-medium select-text', toneTextClass('warning'))}>
                       {platformLabel} 需要本地终端登录
                     </p>
                     {/* color-mix dimmed foreground — kept inline: it's an
                         opacity reduction on the same warning-fg, not a different
                         tonal vocabulary entry. */}
-                    <p className="mt-1 text-[11px] text-[color-mix(in_oklab,var(--status-warning-fg),transparent_30%)]">
+                    <p className="mt-1 text-[11px] select-text text-[color-mix(in_oklab,var(--status-warning-fg),transparent_30%)]">
                       该平台不支持网页端扫码登录，请先在本地终端运行以下命令完成登录，
                       然后点击下方按钮验证并保存授权。
                     </p>
@@ -563,7 +583,7 @@ export function LoginProgressModal({
               <CliCommandBlock command={`sau ${platform} login --account "${groupName}"`} />
 
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                登录完成后，Cookie 将保存到 <code className="text-[10px] bg-muted px-1 rounded">cookies/{`${platform}_${groupName}`}.json</code>，
+                登录完成后，Cookie 将保存到              <code className="text-[10px] bg-muted px-1 rounded select-text">cookies/{`${platform}_${groupName}`}.json</code>，
                 届时该平台的授权信息即可在网页端使用。
               </p>
 
@@ -600,8 +620,8 @@ export function LoginProgressModal({
             >
               <XCircle className={cn('mt-0.5 h-4 w-4 shrink-0', toneTextClass('error'))} />
               <div className="flex-1 min-w-0">
-                <p className={cn('text-xs font-medium', toneTextClass('error'))}>授权失败</p>
-                <p className={cn('mt-0.5 text-[11px]', `${toneTextClass('error')}/80`)}>{errorMessage}</p>
+                <p className={cn('text-xs font-medium select-text', toneTextClass('error'))}>授权失败</p>
+                <p className={cn('mt-0.5 text-[11px] select-text', `${toneTextClass('error')}/80`)}>{errorMessage}</p>
               </div>
             </motion.div>
           )}

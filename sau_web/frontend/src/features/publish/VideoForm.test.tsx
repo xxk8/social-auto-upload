@@ -1,6 +1,41 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, render } from '@testing-library/react'
-import type { AiGenerationResult } from '@/components/AiSidebar/AiSidebar'
+import type { HTMLAttributes, ReactNode } from 'react'
+// ── shared mock prop shapes (see TaskTableRow.test.tsx for rationale) ──
+//
+// `MockProps` is the common denominator: HTMLAttributes + children + an open
+// index signature `[key: string]: unknown` so data-* / aria-* still flow
+// through `{...rest}` without losing them. Sub-types narrowly extend with
+// the Radix-style callbacks that particular vi.mock components need.
+type MockProps = HTMLAttributes<HTMLElement> & {
+  children?: ReactNode
+  [key: string]: unknown
+}
+type MockCheckboxProps = MockProps & {
+  checked?: boolean | 'indeterminate'
+  onCheckedChange?: (checked: boolean) => void
+}
+type MockSelectProps = MockProps & {
+  value?: string | number
+  onValueChange?: (value: string) => void
+}
+type MockSelectItemProps = MockProps & {
+  value?: string | number
+}
+type MockMultiSelectProps = MockProps & {
+  value?: string[]
+  options?: Array<{ value: string; label?: string }>
+  onChange?: (value: string[]) => void
+  placeholder?: string
+}
+type MockMultiSelectOption = { value: string; label?: string }
+type MockPlatformIconProps = MockProps & { platform?: string }
+type MockTagInputProps = MockProps & {
+  value?: string
+  onChange?: (value: string) => void
+}
+
+import type { AiGenerationResult } from '@/Components/AiSidebar/AiSidebar'
 
 // Imperative-handle tests below use the render-spy pattern (assert that
 // applyAiResult triggers a re-render via `cardRenderSpy` incrementing) rather
@@ -28,14 +63,22 @@ vi.mock('motion/react', () => {
   // Without this cache, every access to `motion.div` returns a fresh arrow
   // function, which React's reconciler reads as a NEW component type →
   // unmount/remount on every render, defeating the memoization being tested.
+  // The dynamic JSX Tag (string key) and the Proxy target type prevent a
+  // fully typed mock — disable no-explicit-any on the three sites below.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const motionCache = new Map<string, (props: any) => any>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const motion: any = new Proxy(
     {},
     {
       get: (_t, tag: string) => {
         if (!motionCache.has(tag)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           motionCache.set(tag, (props: any) => {
-            const { children, ...rest } = props ?? {}
+            const { children, ...rest } = (props ?? {}) as Record<string, unknown>
+            // The dynamic JSX tag is a string key — `as any` is the cleanest
+            // anchor for <Tag {...rest}> when rest members aren't known.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const Tag = ((tag as string) || 'div') as any
             return <Tag {...rest}>{children}</Tag>
           })
@@ -46,20 +89,28 @@ vi.mock('motion/react', () => {
   )
   return {
     motion,
-    AnimatePresence: ({ children }: any) => <>{children}</>,
+    AnimatePresence: ({ children }: MockProps) => <>{children}</>,
   }
 })
 
-vi.mock('@/components/ui/index', () => {
-  const Tag = (tag: string) => (props: any) => {
-    const { children, className, ...rest } = props ?? {}
+vi.mock('@/Components/ui/index', () => {
+  const makeTag = (tag: string) => (props: MockProps) => {
+    const { children, className, ...rest } = props
     return (
       <div data-tag={tag} className={className} {...rest}>
         {children}
       </div>
     )
   }
-  function Select({ value, onValueChange, children }: any) {
+  function Tag(props: MockProps) {
+    const { children, className, ...rest } = props
+    return (
+      <div className={className} {...rest}>
+        {children}
+      </div>
+    )
+  }
+  function Select({ value, onValueChange, children }: MockSelectProps) {
     return (
       <select
         data-testid="select"
@@ -70,7 +121,7 @@ vi.mock('@/components/ui/index', () => {
       </select>
     )
   }
-  function Checkbox({ checked, onCheckedChange, ...rest }: any) {
+  function Checkbox({ checked, onCheckedChange, ...rest }: MockCheckboxProps) {
     return (
       <input
         type="checkbox"
@@ -80,13 +131,13 @@ vi.mock('@/components/ui/index', () => {
       />
     )
   }
-  function Input({ className, ...rest }: any) {
+  function Input({ className, ...rest }: MockProps) {
     return <input className={className} {...rest} />
   }
-  function Textarea({ className, ...rest }: any) {
+  function Textarea({ className, ...rest }: MockProps) {
     return <textarea className={className} {...rest} />
   }
-  function MultiSelect({ options, value, onChange, placeholder }: any) {
+  function MultiSelect({ options, value, onChange, placeholder }: MockMultiSelectProps) {
     return (
       <select
         data-testid="multi-select"
@@ -102,7 +153,7 @@ vi.mock('@/components/ui/index', () => {
         }
         data-placeholder={placeholder}
       >
-        {(options ?? []).map((o: any) => (
+        {(options ?? []).map((o: MockMultiSelectOption) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
@@ -111,54 +162,75 @@ vi.mock('@/components/ui/index', () => {
     )
   }
   return {
-    Alert: Tag('alert'),
-    AlertDescription: Tag('alert-description'),
-    Badge: Tag('badge'),
-    Button: ({ children, className, ...rest }: any) => (
+    Alert: makeTag('alert'),
+    AlertDescription: makeTag('alert-description'),
+    // OPT-followup-3-c: AlertDialog surface wasn't exported from the prior
+    // mock, so VideoForm.tsx's `import { AlertDialog, AlertDialogAction, …}`
+    // resolved to `undefined` and the form crashed on render with
+    // "No AlertDialog export is defined on the @/Components/ui/index mock".
+    // Added full AlertDialog* set mirroring the TaskTableRow / TaskDrawer
+    // mock shape so any of the 9 imports resolve, and onClick on
+    // AlertDialogAction passes through to fire the test's confirm hook.
+    AlertDialog: ({ children }: MockProps) => <>{children}</>,
+    AlertDialogAction: ({ children, onClick }: MockProps) => (
+      <button data-tag="alert-action" onClick={onClick}>
+        {children}
+      </button>
+    ),
+    AlertDialogCancel: ({ children }: MockProps) => <button data-tag="alert-cancel">{children}</button>,
+    AlertDialogContent: ({ children }: MockProps) => <div data-tag="alert-content">{children}</div>,
+    AlertDialogDescription: ({ children }: MockProps) => <div data-tag="alert-desc">{children}</div>,
+    AlertDialogFooter: ({ children }: MockProps) => <div data-tag="alert-footer">{children}</div>,
+    AlertDialogHeader: ({ children }: MockProps) => <div data-tag="alert-header">{children}</div>,
+    AlertDialogTitle: ({ children }: MockProps) => <div data-tag="alert-title">{children}</div>,
+    AlertDialogTrigger: ({ children }: MockProps) => <>{children}</>,
+    Badge: makeTag('badge'),
+    Button: ({ children, className, ...rest }: MockProps) => (
       <button className={className} {...rest}>
         {children}
       </button>
     ),
     // Card is the outermost wrapper VideoForm renders — spy on it to detect
     // whether the wrapped function body executed on the latest render.
-    Card: (props: any) => {
+    Card: (props: MockProps) => {
       cardRenderSpy()
       return <Tag data-tag="card" {...props} />
     },
-    CardContent: Tag('card-content'),
-    CardHeader: Tag('card-header'),
-    CardTitle: Tag('card-title'),
+    CardContent: makeTag('card-content'),
+    CardHeader: makeTag('card-header'),
+    CardTitle: makeTag('card-title'),
     Checkbox,
     Input,
-    Label: Tag('label'),
+    Label: makeTag('label'),
     MultiSelect,
     Select,
-    SelectContent: ({ children }: any) => <>{children}</>,
-    SelectItem: ({ value, children }: any) => <option value={value}>{children}</option>,
-    SelectTrigger: Tag('select-trigger'),
-    SelectValue: Tag('select-value'),
+    SelectContent: ({ children }: MockProps) => <>{children}</>,
+    SelectItem: ({ value, children }: MockSelectItemProps) => <option value={value}>{children}</option>,
+    SelectTrigger: makeTag('select-trigger'),
+    SelectValue: makeTag('select-value'),
     Separator: () => <hr />,
     Textarea,
-    Accordion: Tag('accordion'),
-    AccordionContent: Tag('accordion-content'),
-    AccordionItem: Tag('accordion-item'),
-    AccordionTrigger: Tag('accordion-trigger'),
+    Accordion: makeTag('accordion'),
+    AccordionContent: makeTag('accordion-content'),
+    AccordionItem: makeTag('accordion-item'),
+    AccordionTrigger: makeTag('accordion-trigger'),
   }
 })
 
-vi.mock('@/components/ui/toast', () => ({
+vi.mock('@/Components/ui/toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useToast: () => ({ addToast: vi.fn() }),
 }))
 
-vi.mock('@/components/ui/platform-icon', () => ({
-  PlatformIcon: ({ platform, className }: any) => (
+vi.mock('@/Components/ui/platform-icon', () => ({
+  PlatformIcon: ({ platform, className }: MockPlatformIconProps) => (
     <span data-platform={platform} className={className} />
   ),
   PLATFORM_COLORS: {},
 }))
 
-vi.mock('@/components/ui/tag-input', () => ({
-  TagInput: ({ value, onChange, ...rest }: any) => (
+vi.mock('@/Components/ui/tag-input', () => ({
+  TagInput: ({ value, onChange, ...rest }: MockTagInputProps) => (
     <input
       aria-label="tag-input"
       value={value ?? ''}
@@ -168,12 +240,23 @@ vi.mock('@/components/ui/tag-input', () => ({
   ),
 }))
 
-vi.mock('@/api/client', () => ({
-  api: {
+// Round-XXX second-batch migration: split the legacy `@/api/client` mock
+// into 3 domain-specific mocks (same shape as NoteForm.test.tsx):
+//   • `@/api/publish`     — `publishApi.uploadVideo` + `publishApi.uploadNoteMultipart`
+//   • `@/api/accounts`    — `accountsApi.getAccounts`
+//   • `@/api/types`        — PLATFORMS / NOTE_PLATFORMS / PLATFORMS_WITH_ICONS
+vi.mock('@/api/publish', () => ({
+  publishApi: {
     uploadVideo: vi.fn().mockResolvedValue({ success: true, data: { task_id: 't1' } }),
     uploadNoteMultipart: vi.fn(),
+  },
+}))
+vi.mock('@/api/accounts', () => ({
+  accountsApi: {
     getAccounts: vi.fn().mockResolvedValue({ success: true, data: [] }),
   },
+}))
+vi.mock('@/api/types', () => ({
   PLATFORMS_WITH_ICONS: [
     { label: '抖音', value: 'douyin' },
     { label: '快手', value: 'kuaishou' },
@@ -191,8 +274,8 @@ vi.mock('@/api/client', () => ({
 // ── imports (post-mock) ────────────────────────────────────────────────
 
 import { VideoForm, type VideoFormHandle } from './VideoForm'
-import { sampleAccounts } from '@/test/fixtures'
-import { TestProviders, makeQueryClient } from '@/test/render-harness'
+import { TestProviders } from '@/test/render-harness'
+import { makeQueryClient } from '@/test/render-harness.helpers'
 
 // ── imperative-handle tests (render-spy based) ─────────────────────────
 
@@ -210,7 +293,6 @@ describe('VideoForm — imperative handle', () => {
       <TestProviders client={qc}>
         <VideoForm
           ref={refCallback}
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -225,7 +307,7 @@ describe('VideoForm — imperative handle', () => {
       ref.current!.applyAiResult({
         title: 'AI 标题',
         desc: 'AI 描述',
-        tags: 'ai, video',
+        tags: ['ai, video'],
       } as AiGenerationResult)
     })
 
@@ -245,7 +327,6 @@ describe('VideoForm — imperative handle', () => {
           ref={(r) => {
             ref.current = r
           }}
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -258,7 +339,7 @@ describe('VideoForm — imperative handle', () => {
         ref.current!.applyAiResult({
           title: '',
           desc: '',
-          tags: '',
+          tags: [],
         } as AiGenerationResult)
       })
     }).not.toThrow()
@@ -279,7 +360,6 @@ describe('VideoForm — imperative handle', () => {
           ref={(r) => {
             ref.current = r
           }}
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -319,7 +399,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -333,7 +412,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -352,7 +430,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={stableOnSuccess}
           onError={onError}
         />
@@ -363,7 +440,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={freshOnSuccess} // identity change → memo miss
           onError={onError}
         />
@@ -382,7 +458,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={stableOnError}
         />
@@ -393,7 +468,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={freshOnError}
         />
@@ -404,7 +478,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
   })
 
   it('memo HIT: same accountOptions array reference → spy not called', () => {
-    const accounts = sampleAccounts
     const onSuccess = vi.fn()
     const onError = vi.fn()
     const qc = makeQueryClient()
@@ -412,7 +485,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={accounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -423,7 +495,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={accounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -433,7 +504,7 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     expect(cardRenderSpy).not.toHaveBeenCalled()
   })
 
-  it('memo MISS: fresh accountOptions array identity → spy called', () => {
+  it('memo MISS: fresh groupSelection identity → spy called', () => {
     const onSuccess = vi.fn()
     const onError = vi.fn()
     const qc = makeQueryClient()
@@ -441,7 +512,6 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     const { rerender } = render(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={sampleAccounts}
           onSuccess={onSuccess}
           onError={onError}
         />
@@ -452,9 +522,9 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     rerender(
       <TestProviders client={qc}>
         <VideoForm
-          accountOptions={[...sampleAccounts]} // fresh array identity
           onSuccess={onSuccess}
           onError={onError}
+          groupSelection={{ groupId: 1, groupName: 'g1', platforms: ['douyin'], mappings: [{ platform: 'douyin', cookieFile: 'c1', authId: 1 }] }}
         />
       </TestProviders>,
     )
@@ -466,11 +536,11 @@ describe('VideoForm — React.memo + callback stability (render-spy)', () => {
     // $$typeof is Symbol.for('react.memo') when React.memo wraps the component.
     // Plain forwardRef components have $$typeof = Symbol.for('react.forward_ref').
     // `React.memo(forwardRef(fn))` collapses both — verify the merged surface.
+    // The symbol isn't on MemoExoticComponent's public type — assert via the
+    // lossy `unknown → { $$typeof }` bridge so we don't need `as any`.
     const memoSymbol = Symbol.for('react.memo')
-    const memoWrapperSymbol = (VideoForm as any)?.$$typeof
-    expect(memoWrapperSymbol).toBe(memoSymbol)
+    expect(
+      (VideoForm as unknown as { $$typeof: symbol } | undefined)?.$$typeof,
+    ).toBe(memoSymbol)
   })
 })
-// NoteFormHandle is needed only for type compatibility in the partial-result
-// test's ref holder. Imported lazily to avoid unused-import warnings here.
-import type { NoteFormHandle } from './NoteForm'

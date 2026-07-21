@@ -1,0 +1,66 @@
+{
+  "dialect": "sqlite",
+  "threads": 8,
+  "cookie": "douyin_alice",
+  "outcomes": [
+    {
+      "worker": 0,
+      "outcome": "walker_raised_runtime_error",
+      "exc_type": "RuntimeError",
+      "exc_or_detail": "INSERT did not return id: 'INSERT INTO account_groups (name, created) VALUES (?, ?)'"
+    },
+    {
+      "worker": 1,
+      "outcome": "walker_returned_ok",
+      "exc_type": "",
+      "exc_or_detail": ""
+    },
+    {
+      "worker": 2,
+      "outcome": "walker_returned_ok",
+      "exc_type": "",
+      "exc_or_detail": ""
+    },
+    {
+      "worker": 3,
+      "outcome": "walker_returned_ok",
+      "exc_type": "",
+      "exc_or_detail": ""
+    },
+    {
+      "worker": 4,
+      "outcome": "walker_returned_ok",
+      "exc_type": "",
+      "exc_or_detail": ""
+    },
+    {
+      "worker": 5,
+      "outcome": "walker_returned_ok",
+      "exc_type": "",
+      "exc_or_detail": ""
+    },
+    {
+      "worker": 6,
+      "outcome": "walker_raised_integrity_error",
+      "exc_type": "IntegrityError",
+      "exc_or_detail": "UNIQUE constraint failed: account_groups.name"
+    },
+    {
+      "worker": 7,
+      "outcome": "walker_returned_ok",
+      "exc_type": "",
+      "exc_or_detail": ""
+    }
+  ],
+  "summary": {
+    "walker_returned_ok": 6,
+    "walker_raised_runtime_error": 1,
+    "walker_raised_integrity_error": 1,
+    "walker_raised_other": 0
+  },
+  "account_groups_row_after_race": {
+    "id": 1,
+    "name": "alice",
+    "created": "2026-07-02T17:07:20"
+  }
+}

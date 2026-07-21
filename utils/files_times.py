@@ -1,6 +1,4 @@
-from datetime import timedelta
-
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from conf import BASE_DIR
@@ -29,7 +27,7 @@ def get_title_and_hashtags(filename):
     txt_filename = filename.replace(".mp4", ".txt")
 
     # 读取 txt 文件
-    with open(txt_filename, "r", encoding="utf-8") as f:
+    with open(txt_filename, encoding="utf-8") as f:
         content = f.read()
 
     # 获取标题和 hashtag

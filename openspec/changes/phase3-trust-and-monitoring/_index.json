@@ -1,0 +1,15 @@
+{
+  "name": "phase3-trust-and-monitoring",
+  "created": "2026-07-12",
+  "status": "proposed",
+  "parent": "product-roadmap-2026q3",
+  "artifacts": {
+    "proposal": "Phase 3 落地：内容合规预检（content-compliance）+ RSS 自动抓取（rss-auto-ingest）+ 竞品监控（competitor-monitoring）+ 通知系统（notification-system）+ A/B 测试（ab-testing）",
+    "design": "pyahocorasick 敏感词自动机 / feedparser RSS 解析 / requests 竞品抓取 / Webhook 通知 / content_metrics 复用做 A/B 对比",
+    "tasks": { "total": 46, "completed": 0 }
+  },
+  "capabilities": ["content-compliance", "rss-auto-ingest", "competitor-monitoring", "notification-system", "ab-testing"],
+  "layers": ["api", "frontend", "db", "scheduler"],
+  "platforms": ["douyin", "bilibili", "xiaohongshu"],
+  "applyReady": true
+}

@@ -1,0 +1,30 @@
+{
+  "name": "youtube-full-integration",
+  "created": "2026-07-02T00:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "把已实现的 YouTube uploader 接入 CLI / Web API / 前端 / Skill / Inbox 五层,达到与 7 现有平台一致的 UX",
+    "design": "走 yt-dlp 而非 browser-first 下载、login 强制 headless=False、note/thumbnail 不接入、headless 头层与现有 7 平台对齐",
+    "tasks": {
+      "total": 31,
+      "completed": 0
+    }
+  },
+  "layers": [
+    "cli",
+    "api",
+    "frontend",
+    "skill"
+  ],
+  "platforms": [
+    "youtube"
+  ],
+  "applyReady": true,
+  "specs": [
+    "specs/youtube-platform-cli/spec.md",
+    "specs/youtube-platform-web/spec.md",
+    "specs/youtube-ai-style-prompt/spec.md",
+    "specs/youtube-inbox-download/spec.md",
+    "specs/youtube-skill/spec.md"
+  ]
+}

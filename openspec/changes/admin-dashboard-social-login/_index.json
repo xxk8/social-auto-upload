@@ -1,0 +1,13 @@
+{
+  "id": "admin-dashboard-social-login",
+  "title": "Admin Dashboard + Social Login",
+  "status": "proposed",
+  "created": "2026-07-05",
+  "proposal": "proposal.md",
+  "design": "design.md",
+  "tasks": "tasks.md",
+  "specs": [
+    "specs/admin-dashboard/spec.md",
+    "specs/social-login/spec.md"
+  ]
+}

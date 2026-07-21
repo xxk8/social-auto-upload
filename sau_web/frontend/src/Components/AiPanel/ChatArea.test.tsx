@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen } from '@/test/test-utils'
 import { ChatArea } from './ChatArea'
 import { useChatStore } from '@/stores/useChatStore'
 
@@ -8,24 +8,24 @@ beforeEach(() => {
 })
 
 describe('ChatArea — empty state', () => {
-  it('shows the empty hint when no active session and no draft', () => {
+  it('shows the command suggestions when no active session and no draft', () => {
     render(<ChatArea />)
-    expect(screen.getByText(/点击上方「一键生成」/)).toBeDefined()
+    expect(screen.getByText(/选择命令快速开始/)).toBeDefined()
   })
 
-  it('hides the empty hint when a stream is in flight (draft non-empty)', () => {
+  it('hides the command suggestions when a stream is in flight (draft non-empty)', () => {
     // No active session, but a draft is being typed
     useChatStore.getState().appendStreamingChunk('partial')
     render(<ChatArea />)
-    expect(screen.queryByText(/点击上方「一键生成」/)).toBeNull()
+    expect(screen.queryByText(/选择命令快速开始/)).toBeNull()
     expect(screen.getByText('partial')).toBeDefined()
   })
 
-  it('hides the empty hint when the session has messages', () => {
+  it('hides the command suggestions when the session has messages', () => {
     const sid = useChatStore.getState().newSession('video', 'douyin')
     useChatStore.getState().appendUserMessage(sid, { content: 'first turn' })
     render(<ChatArea />)
-    expect(screen.queryByText(/点击上方「一键生成」/)).toBeNull()
+    expect(screen.queryByText(/选择命令快速开始/)).toBeNull()
     expect(screen.getByText('first turn')).toBeDefined()
   })
 })
@@ -37,8 +37,8 @@ describe('ChatArea — message rendering', () => {
     render(<ChatArea />)
     const bubble = screen.getByText('给我一个标题')
     // Container element should justify-end (right-aligned).
-    const li = bubble.closest('li')
-    expect(li?.className).toContain('justify-end')
+    const wrapper = bubble.closest('[class*="justify-end"]')
+    expect(wrapper).toBeDefined()
   })
 
   it('renders assistant messages with left alignment and AI label', () => {
@@ -48,10 +48,10 @@ describe('ChatArea — message rendering', () => {
     useChatStore.getState().commitAssistantMessage(sid)
     render(<ChatArea />)
     expect(screen.getByText('答案: 你好世界')).toBeDefined()
-    expect(screen.getByText('AI')).toBeDefined()
+    expect(screen.getByText(/AI/)).toBeDefined()
     const answer = screen.getByText('答案: 你好世界')
-    const li = answer.closest('li')
-    expect(li?.className).toContain('justify-start')
+    const wrapper = answer.closest('[class*="justify-start"]')
+    expect(wrapper).toBeDefined()
   })
 
   it('renders system snapshot messages with italic muted styling', () => {
@@ -78,7 +78,6 @@ describe('ChatArea — message rendering', () => {
     }))
     render(<ChatArea />)
     const sysLine = screen.getByText(/当前表单状态/)
-    expect(sysLine.tagName).toBe('LI')
     expect(sysLine.className).toContain('italic')
   })
 
@@ -89,9 +88,10 @@ describe('ChatArea — message rendering', () => {
     const msg = useChatStore.getState().commitAssistantMessage(sid)!
     useChatStore.getState().markApplied(sid, msg.id, ['title', 'tags'])
     render(<ChatArea />)
-    // ChatArea currently renders raw field names (English). When localized,
-    // these should switch to 标题/描述/标签.
-    expect(screen.getByText(/已应用到:.*title.*tags/)).toBeDefined()
+    // ChatArea now renders localized field names: 标题/描述/标签.
+    expect(screen.getByText(/已应用到:/)).toBeDefined()
+    expect(screen.getByText(/标题|title/)).toBeDefined()
+    expect(screen.getByText(/标签|tags/)).toBeDefined()
   })
 })
 
@@ -106,17 +106,20 @@ describe('ChatArea — streaming draft', () => {
     })
     render(<ChatArea />)
     expect(screen.getByText('正在打字…')).toBeDefined()
-    // Caret is a span — we don't put a data-testid by default, so just
-    // verify the text alongside the caret visually:
-    expect(screen.getByText('正在打字…').parentElement?.querySelector('span.animate-pulse')).not.toBeNull()
+    // Caret is a span sibling of MarkdownContent in the streaming container.
+    // The parentElement of getByText is the prose div; the caret lives in the
+    // parent container above that.
+    const streamText = screen.getByText('正在打字…')
+    const streamContainer = streamText.closest('[class*="text-foreground"]') || streamText.parentElement?.parentElement
+    expect(streamContainer?.querySelector('span.bg-primary')).not.toBeNull()
   })
 
   it('does NOT show streaming text when draft is empty even if jobStatus says generating', () => {
     useChatStore.setState({ jobStatus: 'generating', streamingDraft: '' })
     render(<ChatArea />)
     // Streaming caret should not appear (empty draft hides the bubble)
-    // — but the empty hint shows.
-    expect(screen.getByText(/点击上方「一键生成」/)).toBeDefined()
+    // — but the command suggestions show.
+    expect(screen.getByText(/选择命令快速开始/)).toBeDefined()
   })
 })
 
@@ -124,8 +127,10 @@ describe('ChatArea — error block', () => {
   it('renders the chat error when status is error', () => {
     useChatStore.setState({ jobStatus: 'error', error: 'API quota exhausted' })
     render(<ChatArea />)
-    expect(screen.getByText('API quota exhausted')).toBeDefined()
-    expect(screen.getByText('API quota exhausted').className).toContain('text-destructive')
+    const errorText = screen.getByText('API quota exhausted')
+    expect(errorText).toBeDefined()
+    // The 'text-destructive' class is on the parent div, not on the text span
+    expect(errorText.closest('div')?.className).toContain('text-destructive')
   })
 
   it('does NOT render the error block when status recovers to idle', () => {

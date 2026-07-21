@@ -1,13 +1,12 @@
-"""Shared utilities for web_runner routes."""
+"""Shared utilities for web_runner routes (post-SQLite-removal: PG-only Database)."""
+
 from __future__ import annotations
 
 import base64
 import binascii
 import json
 import os
-import queue as _queue
 import re
-import sqlite3
 import sys
 import threading
 import time
@@ -16,11 +15,16 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Generator
+
+from flask import Response, jsonify
 
 from utils.log import logger as _task_logger
+from web_runner.db import get_database
 
-from web_runner.db import DB_PATH, BASE_DIR, db_lock, get_connection
+BASE_DIR = Path(__file__).parent.parent.resolve()
+import psycopg  # noqa: E402 — narrow exception for the orphan-recovery watchdog loop
+
+dbi = get_database  # alias for shorter call-site reads
 
 COOKIES_DIR = BASE_DIR / "cookies"
 COOKIES_DIR.mkdir(exist_ok=True)
@@ -28,6 +32,14 @@ COOKIES_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR = BASE_DIR / ".sau_uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 
+# /api/inbox/download writes here (yt-dlp + patchright fallback). Canonical
+# `BASE_DIR`-derived path so a Docker / systemd / uwsgi CWD change can't make
+# the writer and the cleanup sweep disagree on which dir to walk.
+INBOX_DIR = BASE_DIR / "videos" / "inbox"
+INBOX_DIR.mkdir(parents=True, exist_ok=True)
+
+# Back-compat: keep task_executor for any external callers, but primary
+# task submission now goes through web_runner.executor.submit_task()
 task_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sau-task")
 _scheduled_timers: dict[str, threading.Timer] = {}
 _timer_lock = threading.Lock()
@@ -42,6 +54,31 @@ LOG_MAX_ROWS = 10_000
 _log_trim_counter = 0
 _error_event_trim_counter = 0
 MIN_UPLOAD_BYTES = 10240
+
+
+# Columns that hold JSON-encoded payloads. On PG, ``argv`` / ``result``
+# / ``publish_detail`` are stored as TEXT (canonical JSON) for
+# cross-dialect uniformity. ``db.json_dump`` is the identity passthrough
+# on PG; on the prior SQLite backend it serialized Python dicts to
+# JSON strings. When `_db_update_task` writes one of these keys it
+# still routes the value through `db.json_dump` for contract symmetry.
+_JSON_COLUMNS = frozenset({"argv", "result", "publish_detail"})
+
+_TASK_COLUMNS = frozenset(
+    {
+        "status",
+        "platform",
+        "action",
+        "account",
+        "code",
+        "error",
+        "argv",
+        "result",
+        "publish_detail",
+        "priority",
+        "scheduled_at",
+    }
+)
 
 
 class _LogCapture:
@@ -84,14 +121,49 @@ def _save_data_uri(data_uri: str) -> Path | None:
 
 def _download_url(url: str) -> Path | None:
     import http.client
+    import ipaddress
     import urllib.error
     import urllib.request
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("https", "http"):
+        log(f"[upload] rejected url with scheme: {parsed.scheme}")
+        return None
+
+    hostname = parsed.hostname or ""
     try:
-        with urllib.request.urlopen(url, timeout=30) as resp:
-            raw = resp.read()
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            log(f"[upload] rejected private/loopback ip: {hostname}")
+            return None
+    except ValueError:
+        if hostname in ("localhost",):
+            log("[upload] rejected localhost url")
+            return None
+
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content_length = resp.headers.get("Content-Length")
+            if content_length and int(content_length) > 50 * 1024 * 1024:
+                log(f"[upload] rejected url: Content-Length {content_length} exceeds 50MB")
+                return None
+            raw = resp.read(50 * 1024 * 1024 + 1)
+            if len(raw) > 50 * 1024 * 1024:
+                log("[upload] rejected url: response exceeds 50MB")
+                return None
         ext = Path(url.split("?")[0]).suffix or ".jpg"
         return _write_upload(raw, ext)
-    except (http.client.HTTPException, urllib.error.HTTPError, urllib.error.URLError, OSError, TimeoutError, ValueError, TypeError) as exc:
+    except (
+        http.client.HTTPException,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        ValueError,
+        TypeError,
+    ) as exc:
         log(f"[upload] failed to download url {url[:60]}: {type(exc).__name__}")
         return None
 
@@ -116,48 +188,179 @@ def _db_insert_task(
     created: str,
     argv: list[str] | None = None,
 ) -> None:
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute(
-                "INSERT INTO tasks (task_id, status, platform, action, account, created, argv) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (task_id, status, platform, action, account, created, json.dumps(argv) if argv else None),
-            )
-            conn.commit()
+    # ``argv`` is stored in a TEXT column but the round-OPT-async-202
+    # contract requires it round-trip through ``_parse_stored_argv``
+    # which uses ``json.loads``-style parsing. Pre-hotfix this called
+    # ``db.json_dump(argv)`` which is identity on PG, so psycopg's
+    # default TEXT adaptation stringified the list to its Python
+    # repr (``['a', 'b']``) rather than JSON (``["a", "b"]``). The
+    # parse side then returned ``None`` → 400 on every retry /
+    # reschedule / copy.
+    #
+    # Three-value contract (round-OPT-async-202 final):
+    #   * ``None`` → stored as SQL NULL (no encode)
+    #   * ``str``  → pass through as-is (caller already JSON-encoded;
+    #     we must NOT double-encode, or the read side will see a
+    #     string-of-JSON-string and the parse falls through to dict/list
+    #     check that returns None)
+    #   * other   → ``json.dumps`` (dict / list → JSON string)
+    db = dbi()
+    if argv is None:
+        argv_payload = None
+    elif isinstance(argv, str):
+        argv_payload = argv
+    else:
+        argv_payload = json.dumps(argv)
+    db.execute(
+        "INSERT INTO tasks (task_id, status, platform, action, account, created, argv) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (task_id, status, platform, action, account, created, argv_payload),
+    )
 
 
 def _db_get_task(task_id: str) -> dict | None:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
-            return dict(row) if row else None
+    db = dbi()
+    return db.fetch_one("SELECT * FROM tasks WHERE task_id = ?", (task_id,))
 
 
 def _db_update_task(task_id: str, **kwargs: str | int | None) -> None:
     if not kwargs:
         return
+    invalid = set(kwargs) - _TASK_COLUMNS
+    if invalid:
+        raise ValueError(f"Invalid task columns: {invalid}")
+    db = dbi()
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
-    values = list(kwargs.values()) + [task_id]
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = ?", values)
-            conn.commit()
+    payload: list = []
+    for k, v in kwargs.items():
+        # Same TEXT-column / JSON round-trip trap as _db_insert_task.
+        # Round-OPT-async-202 final-pass contract:
+        #   * JSON column + ``None``  → stored as SQL NULL
+        #   * JSON column + ``str``   → pass through (caller is
+        #     responsible for having already JSON-encoded; e.g.
+        #     ``_store_result`` passes the raw ``[UPLOAD_RESULT]``
+        #     payload string). Double-encoding would store
+        #     ``'"{\\"url\\":...}"'`` and the read side's
+        #     ``json.loads`` would peel only the outer quotes,
+        #     leaving an inner string that fails the dict check
+        #     in ``_url_from_row``.
+        #   * JSON column + other   → ``json.dumps`` (dict / list)
+        #   * non-JSON column       → pass through unchanged
+        if k in _JSON_COLUMNS:
+            if v is None:
+                payload.append(None)
+            elif isinstance(v, str):
+                payload.append(v)
+            else:
+                payload.append(json.dumps(v))
+        else:
+            payload.append(v)
+    values = payload + [task_id]
+    db.execute(f"UPDATE tasks SET {set_clause} WHERE task_id = ?", tuple(values))
 
 
-def _db_get_all_tasks(limit: int | None = None, offset: int = 0) -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT * FROM tasks ORDER BY created DESC"
-            params: list = []
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+def _db_get_all_tasks(
+    limit: int | None = None,
+    offset: int = 0,
+    task_id: str | None = None,
+) -> list[dict]:
+    """Return tasks ordered by newest-first; tiebreaker on task_id DESC so
+    pagination is deterministic when multiple tasks share the same
+    `created` ISO string (e.g. scheduled jobs appended in the same second).
+
+    `task_id` is an exact-match filter (NOT LIKE/prefix). Added in
+    round-OPT-async-202 to support ``GET /api/tasks?task_id=<id>`` —
+    the canonical polling URL advertised in the 202 response's
+    ``Location`` header. When set, ``limit``/``offset`` are still
+    honored but in practice clients pass neither (single-row lookups).
+    """
+    db = dbi()
+    query = "SELECT * FROM tasks"
+    conditions: list[str] = []
+    params: list = []
+    if task_id:
+        conditions.append("task_id = ?")
+        params.append(task_id)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY created DESC, task_id DESC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    if offset:
+        query += " OFFSET ?"
+        params.append(offset)
+    return db.fetch_all(query, tuple(params))
+
+
+def _make_accepted_response(
+    task_id: str,
+    retry_after: int = 2,
+    extra_data: dict | None = None,
+) -> Response:
+    """Build a 202 Accepted response for fire-and-forget task endpoints.
+
+    Contract (round-OPT-async-202): all task-spawning routes
+    (``/api/upload/*`` + ``/api/tasks/{add,retry,copy,reschedule}``)
+    return this exact response shape so the client can rely on:
+
+      * HTTP **202 Accepted** — server has received the request and
+        queued the work; the client does NOT need to keep the
+        connection open. Closing the tab does NOT lose the task:
+        the file is already on disk and the task row is already
+        committed before this response is sent.
+
+      * ``Location: /api/tasks?task_id=<id>`` — the canonical
+        "watch this task" URL. Polling that URL is the same code
+        path the in-app TasksPage already uses (``useTasks`` polls
+        every 3s while running tasks exist; ``useTaskLogs`` polls
+        per-task every 2s). The existing ``/api/upload/progress``
+        SSE stream also still works for in-flight log tailing.
+
+      * ``Retry-After: 2`` — soft hint matching the useTasks
+        3-second poll cadence. Slight overlap so a polite client
+        honoring Retry-After won't drift apart from the server's
+        own poll interval under 1s of network jitter.
+
+      * Body ``{success, data: {task_id, status: "pending", ...}}`` —
+        additive over the pre-202 shape
+        ``{success, data: {task_id}}``; the extra ``status`` field
+        costs nothing for axios consumers (the response is still
+        JSON-parseable) and gives a defensive client a single
+        GET-free confirmation that the task did enter the queue.
+        The optional ``extra_data`` dict is merged into ``data``
+        for routes that need to surface additional fields
+        (e.g. ``reschedule`` adds ``scheduled_at``, ``copy`` adds
+        ``source_task_id`` + ``scheduled_at``) without paying the
+        fragility tax of re-encoding the response body via
+        ``resp.set_data(...)`` (the pre-OPT-async-202 pattern).
+
+    Failure-mode contract: if the request body is malformed or the
+    task row insert fails, the route still returns 4xx/5xx — this
+    helper is ONLY for the happy "queued" path. The 202 guarantee
+    is conditional on the call site having successfully committed
+    the file + task row before invoking this helper.
+    """
+    data: dict = {"task_id": task_id, "status": "pending"}
+    if extra_data:
+        # Defense against caller bugs: ``extra_data`` must NOT clobber
+        # the contract fields ``task_id`` or ``status``. A future
+        # caller that passed ``extra_data={"task_id": "WRONG"}`` would
+        # silently produce a body whose ``task_id`` disagreed with
+        # the ``Location`` header and the actual DB row. Silently
+        # dropping the override is the safe failure mode (the
+        # response is still correct) — we just don't surface the
+        # typo. A stricter implementation could ``raise`` here; the
+        # silent-drop is the right call for a fire-and-forget
+        # surface where the operator wants the request to succeed
+        # even if their caller-side field is wrong.
+        for guarded_key in ("task_id", "status"):
+            extra_data.pop(guarded_key, None)
+        data.update(extra_data)
+    response = jsonify({"success": True, "data": data})
+    response.status_code = 202
+    response.headers["Location"] = f"/api/tasks?task_id={task_id}"
+    response.headers["Retry-After"] = str(retry_after)
+    return response
 
 
 def _new_task_id(prefix: str) -> str:
@@ -167,45 +370,55 @@ def _new_task_id(prefix: str) -> str:
 
 
 def _db_insert_log(ts: str, message: str) -> None:
+    """Insert a log row + opportunistically trim to `LOG_MAX_ROWS` rows."""
     global _log_trim_counter
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute("INSERT INTO logs (ts, message) VALUES (?, ?)", (ts, message))
-            conn.commit()
-            _log_trim_counter += 1
-            if _log_trim_counter >= 200:
-                _log_trim_counter = 0
-                conn.execute(
-                    "DELETE FROM logs WHERE ts NOT IN (SELECT ts FROM logs ORDER BY ts DESC LIMIT ?)",
-                    (LOG_MAX_ROWS,),
-                )
-                conn.commit()
+    db = dbi()
+    db.execute("INSERT INTO logs (ts, message) VALUES (?, ?)", (ts, message))
+    _log_trim_counter += 1
+    if _log_trim_counter >= 200:
+        _log_trim_counter = 0
+        # PG-only path: trim by `id` (SERIAL PRIMARY KEY on logs.id).
+        #
+        # post-cutover.
+        db.execute(
+            "DELETE FROM logs WHERE id < (SELECT id FROM logs " "ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            (LOG_MAX_ROWS,),
+        )
 
 
-def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0) -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT ts, message FROM logs"
-            conditions: list[str] = []
-            params: list = []
-            if after:
-                conditions.append("ts > ?")
-                params.append(after)
-            if task_id:
-                conditions.append("message LIKE ?")
-                params.append(f"%{task_id}%")
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY ts ASC"
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+def _db_get_logs(
+    after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0
+) -> list[dict]:
+    """Return log rows. Filters:
+    - `after`: ISO ts; keeps rows strictly newer.
+    - `task_id`: prefix match `[{task_id}]`, leveraging the canonical
+      log message format used by `_run_sau(...)`. The `[...]` braces
+      prevent `run-1` from accidentally matching `[run-12] ...`. Tied
+      with `ORDER BY ts ASC, id ASC` for deterministic pagination.
+    """
+    db = dbi()
+    query = "SELECT ts, message FROM logs"
+    conditions: list[str] = []
+    params: list = []
+    if after:
+        conditions.append("ts > ?")
+        params.append(after)
+    if task_id:
+        conditions.append("message LIKE ?")
+        params.append(f"[{task_id}]%")
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    # PG-only: order by SERIAL `id` (no `id` concept after SQLite
+    # removal). The `(ts, id)` composite guarantees deterministic
+    # pagination when many rows share the same `ts` ISO string.
+    query += " ORDER BY ts ASC, id ASC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    if offset:
+        query += " OFFSET ?"
+        params.append(offset)
+    return db.fetch_all(query, tuple(params))
 
 
 def _log_error_event(
@@ -231,27 +444,35 @@ def _log_error_event(
         exc_message = str(exc)
     if tb is None and exc is not None:
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute(
-                """INSERT INTO error_events
-                   (ts, task_id, level, phase, platform, account, action,
-                    exc_type, exc_message, traceback, argv, attempt_no, retry_count, status_code)
-                   VALUES (?, ?, 'error', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (now, task_id, phase, platform, account, action,
-                 exc_type, exc_message, tb,
-                 json.dumps(argv) if argv else None,
-                 attempt_no, retry_count, status_code),
-            )
-            conn.commit()
-            _error_event_trim_counter += 1
-            if _error_event_trim_counter >= 100:
-                _error_event_trim_counter = 0
-                conn.execute(
-                    "DELETE FROM error_events WHERE id NOT IN (SELECT id FROM error_events ORDER BY ts DESC LIMIT ?)",
-                    (LOG_MAX_ROWS,),
-                )
-                conn.commit()
+    db = dbi()
+    db.execute(
+        """INSERT INTO error_events
+           (ts, task_id, level, phase, platform, account, action,
+            exc_type, exc_message, traceback, argv, attempt_no, retry_count, status_code)
+           VALUES (?, ?, 'error', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            now,
+            task_id,
+            phase,
+            platform,
+            account,
+            action,
+            exc_type,
+            exc_message,
+            tb,
+            db.json_dump(argv),
+            attempt_no,
+            retry_count,
+            status_code,
+        ),
+    )
+    _error_event_trim_counter += 1
+    if _error_event_trim_counter >= 100:
+        _error_event_trim_counter = 0
+        db.execute(
+            "DELETE FROM error_events WHERE id < " "(SELECT id FROM error_events ORDER BY id DESC LIMIT 1 OFFSET ?)",
+            (LOG_MAX_ROWS,),
+        )
 
 
 def _db_get_error_events(
@@ -263,54 +484,48 @@ def _db_get_error_events(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT * FROM error_events"
-            conditions: list[str] = []
-            params: list = []
-            if after:
-                conditions.append("ts > ?")
-                params.append(after)
-            if platform:
-                conditions.append("platform = ?")
-                params.append(platform)
-            if account:
-                conditions.append("account = ?")
-                params.append(account)
-            if action:
-                conditions.append("action = ?")
-                params.append(action)
-            if exc_type:
-                conditions.append("exc_type = ?")
-                params.append(exc_type)
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY ts DESC"
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+    db = dbi()
+    query = "SELECT * FROM error_events"
+    conditions: list[str] = []
+    params: list = []
+    if after:
+        conditions.append("ts > ?")
+        params.append(after)
+    if platform:
+        conditions.append("platform = ?")
+        params.append(platform)
+    if account:
+        conditions.append("account = ?")
+        params.append(account)
+    if action:
+        conditions.append("action = ?")
+        params.append(action)
+    if exc_type:
+        conditions.append("exc_type = ?")
+        params.append(exc_type)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY ts DESC, id DESC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    if offset:
+        query += " OFFSET ?"
+        params.append(offset)
+    return db.fetch_all(query, tuple(params))
 
 
 def _recover_orphaned_tasks() -> None:
-    with db_lock:
-        with get_connection() as conn:
-            orphans = conn.execute(
-                "SELECT task_id, argv FROM tasks WHERE status = 'running'"
-            ).fetchall()
-            for row in orphans:
-                task_id, argv_json = row
-                conn.execute(
-                    "UPDATE tasks SET status = 'error', error = ? WHERE task_id = ?",
-                    ("Orphaned: server restarted while task was running", task_id),
-                )
-                log(f"[recover] marked orphaned task as error: {task_id}")
-            conn.commit()
+    db = dbi()
+    orphans = db.fetch_all("SELECT task_id FROM tasks WHERE status = 'running'")
+    if not orphans:
+        return
+    db.execute(
+        "UPDATE tasks SET status = 'error', error = ? WHERE status = 'running'",
+        ("Orphaned: server restarted while task was running",),
+    )
+    for row in orphans:
+        log(f"[recover] marked orphaned task as error: {row['task_id']}")
 
 
 def _start_orphan_watchdog(interval_seconds: int = 120) -> None:
@@ -319,49 +534,110 @@ def _start_orphan_watchdog(interval_seconds: int = 120) -> None:
             time.sleep(interval_seconds)
             try:
                 _recover_orphaned_tasks()
-            except (sqlite3.Error, OSError) as exc:
-                log(f"[watchdog] error: {exc}")
+            except psycopg.Error as exc:
+                # Narrow catch: only DB-layer errors. ``RuntimeError``
+                # was previously listed but is too broad (it would
+                # swallow any Python runtime error, masking real bugs
+                # in the recovery path). The watchdog is best-effort,
+                # so we log and continue — the operator-visible trail
+                # is the log line below.
+                log(f"[watchdog] DB error: {exc}")
 
     t = threading.Thread(target=_watchdog, daemon=True, name="orphan-watchdog")
     t.start()
 
 
 def _sync_cookie_files_to_db() -> None:
+    """Reconcile on-disk `COOKIES_DIR/*.json` into `account_authorizations`.
+
+    Each call is autocommit (`db.execute` + `db.last_insert_id`) — partial
+    failures are surfaced via the row-id return; we don't aggregate into
+    one big txn because legacy code didn't either, and the openspec §2.8
+    callable-style migration simplifies control flow.
+    """
     if not COOKIES_DIR.exists():
         return
-    with db_lock:
-        with get_connection() as conn:
-            for cookie_file in COOKIES_DIR.glob("*.json"):
-                name = cookie_file.stem
-                parts = name.split("_", 1)
-                if len(parts) != 2:
-                    continue
-                platform, account_name = parts
-                existing = conn.execute(
-                    "SELECT aa.id FROM account_authorizations aa "
-                    "JOIN account_groups ag ON aa.group_id = ag.id "
-                    "WHERE ag.name = ? AND aa.platform = ?",
-                    (account_name, platform),
-                ).fetchone()
-                if existing:
-                    continue
-                group = conn.execute(
-                    "SELECT id FROM account_groups WHERE name = ?",
-                    (account_name,),
-                ).fetchone()
-                if group:
-                    group_id = group[0]
-                else:
-                    conn.execute(
-                        "INSERT INTO account_groups (name, created) VALUES (?, ?)",
-                        (account_name, datetime.now().isoformat(timespec="seconds")),
-                    )
-                    group_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                conn.execute(
-                    "INSERT OR IGNORE INTO account_authorizations (group_id, platform, cookie_file, created) VALUES (?, ?, ?, ?)",
-                    (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
+    db = dbi()
+    for cookie_file in COOKIES_DIR.glob("*.json"):
+        name = cookie_file.stem
+        parts = name.split("_", 1)
+        if len(parts) != 2:
+            continue
+        platform, account_name = parts
+        existing = db.fetch_one(
+            "SELECT aa.id FROM account_authorizations aa "
+            "JOIN account_groups ag ON aa.group_id = ag.id "
+            "WHERE ag.name = ? AND aa.platform = ?",
+            (account_name, platform),
+        )
+        if existing:
+            continue
+        group = db.fetch_one("SELECT id FROM account_groups WHERE name = ?", (account_name,))
+        if group:
+            group_id = group["id"]
+        else:
+            # INSERT-or-IGNORE + SELECT-by-name harden (final reopen-path fix;
+            # supersedes the prior UPSERT-with-RETURNING approach). The UPSERT-
+            # RETURNING pattern is fragile to SQLite's documented `RETURNING`
+            # quirk: when `ON CONFLICT DO UPDATE` doesn't actually change any
+            # column values (no-op UPDATE — values identical), `RETURNING`
+            # yields zero rows even though the row exists in the DB. Even with
+            # microsecond precision, N concurrent walkers can occasionally
+            # collide on identical microsecond timestamps when the system
+            # clock's resolution collapses under heavy concurrent load.
+            # Empirical evidence: `scripts/audit_account_groups_unique_collision.py
+            # --threads 8` captured this pattern under the UPSERT-RETURNING
+            # harden (1/8 thread raised `RuntimeError("INSERT did not return id")`
+            # from `web_runner/db.py::PostgresDatabase.insert_returning_id`'s
+            # `if not row` fallback).
+            #
+            # The INSERT-or-IGNORE + SELECT-by-name pair is bulletproof
+            # because (a) `ON CONFLICT (name) DO NOTHING` is atomic and
+            # idempotent — never raises on UNIQUE match; (b) the subsequent
+            # SELECT-by-unique-key is deterministic — exactly one row matches
+            # `WHERE name = ?` after the atomic INSERT-or-IGNORE step, by
+            # construction. Cross-dialect correctness: `INSERT ... ON
+            # CONFLICT DO NOTHING` is native PG syntax AND SQLite 3.24+
+            # standard form — a single statement handles both dialects
+            # without `_IS_POSTGRES` branching (the `account_authorizations`
+            # INSERT below still uses dialect branching because SQLite's
+            # The PG-native ``INSERT ... ON CONFLICT (name) DO NOTHING``
+            # is atomic + idempotent — never raises on UNIQUE match;
+            # the subsequent SELECT-by-unique-key is deterministic —
+            # exactly one row matches ``WHERE name = ?`` after the
+            # atomic INSERT-or-IGNORE step, by construction.
+            #
+            # Bonus semantic: ``account_groups.created`` is now locked
+            # at row-creation time (the first walker to INSERT wins),
+            # making it a stable "first_seen" timestamp. The prior
+            # DO-UPDATE pattern artificially bumped ``created`` on
+            # every reconciliation pass which obscured the audit trail.
+            db.execute(
+                "INSERT INTO account_groups (name, created) VALUES (?, ?) " "ON CONFLICT (name) DO NOTHING",
+                (account_name, datetime.now().isoformat(timespec="microseconds")),
+            )
+            group = db.fetch_one(
+                "SELECT id FROM account_groups WHERE name = ?",
+                (account_name,),
+            )
+            if group is None:
+                # Should be impossible: the atomic INSERT-or-IGNORE step
+                # either inserted a fresh row OR no-op'd on the existing
+                # one — both branches guarantee at least one row now
+                # matches `WHERE name = ?`. Theoretically unreachable;
+                # surface as a hard error so it shows up in CI / on-call
+                # if invariant ever breaks (e.g. schema migration drops
+                # the UNIQUE constraint).
+                raise RuntimeError(
+                    f"INSERT-or-IGNORE + SELECT returned no row for "
+                    f"account_groups(name={account_name!r}); UNIQUE-invariant broken"
                 )
-            conn.commit()
+            group_id = group["id"]  # noqa: PLW2901 — rebind to outer-scope name for symmetry with the prior branch
+        db.execute(
+            "INSERT INTO account_authorizations (group_id, platform, cookie_file, created) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT (group_id, platform) DO NOTHING",
+            (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds")),
+        )
 
 
 def _account_files(platform: str | None = None) -> list[dict]:
@@ -380,40 +656,107 @@ def _account_files(platform: str | None = None) -> list[dict]:
     return results
 
 
+# Read once at module-import time (matches the project-wide pattern of
+# the SAU_HEALTH_* env vars in ``web_runner/health_monitor.py``). Tests
+# override by ``monkeypatch.setattr(web_runner.utils, "_COOKIE_STALE_HOURS", X)``;
+# re-importing the module to pick up env changes is brittle in pytest.
+# Rationales:
+#  * 24h default ⇒ cookie files older than 24h mark stale but are NOT
+#    deleted (re-authorize refreshes the file). See ``_quick_check_cookie``.
+#  * Deployments can tighten (CI/staging use SAU_COOKIE_STALE_HOURS=1
+#    to surface refresh churn immediately) or loosen (long-lived
+#    cookie operators use SAU_COOKIE_STALE_HOURS=168 = 7d) without a
+#    code change.
+#
+# Cross-knob interaction with ``web_runner/health_monitor._EXPIRING_DAYS``
+# (and its ``SAU_HEALTH_EXPIRING_DAYS`` env var, default 7). The two
+# knobs fire at DIFFERENT layers of ``_determine_health``:
+#   * This knob is checked against cookie-file mtime inside
+#     ``_quick_check_cookie`` and feeds into ``quick["stale"]``.
+#   * ``_EXPIRING_DAYS`` is checked INSIDE ``_determine_health`` against
+#     the ``last_check_at`` ISO timestamp — a separate downstream gate.
+#   * ``_determine_health`` short-circuits on ``quick.get("stale")`` so a
+#     stale file always resolves to ``expiring_soon`` regardless of
+#     ``_EXPIRING_DAYS``. They're not nested; they're two ORTHOGONAL
+#     TRIGGERS — the mtime-trigger (this knob) and the verification-
+#     trigger (``_EXPIRING_DAYS``) — that both produce the SAME
+#     ``expiring_soon`` color. The verification-trigger is only
+#     evaluated when the mtime-trigger doesn't fire, so they're
+#     mutually exclusive at the call-site, not two-tiered.
+#   * Operators shouldn't collapse the two into one — they cover
+#     orthogonal signals ("mtime-stale" vs "verification-stale").
+#     Tightening ``_COOKIE_STALE_HOURS`` doesn't suppress the
+#     "fresh file but old verification" case (``stale=False`` +
+#     ``last_check_at`` very old); that scenario still requires
+#     ``SAU_HEALTH_EXPIRING_DAYS`` to surface ``expiring_soon``.
+_COOKIE_STALE_HOURS = int(os.environ.get("SAU_COOKIE_STALE_HOURS", "24"))
+
+
 def _quick_check_cookie(platform: str, account: str) -> dict:
     cookie_path = COOKIES_DIR / f"{platform}_{account}.json"
     if not cookie_path.exists():
-        return {"valid": False, "reason": "no_file", "age_hours": None, "file_size": None}
+        return {"valid": False, "reason": "no_file", "age_hours": None, "file_size": None, "stale": False}
     try:
         stat = cookie_path.stat()
         age_hours = (time.time() - stat.st_mtime) / 3600
         file_size = stat.st_size
         if file_size < 10:
-            return {"valid": False, "reason": "empty_file", "age_hours": round(age_hours, 1), "file_size": file_size}
+            return {
+                "valid": False,
+                "reason": "empty_file",
+                "age_hours": round(age_hours, 1),
+                "file_size": file_size,
+                "stale": False,
+            }
         with open(cookie_path) as f:
             data = json.load(f)
         if not data:
-            return {"valid": False, "reason": "empty_json", "age_hours": round(age_hours, 1), "file_size": file_size}
-        return {"valid": True, "reason": "ok", "age_hours": round(age_hours, 1), "file_size": file_size}
+            return {
+                "valid": False,
+                "reason": "empty_json",
+                "age_hours": round(age_hours, 1),
+                "file_size": file_size,
+                "stale": False,
+            }
+        stale = age_hours > _COOKIE_STALE_HOURS
+        reason = "stale" if stale else "ok"
+        return {
+            "valid": True,
+            "reason": reason,
+            "age_hours": round(age_hours, 1),
+            "file_size": file_size,
+            "stale": stale,
+        }
     except (json.JSONDecodeError, OSError):
-        return {"valid": False, "reason": "invalid_json", "age_hours": None, "file_size": None}
+        return {"valid": False, "reason": "invalid_json", "age_hours": None, "file_size": None, "stale": False}
 
 
 def _parse_upload_result(stdout: str) -> str | None:
     for line in stdout.splitlines():
         if line.startswith("[UPLOAD_RESULT]"):
-            return line[len("[UPLOAD_RESULT]"):]
+            return line[len("[UPLOAD_RESULT]") :]
     return None
 
 
 def _store_result(task_id: str, stdout: str) -> None:
+    """Persist the upstream CLI's ``[UPLOAD_RESULT]<json>`` payload verbatim.
+
+    The extracted text is already valid JSON; route it through
+    ``db.json_dump`` (string passthrough branch) for symmetry with the
+    test-side ``json.loads``.
+    """
     result_json = _parse_upload_result(stdout)
     if result_json:
-        _db_update_task(task_id, result=result_json)
+        _db_update_task(task_id, result=result_json.strip())
 
 
 def _run_sau(task_id: str, argv: list[str]) -> None:
     import subprocess
+
+    # Local import avoids a circular import at module load time
+    # (web_runner.notifications lazily imports utils._db_get_task).
+    from web_runner.notifications import build_event_from_result, emit_event
+
     _db_update_task(task_id, status="running")
     log(f"[{task_id}] starting: sau {' '.join(argv)}")
     try:
@@ -428,10 +771,12 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
             _db_update_task(task_id, status="success", code=0)
             _store_result(task_id, result.stdout)
             log(f"[{task_id}] completed successfully")
+            emit_event(build_event_from_result(task_id, "upload.success", result.stdout))
         else:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             _db_update_task(task_id, status="failed", code=result.returncode, error=error_msg)
             log(f"[{task_id}] failed with code {result.returncode}: {error_msg[:200]}")
+            emit_event(build_event_from_result(task_id, "upload.failed", result.stdout))
             _log_error_event(
                 phase="cli",
                 task_id=task_id,
@@ -444,6 +789,7 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
     except subprocess.TimeoutExpired:
         _db_update_task(task_id, status="error", error="Task timed out after 600 seconds")
         log(f"[{task_id}] timed out")
+        emit_event(build_event_from_result(task_id, "upload.failed", "", status="error"))
         _log_error_event(
             phase="cli",
             task_id=task_id,
@@ -454,6 +800,7 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
     except (OSError, ValueError) as exc:
         _db_update_task(task_id, status="error", error=str(exc))
         log(f"[{task_id}] error: {exc}")
+        emit_event(build_event_from_result(task_id, "upload.failed", "", status="error"))
         _log_error_event(
             phase="cli",
             task_id=task_id,
@@ -462,12 +809,327 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
         )
 
 
+def _run_crawl(task_id: str, argv_payload) -> None:
+    """Dispatch a crawler ``action LIKE 'crawl_%'`` task end-to-end.
+
+    Mirrors ``_run_sau`` for status bookkeeping (pending → running →
+    success/failed/error) but dispatches Python-direct on a
+    :class:`crawler.base.base_crawler.AbstractCrawler` subclass
+    instead of a CLI subprocess. The argv payload is JSON-encoded
+    (a ``dict``) — produced by :func:`crawler.create_crawl_task`
+    which stores ``{"kind": "crawl", "platform": "xhs", "action":
+    "search", "keyword": "...", ...}`` in ``tasks.argv``.
+
+    Why here (not in :mod:`crawler`): the executor imports
+    ``_run_sau`` lazily to avoid a circular import
+    (``web_runner.utils`` ↔ ``web_runner.notifications``). Putting
+    ``_run_crawl`` here keeps the same idiom — the executor's
+    ``load_pending_tasks`` does ``from web_runner.utils import
+    _run_sau`` and we'd add ``_run_crawl`` to the same import.
+
+    Failure-mode contract:
+      * Algorithm works → status='success', ``result`` written as
+        JSON '{"platform", "action", "crawled_content_count",
+        "crawled_comments_count", "sentiment_breakdown",
+        "meta": {"status": "completed"}}'.
+      * Stub core.py returns empty list (current state for all 7
+        platforms) → status='success', ``meta.status='stub-not-
+        implemented'`` so an operator scraping an empty result
+        still sees the row transition out of ``pending`` (Task 13.2
+        follow-up adds real Playwright).
+      * Real exception (network timeout, JSONB-encode failure,
+        psycopg Error) → status='failed' / 'error' with
+        ``error`` column populated. ``_log_error_event`` records
+        the traceback; ``emit_event`` notifies the existing
+        notification worker.
+
+    Hardcap rationale (thinker-with-files-gemini flag C): the
+    underlying :meth:`crawler.store.saulite_store.SauliteStore.
+    store_comment` spawns one daemon thread per comment row to
+    call OpenRouter sentiment+reply in parallel. A 10k-comment
+    crawl would create 10k threads instantly, blowing the OS
+    thread limit (~1000-2000 on Linux defaults) and triggering
+    EAGAIN on :func:`threading.Thread.start`. We hardcap
+    ``max_count`` to 100 in this PR; Section 13.5 (tasks.md)
+    tracks the broader ThreadPoolExecutor migration as a follow-up.
+
+    post_ids plurality justification (thinker-with-files-gemini
+    flag D): the CLI (``cli.platforms.crawl.comments``) can pass
+    ``--post-ids `` as a comma-separated string OR as a
+    pre-split list. ``_run_crawl`` normalises both forms here
+    so the executor doesn't have to know about CLI parsing.
+    """
+    import json as _json
+
+    from crawler import PLATFORM_REGISTRY
+    from crawler.store.saulite_store import SauliteStore
+
+    # ── Decode argv payload ─────────────────────────────────────────────────
+    if isinstance(argv_payload, str):
+        try:
+            params = _json.loads(argv_payload)
+        except (TypeError, ValueError):
+            _db_update_task(
+                task_id,
+                status="error",
+                error="argv not JSON-decodable (not a crawl payload?)",
+            )
+            log(f"[{task_id}] error: argv not JSON-decodable")
+            return
+    elif isinstance(argv_payload, dict):
+        params = argv_payload
+    else:
+        _db_update_task(
+            task_id,
+            status="error",
+            error=f"unexpected argv type: {type(argv_payload).__name__}",
+        )
+        return
+
+    # MUST-HAVE invariant: ``params`` MUST be a JSON object after
+    # decode — fields like ``platform`` / ``action`` / ``keyword``
+    # / ``post_ids`` / ``max_count`` are accessed via ``.get(...)``.
+    # Anything else (e.g. a JSON list like ``[]``, or ``"true"``, or
+    # a number) would raise ``AttributeError`` mid-flight, NOT be
+    # caught by the exception clause below (which excludes
+    # ``AttributeError``), and leave ``tasks.status='running'``
+    # stranded until the orphan watchdog reaps it on restart.
+    # Round-MC-2024-postreview MUST-HAVE #1.
+    if not isinstance(params, dict):
+        _db_update_task(
+            task_id,
+            status="error",
+            error=f"argv JSON is not an object: {type(params).__name__}",
+        )
+        log(f"[{task_id}] error: argv JSON is not an object ({type(params).__name__})")
+        return
+
+    platform = (params.get("platform") or "").strip()
+    # NOTE: ``action`` here is the verb (``search``/``detail``/``comments``),
+    # NOT the ``crawl_<verb>`` prefix on ``tasks.action``. ``tasks.action``
+    # has the prefix so executor load_pending_tasks can branch on it; the
+    # JSON argv's nested ``action`` is the clean verb.
+    action = (params.get("action") or "").strip()
+    if not platform or not action:
+        _db_update_task(
+            task_id,
+            status="error",
+            error=f"missing platform / action in argv: {params}",
+        )
+        log(f"[{task_id}] error: missing platform/action")
+        return
+
+    # ── Mark running + lookup crawler class ────────────────────────────────────
+    _db_update_task(task_id, status="running")
+    log(f"[{task_id}] starting: crawl {platform} action={action}")
+
+    CrawlerClass = PLATFORM_REGISTRY.get(platform.lower())
+    if CrawlerClass is None:
+        _db_update_task(
+            task_id,
+            status="failed",
+            error=f"unknown crawler platform: {platform!r}",
+        )
+        log(f"[{task_id}] failed: unknown platform {platform!r}")
+        return
+
+    # ── Run the crawl ───────────────────────────────────────────────────────
+    crawled_content_count = 0
+    crawled_comments_count = 0
+    sentiment_breakdown = {"positive": 0, "negative": 0, "neutral": 0, "pending": 0}
+
+    try:
+        crawler = CrawlerClass()
+        store = SauliteStore()
+
+        if action == "search":
+            keyword = (params.get("keyword") or "").strip()
+            try:
+                max_count = int(params.get("max_count") or 20)
+            except (TypeError, ValueError):
+                max_count = 20
+            max_count = max(1, min(max_count, 100))  # hardcap (thinker pitfall C)
+            rows = crawler.search(keyword, max_count=max_count)
+            crawled_content_count = len(rows or [])
+
+        elif action == "detail":
+            post_id = (params.get("post_id") or params.get("post_ids") or "").strip()
+            row = crawler.detail(post_id)
+            crawled_content_count = 1 if row else 0
+
+        elif action == "comments":
+            raw_post_ids = params.get("post_id") or params.get("post_ids") or ""
+            if isinstance(raw_post_ids, str):
+                if "," in raw_post_ids:
+                    post_ids = [p.strip() for p in raw_post_ids.split(",") if p.strip()]
+                else:
+                    post_ids = [raw_post_ids] if raw_post_ids else []
+            elif isinstance(raw_post_ids, list):
+                post_ids = [str(p) for p in raw_post_ids if p]
+            else:
+                post_ids = []
+
+            try:
+                max_count = int(params.get("max_count") or 100)
+            except (TypeError, ValueError):
+                max_count = 100
+            # Hardcap axis 1: per-post max_count (thinker pitfall C —
+            # each comment spawns one AI daemon thread in saulite_store).
+            max_count = max(1, min(max_count, 100))
+            # Hardcap axis 2: number of post_ids (round-MC-2024-postreview
+            # MUST-HAVE #2). Without this bound, 10 posts × 100 comments
+            # each = 1000 daemon threads, blowing the OS thread limit and
+            # defeating the per-post cap. The deliberate (5, 100) tuple
+            # bounds the worst case at ~500 threads. DON'T bump either
+            # axis without reading the ``saulite_store.store_comment``
+            # per-comment AI-thread cost. Section 13.5 (tasks.md)
+            # tracks the broader ThreadPoolExecutor migration.
+            MAX_POST_IDS = 5
+            post_ids = post_ids[:MAX_POST_IDS]
+
+            for pid in post_ids:
+                rows = crawler.comments(pid, max_count=max_count)
+                if rows:
+                    crawled_comments_count += len(rows)
+
+            # saulite_store fires async AI threads per-comment; giving
+            # them a moment to land yields a non-zero sentiment_breakdown
+            # in the result JSON. The ThreadPoolExecutor migration
+            # (Section 13.5) decouples this from the main thread.
+            try:
+                sentiment_breakdown = store.count_by_sentiment(platform=platform)
+            except Exception:
+                # If the AI threads haven't landed yet OR the DB query
+                # fails, default to zeros. The breakdown is for UI
+                # niceness; it doesn't gate the success/fail status.
+                sentiment_breakdown = {"positive": 0, "negative": 0, "neutral": 0, "pending": crawled_comments_count}
+
+        else:
+            _db_update_task(
+                task_id,
+                status="failed",
+                error=f"unknown crawler action: {action!r}",
+            )
+            log(f"[{task_id}] failed: unknown action {action!r}")
+            return
+
+        # ── Persist result ─────────────────────────────────────────────────────
+        result_dict = {
+            "platform": platform,
+            "action": action,
+            "crawled_content_count": crawled_content_count,
+            "crawled_comments_count": crawled_comments_count,
+            "sentiment_breakdown": sentiment_breakdown,
+            "meta": {"status": "completed", "stub": True},  # Section 13.2 follow-up flips to false
+        }
+        result_json = _json.dumps(result_dict, ensure_ascii=False)
+        _db_update_task(task_id, status="success", code=0, result=result_json)
+        log(
+            f"[{task_id}] completed: {crawled_content_count} content, "
+            f"{crawled_comments_count} comments (meta: stub-not-implemented)"
+        )
+
+        try:
+            from web_runner.notifications import emit_event
+            emit_event(
+                {
+                    "event_type": "crawl.success",
+                    "task_id": task_id,
+                    "platform": platform,
+                    "title": (
+                        f"Crawl {action} {platform} "
+                        f"({crawled_content_count}+{crawled_comments_count} rows)"
+                    ),
+                    "status": "success",
+                    "payload": result_dict,
+                }
+            )
+        except Exception:
+            # emit_event gracefully no-ops if no webhook/SSE is wired;
+            # anything else is best-effort (thinker pitfall E).
+            pass
+
+    except NotImplementedError as exc:
+        # Future real Playwright impls may raise NotImplementedError
+        # during early development. Treat as 'success' with a stub
+        # marker so the operator doesn't get a false-alert flood.
+        _db_update_task(
+            task_id,
+            status="success",
+            code=0,
+            result=_json.dumps(
+                {
+                    "platform": platform,
+                    "action": action,
+                    "meta": {
+                        "status": "stub-not-implemented",
+                        "reason": "crawler platform raised NotImplementedError",
+                        "exc": str(exc),
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        )
+        log(f"[{task_id}] completed (stub): NotImplementedError {exc!r}")
+
+    except (psycopg.Error, ValueError, TypeError, RuntimeError, OSError) as exc:
+        # Real failure path. Matches ``_run_sau``'s error handling
+        # pattern for parity (operator sees same log shape across both
+        # dispatchers).
+        from web_runner.notifications import emit_event
+        _db_update_task(task_id, status="failed", code=-1, error=str(exc))
+        log(f"[{task_id}] failed: {exc!r}")
+        _log_error_event(
+            phase="crawler",
+            platform=platform,
+            action=action,
+            task_id=task_id,
+            exc=exc,
+        )
+        try:
+            emit_event(
+                {
+                    "event_type": "crawl.failed",
+                    "task_id": task_id,
+                    "platform": platform,
+                    "status": "failed",
+                    "error_msg": str(exc),
+                }
+            )
+        except Exception:
+            pass
+
+
 def _schedule_task(task_id: str, argv: list[str], schedule_time: datetime) -> None:
+    """Schedule a task for future execution.
+
+    Persists scheduled_at to DB so tasks survive restarts. Also sets
+    a Timer as a best-effort immediate trigger if the server stays up.
+    """
+    # Persist to DB
+    try:
+        db = get_database()
+        db.execute(
+            "UPDATE tasks SET scheduled_at = ? WHERE task_id = ?",
+            (schedule_time.isoformat(timespec="seconds"), task_id),
+        )
+    except Exception as exc:
+        log(f"[{task_id}] warning: failed to persist scheduled_at: {exc}")
+
     delay = (schedule_time - datetime.now()).total_seconds()
     if delay <= 0:
-        task_executor.submit(_run_sau, task_id, argv)
+        # Use new executor if available, fall back to legacy
+        try:
+            from web_runner.executor import PRIORITY_NORMAL, submit_task
+
+            # Extract platform from argv
+            platform = argv[0] if argv and not argv[0].startswith("-") else ""
+            submit_task(_run_sau, task_id, argv, priority=PRIORITY_NORMAL, platform=platform, task_id=task_id)
+        except Exception:
+            task_executor.submit(_run_sau, task_id, argv)
         return
     log(f"[{task_id}] scheduled for {schedule_time.isoformat()} (in {delay:.0f}s)")
+    # Best-effort timer (DB persistence is the source of truth)
     timer = threading.Timer(delay, lambda: task_executor.submit(_run_sau, task_id, argv))
     timer.daemon = True
     with _timer_lock:
@@ -511,14 +1173,27 @@ def _validate_group_name(raw: object) -> tuple[bool, str]:
 
 def _cleanup_old_uploads() -> None:
     now = time.time()
-    max_age = 24 * 60 * 60
+    # Inbox downloads are meant to live until the user deletes them (the
+    # download-center rows persist in localStorage across reloads + restarts,
+    # and a download auto-resumes on boot). We still sweep on a long tail to
+    # prevent unbounded disk growth, but the window is 7 days (not 24h) so a
+    # file the user downloaded yesterday isn't silently wiped before they get
+    # back to it. Uploads dir keeps the shorter 24h window (those are
+    # transient publish payloads). See discussion in inbox download-center.
+    max_age = 7 * 24 * 60 * 60
     count = 0
-    for f in UPLOADS_DIR.iterdir():
-        if f.is_file() and (now - f.stat().st_mtime) > max_age:
-            f.unlink(missing_ok=True)
-            count += 1
+    # ponytail: sweep BOTH upload dirs. INBOX_DIR is canonical in this
+    # module (`BASE_DIR` / "videos" / "inbox", see above) so CWD-relative
+    # surprises can't desync writer vs. cleanup.
+    for root in (UPLOADS_DIR, INBOX_DIR):
+        if not root.exists():
+            continue
+        for f in root.iterdir():
+            if f.is_file() and (now - f.stat().st_mtime) > max_age:
+                f.unlink(missing_ok=True)
+                count += 1
     if count:
-        print(f"[startup] cleaned {count} old temp files from {UPLOADS_DIR}")
+        print(f"[startup] cleaned {count} old temp files from {UPLOADS_DIR} + {INBOX_DIR}")
 
 
 PLATFORM_CONFIG: dict[str, dict] = {
@@ -535,4 +1210,4 @@ DESC_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent"}
 THUMBNAIL_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent"}
 THUMBNAIL_DUAL_PLATFORMS = {"douyin", "tencent"}
 NOTE_PLATFORMS = {p for p, cfg in PLATFORM_CONFIG.items() if cfg.get("note")}
-_QR_LOGIN_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent", "bilibili", "tiktok", "baijiahao"}
+_QR_LOGIN_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent", "tiktok", "baijiahao"}

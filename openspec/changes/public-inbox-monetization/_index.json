@@ -1,0 +1,79 @@
+{
+  "name": "public-inbox-monetization",
+  "created": "2026-07-02T00:00:00+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "公开 /try 试用页 + 访客配额 + Affiliate 推广 + EthicalAds 申请，构建 0-3 月变现漏斗；6 平台 yt-dlp 白名单 + 泳道信号量 + 独立 guest_usage_logs 表；明确拒绝 patchright 平台对访客开放与真广告即时接入",
+    "design": "D1 6 平台 yt-dlp 白名单 + D2 访客泳道信号量 + D3 独立 guest_usage_logs + D4 文件 1h 过期 + D5 IP 限流先于配额 + D6 Affiliate 主路径 + D7 暂不启动企业合规化 + D8 轻量自研埋点；DR1-DR4 显式记录被否方案",
+    "tasks": {
+      "total": 62,
+      "completed": 0
+    }
+  },
+  "layers": [
+    "api",
+    "frontend",
+    "cross-layer"
+  ],
+  "platforms": [
+    "youtube",
+    "twitter",
+    "instagram",
+    "facebook",
+    "tiktok",
+    "bilibili"
+  ],
+  "guestHostWhitelist": [
+    "youtube.com",
+    "youtu.be",
+    "twitter.com",
+    "x.com",
+    "t.co",
+    "instagram.com",
+    "facebook.com",
+    "fb.watch",
+    "tiktok.com",
+    "bilibili.com",
+    "www.bilibili.com"
+  ],
+  "applyReady": true,
+  "decisionRecords": {
+    "DR1": {
+      "name": "Google AdSense",
+      "verdict": "rejected",
+      "reason": "需要 SSR + 20 篇深度技术文章 + GAM 升级才能接入激励视频，沉没成本后仍可能被拒审；与项目 engineering-tool 极简调性冲突"
+    },
+    "DR2": {
+      "name": "优量汇 (Tencent AdUnion)",
+      "verdict": "deferred",
+      "reason": "仅限企业账户 + 软著 + 对公账户；当前无企业主体；推迟到 Phase 2 中期（3-6 月），待 Phase 1 数据达标后再启动"
+    },
+    "DR3": {
+      "name": "穿山甲 (Pangle / 巨量引擎)",
+      "verdict": "rejected",
+      "reason": "明确不支持 H5 / 小程序 / PC 网页 / Web 技术栈，仅支持已上架的原生 App；与本项目 Web SPA 定位完全不兼容"
+    },
+    "DR4": {
+      "name": "Carbon Ads",
+      "verdict": "fallback",
+      "reason": "EthicalAds 申请失败时启用；纯展示广告无激励视频；eCPM 偏低但 hairline 风格契合 DESIGN.md 美学"
+    }
+  },
+  "killCriteria": {
+    "rewardButtonCtrThreshold": 0.05,
+    "rewardAbandonThreshold": 0.7,
+    "affiliateCtrThreshold": 0.003,
+    "registrationConversionThreshold": 0.02,
+    "platformFailureRateThreshold": 0.2,
+    "monthlyUvThreshold": 5000
+  },
+  "specs": [
+    "specs/public-inbox-page/spec.md",
+    "specs/public-inbox-api/spec.md",
+    "specs/guest-usage-tracking/spec.md",
+    "specs/public-inbox-quota/spec.md",
+    "specs/affiliate-rail/spec.md",
+    "specs/ethical-ads-sponsor-slot/spec.md",
+    "specs/public-inbox-ops-runbook/spec.md"
+  ]
+}

@@ -1,0 +1,253 @@
+{
+  "name": "web-shell-polish-2026-q3",
+  "created": "2026-06-25T12:00:00+08:00",
+  "last_sync": "2026-06-25",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "Web Shell 抛光打磨：把 docs/dev/optimization-checklist.md 的 PR-OPT-1/2/3 三阶段先落为正式 openspec tasks，统一以 proposal→设计→任务→应用 流程推进。",
+    "design": "前端为主线、视觉/交互/a11y/内容四板块并行收敛；保留 CLI/API 不动；tasks.md 按 PR-OPT-1/2/3 分大节，每节内含若干条目化原子任务。",
+    "tasks": {
+      "total": 14,
+      "completed": 13,
+      "completed_in": [
+        "PR-OPT-1",
+        "PR-OPT-2",
+        "PR-OPT-3F",
+        "PR-OPT-3H",
+        "PR-OPT-3I",
+        "PR-OPT-3G",
+        "PR-OPT-3J",
+        "chore/OPT-platform-type-union",
+        "feat/OPT-3F-e2e"
+      ],
+      "in_flight": [
+        "PR-OPT-3"
+      ],
+      "remaining_phases": [],
+      "bucketing": "PR-OPT-1 计入 5 = 4 主条目 (A·B·C·K) + 1 piggy-back 簇（V-1/V-3/V-4/V-5）；PR-OPT-2 计入 2 = 1 主条目 D (hook/dialog/retention) + 1 主条目 E (44pt/safe-area)；PR-OPT-3F+H+I+G+J 本轮起手计入 6 = 1 主条目 F (PanelRightClose/grid/LS-persist/rail) + 1 主条目 H (失效账号就地重登录) + 1 主条目 I (可取消的提交后跳转) + 1 主条目 G (平台专属提示 chip + 受控 advanced Accordion) + 1 主条目 J (ApiSidebar Key 管理 Popover 封装) + 1 backlog piggy V-2 (real-tone from useTasks)。合计 13 = 5 (OPT-1) + 2 (OPT-2) + 6 (OPT-3F+H+I+G+J+V-2)，按「是否影响用户可见行为」聚合。OPT-3F Playwright e2e（tasks.md 3.9）是仅剩未起手的任务。",
+      "piggy_backs": [
+        {
+          "src": "V-2",
+          "landed_in": "PR-OPT-3F",
+          "rationale": "real-task-tone from useTasks+lastTaskIds; spec 原本规划与 3.5 (I) 联动，本轮提前起手"
+        }
+      ]
+    },
+    "source_checklist": "docs/dev/optimization-checklist.md"
+  },
+  "milestones": [
+    {
+      "id": "MS-OPT-1",
+      "title": "PR-OPT-1 视觉拉齐",
+      "status": "shipped",
+      "closed_on": "2026-06-25",
+      "checklist_rows_flipped_to_done": [
+        "A",
+        "B",
+        "C",
+        "K",
+        "V-1",
+        "V-3",
+        "V-4",
+        "V-5"
+      ],
+      "code_files_touched": [
+        "sau_web/frontend/src/index.css",
+        "sau_web/frontend/src/Components/ui/platform-icon.tsx",
+        "sau_web/frontend/src/Components/ui/tag-input.tsx",
+        "sau_web/frontend/src/Components/AiRightPanel/PublishAiSidebar.tsx",
+        "sau_web/frontend/src/features/publish/PublishStatsBar.tsx",
+        "sau_web/frontend/src/features/publish/GroupPublishSelector.tsx",
+        "sau_web/frontend/src/features/publish/NoteForm.tsx",
+        "sau_web/frontend/src/features/publish/PublishPreview.tsx"
+      ],
+      "assets_deleted": [
+        "sau_web/frontend/src/assets/brands/baijiahao.svg"
+      ]
+    },
+    {
+      "id": "MS-OPT-2",
+      "title": "PR-OPT-2 表单安全 + 移动端可达性",
+      "status": "shipped",
+      "started_at": "2026-06-25T18:30:00+08:00",
+      "closed_on": "2026-06-25T19:00:00+08:00",
+      "checklist_rows_flipped_to_done": [
+        "D",
+        "E"
+      ],
+      "code_files_added": [
+        "sau_web/frontend/src/hooks/usePublishDraft.ts",
+        "sau_web/frontend/src/features/publish/PublishDraftBanner.tsx"
+      ],
+      "code_files_touched": [
+        "sau_web/frontend/src/features/publish/VideoForm.tsx",
+        "sau_web/frontend/src/features/publish/NoteForm.tsx",
+        "sau_web/frontend/src/App.tsx"
+      ],
+      "review_rounds": [
+        {
+          "round": "R1",
+          "blockers": [
+            "lastFileMeta 滤器吞掉",
+            "mount 时空 snapshot 覆覆草稿"
+          ],
+          "minor": [
+            "restoredFieldsCountRef 独享变量"
+          ]
+        },
+        {
+          "round": "R2",
+          "blockers": [
+            "isPlainMetadataObject 接受 File"
+          ],
+          "minor": [
+            "zero-restored toast 怪异"
+          ]
+        },
+        {
+          "round": "R3",
+          "blockers": [],
+          "minor": [
+            "零项恢复静默 UX",
+            "白名单漂移提醒"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MS-OPT-3",
+      "title": "PR-OPT-3 信息密度与被埋没的能力曝光",
+      "status": "shipping",
+      "started_at": "2026-06-25T21:00:00+08:00",
+      "scope": [
+        "OPT-3F",
+        "OPT-3G",
+        "OPT-3H",
+        "OPT-3I",
+        "OPT-3J",
+        "OPT-V-2"
+      ],
+      "shipped_in_this_ms": [
+        "PR-OPT-3F",
+        "PR-OPT-3H",
+        "PR-OPT-3I",
+        "PR-OPT-3G",
+        "PR-OPT-3J",
+        "PR-OPT-3F-e2e"
+      ],
+      "shipped_subitems": [
+        "OPT-3F (3.1 + 3.2)",
+        "OPT-3H (3.4)",
+        "OPT-3I (3.5)",
+        "OPT-3G (3.3)",
+        "OPT-3J (3.6)",
+        "OPT-V-2 (3.7)"
+      ],
+      "remaining_subitems": [
+        "OPT-3F Playwright e2e (3.9)"
+      ],
+      "code_files_touched": [
+        "sau_web/frontend/src/Pages/PublishPage.tsx",
+        "sau_web/frontend/src/Components/AiRightPanel/PublishAiSidebar.tsx",
+        "sau_web/frontend/src/features/publish/PublishStatsBar.tsx",
+        "sau_web/frontend/src/features/publish/GroupPublishSelector.tsx"
+      ],
+      "ls_storage_keys_added": [
+        "sau-publish-ai-collapsed"
+      ],
+      "review_rounds": [
+        {
+          "round": "R1",
+          "blockers": [],
+          "minor": [
+            "aria-controls forward-ref to missing id",
+            "redundant LS write (handler + effect)",
+            "id string hard-coded in 2 files",
+            "mobile-drawer stale aiCollapsed=true after resize"
+          ]
+        },
+        {
+          "round": "PR-OPT-3H-R1",
+          "reviewer": "PR-OPT-3H",
+          "blockers": [
+            "cookieFile spec import but not threaded into LoginProgressModal prop API"
+          ],
+          "minor": [
+            "rapid badge-click promise leak while modal open",
+            "post-success auto-check platform missing (out of scope)",
+            "aria-label contained full cookie path replaced by aria-describedby + sr-only span"
+          ]
+        },
+        {
+          "round": "PR-OPT-3H-R2",
+          "reviewer": "PR-OPT-3H",
+          "blockers": [],
+          "minor": [
+            "YAGNI drop extended past interface: `reloginTarget.cookieFile` removed from `ReloginTarget` type + `setReloginTarget` initializer; JSX a11y sites read `auth.cookie_file` directly from parent closure. Modal prop surface stays at 6 (no `cookieFile`)."
+          ]
+        },
+        {
+          "round": "PR-OPT-3I-R1",
+          "blockers": [],
+          "minor": [
+            "last-tick sub-frame flicker: 原代码中 `cancelCountdown !== null` 在倒数 0s 仍显示 “0s 后跳转”，然后 useEffect 才跳。该 MINOR 已在 R1 闭环中修正：`cancelCountdown !== null && cancelCountdown > 0`。查阅 ts-string? 现 codebase 中 X 为本地变量名而该文件 useRef-fenced publishStore 以不会冲突，所以直接 alias 为 `X`。",
+            "original spec.规字面是 \"1.5s 后跳转”, 又 “不可取消”；此处选择改延时为 4s（使取消 UX 可用） + 加取消入口。 description 表中的 \"1.5s\" 于第二 pass 重命名以反映实际行为。"
+          ]
+        },
+        {
+          "round": "PR-OPT-3G-R1",
+          "blockers": [],
+          "minor": [
+            "需补充验证：NoteForm 上未渲染此 chip（mode!=video gating）。检查 VideoForm.test.tsx 的 Accordion Mock 不会被新 props (advancedOpen/onAdvancedChange) 干扰。"
+          ]
+        },
+        {
+          "round": "PR-OPT-3J-R1",
+          "blockers": [],
+          "minor": [
+            "OPT-3J absorbs the prior 设置 Key / 批量 inline buttons. If any existing test mocks these Button labels (currently none found via grep), the test reading-origin may break. Validate AiPanelToolbar.test.tsx expectations remain satisfied — they only assert the key count display, not the action buttons."
+          ]
+        },
+        {
+          "round": "chore/OPT-platform-type-union-R1",
+          "blockers": [],
+          "minor": [
+            "Closes the OPT-3G R1 leftover triplication MINOR: triple 'douyin' | 'bilibili' | 'tencent' literal union is now a single canonical export type PlatformSpecificSection in VideoForm.tsx, reused in GroupPublishSelector + PublishPage. 1 canonical edit point instead of 3."
+          ]
+        },
+        {
+          "round": "feat/OPT-3F-e2e-R1",
+          "blockers": [],
+          "minor": [
+            "OPT-3I spec mock URL hard-coded /api/videos/upload; actual is /api/upload/video (client.ts uploadVideo). Fixed in same PR.",
+            "OPT-3G data-state check was scoped to [role=\"region\"] which is overbroad; tightened to #advanced-section-bilibili in same PR.",
+            "Optional follow-up: wire a CI job that runs pnpm e2e against E2E_BOOT_SERVER=1 mode in a Linux runner."
+          ],
+          "verdict": "ship"
+        }
+      ]
+    }
+  ],
+  "layers": [
+    "frontend"
+  ],
+  "platforms": [
+    "douyin",
+    "kuaishou",
+    "xiaohongshu",
+    "bilibili",
+    "tencent",
+    "tiktok",
+    "baijiahao"
+  ],
+  "_status_note": "MS-OPT-3 has 5 PRs shipped (PR-OPT-3F covers 3.1 + 3.2 + 3.7 piggy V-2; PR-OPT-3H covers 3.4 fail-in-place relogin; PR-OPT-3I covers 3.5 cancelable post-submit jump; PR-OPT-3G covers 3.3 platform-config chip + controlled advanced Accordion; PR-OPT-3J covers 3.6 AiSidebar Key management Popover). OPT-3G R1 leftover MINOR (triplicated inline union) closed via chore/OPT-platform-type-union: PlatformSpecificSection now exported from VideoForm and reused in GroupPublishSelector + PublishPage. Remaining: OPT-3F Playwright e2e (3.9) — the only surviving OPT-3 task.",
+  "applyReady": false,
+  "dependsOn": [
+    "docs/dev/optimization-checklist.md"
+  ],
+  "specs": [
+    "specs/design-token-discipline/spec.md",
+    "specs/mobile-tap-target/spec.md",
+    "specs/form-draft-safety/spec.md"
+  ]
+}

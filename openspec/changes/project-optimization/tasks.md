@@ -41,3 +41,11 @@
 - [x] 6.2 添加 Python lint 步骤（ruff）
 - [x] 6.3 添加 Python test 步骤（pytest）
 - [x] 6.4 添加 Frontend build 步骤（npm run build）
+
+## 7. v0.2 polish candidates (Cross-layer)
+
+Items deferred from the Round 19 ramp, documented here so a follow-up PR can grep them out:
+
+- [ ] 7.1 **m3u8 deep-fetch in `_try_patchright`** — Path C decision (post-Round-19 thread). yt-dlp owns the HLS path; segment fetch in fallback exceeds pony-minimal budget (cookie transport + per-segment SSRF + master-playlist / AES-128 + ffmpeg-remux). Revisit via `m3u8` Rust-crate pyo3 port if ever needed. Cross-ref: `DESIGN.md` → `boundaries.m3u8-deep-fetch` + `web_runner/routes/inbox.py` `_MIN_VIDEO_BYTES` Path-C inline anchor.
+- [ ] 7.2 **Round 11 deferred items** — A2 re-render storm (`InboxPage.tsx::handleTranscribe` 250-chunks / setEntries latency; patch with `useDeferredValue` + 4KB chunk coalesce); C2 mobile overflow (44pt × 6 sidebar vs iPhone SE 375pt viewport; reduce label to 11px + `flex px-1` padding); B站 / 微博 appshare corpus extension (mirror existing Douyin / XHS / Kuaishou extraction + vitest page-UI smoke pattern).
+- [ ] 7.3 **MP4 magic-byte content-type guard at `_try_ytdlp` persistence** — yt-dlp writes whatever bytes the server returns. Reject HTML masquerading as `.mp4` via `ftyp...moov` sniff before persisting to `INBOX_DIR`.

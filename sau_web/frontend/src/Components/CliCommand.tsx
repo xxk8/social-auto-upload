@@ -1,9 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { Copy, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useToast } from "@/components/ui/toast"
-
-type TokenType = "prompt" | "command" | "platform" | "action" | "flag" | "string" | "number" | "path" | "value" | "plain"
+import {useToast} from "@/Components/ui/toast.helpers";type TokenType = "prompt" | "command" | "platform" | "action" | "flag" | "string" | "number" | "path" | "value" | "plain"
 
 interface Token {
   text: string
@@ -167,7 +165,7 @@ export function CliCommand({ command, className, ariaLabel }: CliCommandProps) {
   const tokens = tokenize(command)
   return (
     <code
-      className={cn("whitespace-nowrap", className)}
+      className={cn("whitespace-nowrap select-text", className)}
       aria-label={ariaLabel ?? command}
     >
       {tokens.map((token, idx) => (

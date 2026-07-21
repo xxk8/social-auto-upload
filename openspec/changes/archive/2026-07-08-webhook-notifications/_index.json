@@ -1,0 +1,36 @@
+{
+  "name": "webhook-notifications",
+  "created": "2026-07-08T00:00:00+08:00",
+  "status": "complete",
+  "artifacts": {
+    "proposal": "上传任务成功/失败/定时/cookie过期事件主动推送：事件总线 + 飞书/钉钉/企微/自定义 Webhook + 站内通知中心（SSE 复用）",
+    "design": "事件唯一裁决点=_run_sau 结果分支 + 双方言建表走 init_db + .env baseline/DB 覆盖 + 各平台签名防重放 + 重试/死信/去重/限流 + 复用现有 SSE",
+    "tasks": {
+      "total": 46,
+      "completed": 0
+    }
+  },
+  "layers": [
+    "api",
+    "frontend",
+    "database",
+    "cli"
+  ],
+  "platforms": [
+    "douyin",
+    "kuaishou",
+    "xiaohongshu",
+    "bilibili",
+    "tencent",
+    "tiktok",
+    "baijiahao",
+    "youtube"
+  ],
+  "applyReady": true,
+  "specs": [
+    "specs/webhook-dispatch/spec.md",
+    "specs/notification-center-ui/spec.md",
+    "specs/notification-api/spec.md",
+    "specs/webhook-config/spec.md"
+  ]
+}

@@ -1,0 +1,86 @@
+name: nightly-e2e
+
+# Nightly + on-demand Playwright E2E run against the merged
+# visitor-surface SPA at `:5180`. Runs once a day at 03:00 UTC,
+# after the day's normal CI is done, so failed runs can be triaged
+# before the next workday.
+#
+# Job boots its own backend + frontend shell via the
+# `webServer` block in `tests/playwright.config.ts` (gated on
+# the `E2E_BOOT_SERVER` env var), so it doesn't depend on an
+# externally-running dev shell.
+#
+# Why a separate workflow rather than adding to ci.yml:
+#   - ci.yml runs on push + PR (fast gate, ~2 min). E2E takes
+#     longer than that (~5 min installed + boot + run) and pushes
+#     against the per-day Actions minutes budget.
+#   - Nightly is a regression-smoke surface (catches drift that
+#     day-time CI misses); it's allowed to fail without blocking
+#     merging. PR-time vitest + python-test already cover the
+#     critical-path invariants.
+#   - workflow_dispatch lets maintainers re-run the same job
+#     manually after a fix lands, without re-firing the schedule.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+# Cancel any prior in-flight run of this workflow so reruns after
+# a fix don't queue behind yesterday's stuck instance.
+concurrency:
+  group: nightly-e2e
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: sau_web/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sau_web/frontend/package-lock.json
+
+      # The Playwright webServer block boots `bash ../sau_web/start.sh`
+      # which in turn runs `python run.py` (Flask backend). Installing
+      # the Python deps in the nightly job keeps the E2E run self-
+      # contained — no cached assumption that a previous job left
+      # things on disk.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python deps (Flask backend, Playwright browser host)
+        run: pip install -e '.[dev]'
+        working-directory: ${{ github.workspace }}
+
+      - name: Install Node deps (frontend)
+        run: npm ci
+
+      - name: Install Playwright Chromium + system deps
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E (server boots via webServer block)
+        run: E2E_BOOT_SERVER=1 npm run test:e2e
+        env:
+          CI: true
+          SAU_MOCK_AUTHORIZE: true
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            sau_web/frontend/playwright-report
+            sau_web/frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,3 @@
+0 7 * * * cd /Users/a123/Notes/02-project/projecke/github/social-auto-upload && .venv/bin/python scripts/public_inbox_kill_criteria.py >> .sau-logs/public-inbox-kill-criteria.log 2>&1
+0 7 * * * cd /Users/a123/Notes/02-project/projecke/github/social-auto-upload && .venv/bin/python scripts/public_inbox_kill_criteria.py >> .sau-logs/public-inbox-kill-criteria.log 2>&1
+0 7 * * * cd /Users/a123/Notes/02-project/projecke/github/social-auto-upload && .venv/bin/python scripts/public_inbox_kill_criteria.py >> .sau-logs/public-inbox-kill-criteria.log 2>&1

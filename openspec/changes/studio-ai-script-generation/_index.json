@@ -1,0 +1,22 @@
+{
+  "name": "studio-ai-script-generation",
+  "kind": "feature",
+  "title": "Studio Phase 2: AI Script Generation (Agnes AI primary, OpenRouter fallback)",
+  "summary": "Add AI-powered 4-act episode generation to Studio. Users provide a one-line synopsis, system generates 起/承/转/合 episodes with scenes and dialogues via SSE streaming. Agnes AI (agnes-2.0-flash) primary, OpenRouter fallback. No DB schema changes — reuses existing studio_episodes table.",
+  "owners": ["@studio"],
+  "status": "ready",
+  "depends_on": [],
+  "supersedes": [],
+  "related": ["studio-visual-presets", "studio-remotion-renderer", "ai-sidebar-material-search"],
+  "specs": ["studio-ai-script-generation"],
+  "files_touched": [
+    "web_runner/studio_engine.py (NEW)",
+    "web_runner/routes/studio.py (EDIT +80 lines)",
+    "sau_web/frontend/src/api/sse.ts (EDIT +5 lines)",
+    "sau_web/frontend/src/api/studio.ts (EDIT +8 lines)",
+    "sau_web/frontend/src/Pages/StudioDetailPage.tsx (EDIT +60 lines)",
+    ".env.example (EDIT +3 lines)",
+    "tests/test_studio_engine.py (NEW)",
+    "tests/test_studio_generate_endpoint.py (NEW)"
+  ]
+}

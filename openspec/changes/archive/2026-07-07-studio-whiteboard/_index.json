@@ -1,0 +1,12 @@
+{
+  "id": "studio-whiteboard",
+  "title": "Studio Whiteboard (tldraw Canvas Integration)",
+  "status": "proposed",
+  "created": "2026-07-07",
+  "proposal": "proposal.md",
+  "design": "design.md",
+  "tasks": "tasks.md",
+  "specs": [
+    "specs/canvas-editor/spec.md"
+  ]
+}

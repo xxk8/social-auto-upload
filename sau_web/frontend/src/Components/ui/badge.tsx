@@ -9,11 +9,15 @@ const badgeVariants = cva(
     variants: {
       variant: {
         // ============================================================
-        // DESIGN.md (Linear) — neutral (canonical)
-        //   secondary is the default for bare `<Badge>...</Badge>`.
-        //   Earlier "default" variant mapped to bg-primary (lavender);
-        //   removed per Linear's "primary reserved for brand/CTA/
-        //   focus/link" doctrine. Zero callers referenced `default`.
+        // DESIGN.md — neutral (canonical)
+        //   `secondary` is the default for bare `<Badge>...</Badge>`.
+        //   The earlier "default" variant mapped to bg-primary and
+        //   was removed so the single accent token stays reserved
+        //   for brand mark / CTA / focus / link surfaces per the
+        //   `Do's and Don'ts` section in DESIGN.md. Zero callers
+        //   referenced `default` to begin with. Migration history
+        //   lives in DESIGN.md — this file should not name legacy
+        //   palette tokens in narrative comments.
         // ============================================================
         secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive: "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
@@ -43,4 +47,4 @@ function Badge({ className, variant, ...props }: BadgeProps) {
   return <div className={cn(badgeVariants({ variant }), className)} {...props} />
 }
 
-export { Badge, badgeVariants }
+export { Badge }

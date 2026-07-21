@@ -1,0 +1,23 @@
+{
+  "name": "product-roadmap-2026q3",
+  "created": "2026-07-12",
+  "status": "proposed",
+  "role": "umbrella",
+  "artifacts": {
+    "proposal": "产品路线图 umbrella: 效果追踪 + 智能排期 + 批量模板 + 视频切片 + 自动字幕 + 合规预检 + RSS 抓取 + 竞品监控 + 通知 + A/B + 审批 + REST API + Webhook，分四 Phase 交付",
+    "design": "高阶 architecture overview — 详见 5 个子变更的 design.md",
+    "tasks": { "total": 151, "completed": 0, "split_into_children": true }
+  },
+  "layers": ["api", "frontend", "db", "worker", "scheduler", "auth"],
+  "platforms": ["douyin", "bilibili", "xiaohongshu", "kuaishou", "tencent", "tiktok", "baijiahao", "youtube"],
+  "children": [
+    "phase1-content-publish-loop",
+    "phase2a-publish-intelligence",
+    "phase2b-media-production",
+    "phase3-trust-and-monitoring",
+    "phase4-collab-and-monetization"
+  ],
+  "decomposed_at": "2026-07-12",
+  "decomposition_rationale": "原 151 个 checkbox 跨 4 Phase / 8 capability 域，单 PR 不可能完成；拆为 5 个可独立推进的子变更，团队按 TBF ticket 节奏分别消化。详见 openspec/INDEX.md §'子变更拆分解释'。",
+  "applyReady": false
+}

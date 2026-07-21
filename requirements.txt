@@ -23,3 +23,25 @@ segno>=1.6.6
 
 # HTTP requests
 requests==2.32.3
+httpx>=0.27,<1.0     # XHS sign-mode httpx calls (round-MC-2024-xhs-signing)
+
+# XHS signing (X-Bogus / X-S / X-T / X-S-Common / X-B3-Traceid signature headers)
+# Used by ``crawler/platforms/xhs/sign.py`` when ``SAU_XHS_SIGN_MODE=sign``.
+#
+# Vendoring decision: we depend on the ``xhshow`` library (Cloxl/xhshow)
+# instead of vendoring MediaCrawler's upstream ``xhs_sign.py`` + mbd.js
+# because:
+#
+#   1. MediaCrawler itself migrated away from mbd.js — they now use the
+#      same xhshow library as the canonical pure-Python impl.
+#   2. xhshow authors maintain the obfuscated CRC32 + Base64-shuffle
+#      algorithm that XHS regenerates on every frontend push, so we
+#      don't shoulder the break-fix churn.
+#   3. Bundling mbd.js + Node.js would inflate the Dockerfile (currently
+#      ``FROM python:3.10.19``, no Node) and we don't need Node for any
+#      other purpose.
+#
+# Trade-off obsolescence risk: when XHS frontend pushes mid-rollout and
+# signature verification fails en masse (HTTP 406 / 403), operators fall
+# back to ``SAU_XHS_SIGN_MODE=dom`` until xhshow publishes a fix.
+xhshow>=0.3,<1.0

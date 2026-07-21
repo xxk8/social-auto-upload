@@ -1,0 +1,13 @@
+{
+  "name": "ai-content-generation",
+  "created": "2026-06-27T14:34:16+08:00",
+  "status": "proposed",
+  "artifacts": {
+    "proposal": "多平台结构化内容生成 + 智能标签推荐——输入一个主题，一键获得所有平台适配的标题/描述/标签",
+    "design": "并行独立调用各平台 LLM（非单次 JSON 输出），标签推荐复用现有流式端点，前端新增 MultiPlatformGeneratePanel",
+    "tasks": { "total": 22, "completed": 0 }
+  },
+  "layers": ["api", "frontend"],
+  "platforms": ["douyin", "xiaohongshu", "kuaishou", "bilibili", "tencent", "tiktok", "baijiahao"],
+  "applyReady": false
+}

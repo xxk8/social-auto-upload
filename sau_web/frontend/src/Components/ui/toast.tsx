@@ -1,23 +1,10 @@
-import * as React from "react"
-import { X, CheckCircle, XCircle, AlertTriangle, Info } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { toneBorderClass, toneChipClasses } from "@/lib/tone"
-
-type ToastType = "default" | "success" | "error" | "warning" | "info"
-
-interface Toast {
-  id: string
-  message: string
-  type: ToastType
-}
-
-interface ToastContextType {
-  toasts: Toast[]
-  addToast: (message: string, type?: ToastType) => void
-  removeToast: (id: string) => void
-}
-
-const ToastContext = React.createContext<ToastContextType | undefined>(undefined)
+/* eslint-disable react-refresh/only-export-components */
+import * as React from 'react'
+import { X, CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { toneBorderClass, toneChipClasses } from '@/lib/tone'
+import { ToastContext, type Toast, type ToastType } from './toast.helpers'
+export { useToast } from './toast.helpers'
 
 const EXIT_DURATION = 300 // ms, matches the CSS animation duration
 
@@ -44,7 +31,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     timersRef.current.add(timer)
   }, [removeToast])
 
-  const addToast = React.useCallback((message: string, type: ToastType = "default") => {
+  const addToast = React.useCallback((message: string, type: ToastType = 'default') => {
     const id = Math.random().toString(36).substring(2, 9)
     setToasts((prev) => [...prev, { id, message, type }])
     const timer = setTimeout(() => {
@@ -69,14 +56,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function useToast() {
-  const context = React.useContext(ToastContext)
-  if (!context) {
-    throw new Error("useToast must be used within a ToastProvider")
-  }
-  return context
-}
-
+// OPT-follow-up-3-sweep-2: `useToast()` and `ToastContext` moved to
+// `./toast.helpers.ts`. The provider + container + item + icon components
+// stay here. `Toast` interface and `ToastType` union also live in
+// `.helpers.ts` and are imported above for prop typing.
 function ToastContainer({
   toasts,
   exitingIds,
@@ -101,15 +84,15 @@ function ToastContainer({
 }
 
 function ToastIcon({ type }: { type: ToastType }) {
-  const iconClass = "h-5 w-5 shrink-0"
+  const iconClass = 'h-5 w-5 shrink-0'
   switch (type) {
-    case "success":
+    case 'success':
       return <CheckCircle className={iconClass} />
-    case "error":
+    case 'error':
       return <XCircle className={iconClass} />
-    case "warning":
+    case 'warning':
       return <AlertTriangle className={iconClass} />
-    case "info":
+    case 'info':
       return <Info className={iconClass} />
     default:
       return null
@@ -129,21 +112,21 @@ function ToastItem({
   // <Badge variant="..."> and <Alert variant="...">: a single tonal
   // vocabulary across the toast / badge / alert primitive surface.
   const typeStyles: Record<ToastType, string> = {
-    default: "bg-background border",
-    success: cn(toneChipClasses("success"), toneBorderClass("success")),
-    error: cn(toneChipClasses("error"), toneBorderClass("error")),
-    warning: cn(toneChipClasses("warning"), toneBorderClass("warning")),
-    info: cn(toneChipClasses("info"), toneBorderClass("info")),
+    default: 'bg-background border',
+    success: cn(toneChipClasses('success'), toneBorderClass('success')),
+    error: cn(toneChipClasses('error'), toneBorderClass('error')),
+    warning: cn(toneChipClasses('warning'), toneBorderClass('warning')),
+    info: cn(toneChipClasses('info'), toneBorderClass('info')),
   }
 
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-lg border p-4 shadow-lg duration-300",
+        'flex items-center gap-2 rounded-lg border p-4 shadow-lg duration-300',
         exiting
-          ? "animate-out fade-out slide-out-to-right-full"
-          : "animate-in slide-in-from-right-full fade-in",
-        typeStyles[toast.type]
+          ? 'animate-out fade-out slide-out-to-right-full'
+          : 'animate-in slide-in-from-right-full fade-in',
+        typeStyles[toast.type],
       )}
     >
       <ToastIcon type={toast.type} />

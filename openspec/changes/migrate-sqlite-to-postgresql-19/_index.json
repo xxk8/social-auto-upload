@@ -1,0 +1,38 @@
+{
+  "name": "migrate-sqlite-to-postgresql-19",
+  "created": "2026-06-24T00:00:00Z",
+  "status": "active",
+  "artifacts": {
+    "proposal": "proposal.md",
+    "design": "design.md",
+    "tasks": {
+      "total": 69,
+      "completed": 16
+    }
+  },
+  "layers": [
+    "api",
+    "tests",
+    "deployment"
+  ],
+  "platforms": [],
+  "applyReady": true,
+  "sections": {
+    "1": "open",
+    "2": "shipped",
+    "P3": "shipped",
+    "3": "open",
+    "4": "open",
+    "5": "open",
+    "6": "open",
+    "7": "open",
+    "8": "open",
+    "9": "open"
+  },
+  "specs": [
+    "specs/pg-database-driver/spec.md",
+    "specs/pg-schema-v19/spec.md",
+    "specs/sqlite-pg-migrator/spec.md",
+    "specs/db-pool-observability/spec.md"
+  ]
+}

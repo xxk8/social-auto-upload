@@ -5,12 +5,13 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import sau_cli
+from cli.dispatchers import dispatch
+from cli.parser import build_parser
 
 
 class BrowserCliParserTests(unittest.TestCase):
     def test_build_parser_accepts_xiaohongshu_login(self):
-        parser = sau_cli.build_parser()
+        parser = build_parser()
         args = parser.parse_args(["xiaohongshu", "login", "--account", "creator"])
         self.assertEqual(args.platform, "xiaohongshu")
         self.assertEqual(args.action, "login")
@@ -20,7 +21,7 @@ class BrowserCliParserTests(unittest.TestCase):
             video_path = Path(tmp_dir) / "demo.mp4"
             video_path.write_bytes(b"video")
 
-            parser = sau_cli.build_parser()
+            parser = build_parser()
             args = parser.parse_args(
                 [
                     "douyin",
@@ -47,7 +48,7 @@ class BrowserCliParserTests(unittest.TestCase):
             landscape_path.write_bytes(b"image")
             portrait_path.write_bytes(b"image")
 
-            parser = sau_cli.build_parser()
+            parser = build_parser()
             args = parser.parse_args(
                 [
                     "douyin",
@@ -77,7 +78,7 @@ class BrowserCliParserTests(unittest.TestCase):
             landscape_path.write_bytes(b"image")
             portrait_path.write_bytes(b"image")
 
-            parser = sau_cli.build_parser()
+            parser = build_parser()
             args = parser.parse_args(
                 [
                     "tencent",
@@ -103,7 +104,7 @@ class BrowserCliParserTests(unittest.TestCase):
             image_path = Path(tmp_dir) / "1.png"
             image_path.write_bytes(b"image")
 
-            parser = sau_cli.build_parser()
+            parser = build_parser()
             args = parser.parse_args(
                 [
                     "kuaishou",
@@ -127,7 +128,7 @@ class BrowserCliParserTests(unittest.TestCase):
             video_path = Path(tmp_dir) / "demo.mp4"
             video_path.write_bytes(b"video")
 
-            parser = sau_cli.build_parser()
+            parser = build_parser()
             args = parser.parse_args(
                 [
                     "xiaohongshu",
@@ -148,7 +149,7 @@ class BrowserCliParserTests(unittest.TestCase):
             image_path = Path(tmp_dir) / "1.png"
             image_path.write_bytes(b"image")
 
-            parser = sau_cli.build_parser()
+            parser = build_parser()
             args = parser.parse_args(
                 [
                     "xiaohongshu",
@@ -172,7 +173,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
     def test_dispatch_xiaohongshu_check_prints_valid(self):
         args = Namespace(platform="xiaohongshu", action="check", account="creator")
         with patch("cli.platforms.xiaohongshu.check", new=AsyncMock(return_value=True)):
-            code = asyncio.run(sau_cli.dispatch(args))
+            code = asyncio.run(dispatch(args))
         self.assertEqual(code, 0)
 
     def test_dispatch_douyin_upload_note_uses_new_request_fields(self):
@@ -189,7 +190,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             headless=True,
         )
         with patch("cli.platforms.douyin.upload_note", new=AsyncMock()) as mock_upload:
-            asyncio.run(sau_cli.dispatch(args))
+            asyncio.run(dispatch(args))
 
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.title, "图文标题")
@@ -214,7 +215,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             headless=True,
         )
         with patch("cli.platforms.douyin.upload_video", new=AsyncMock()) as mock_upload:
-            asyncio.run(sau_cli.dispatch(args))
+            asyncio.run(dispatch(args))
 
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.thumbnail_landscape_file, Path("landscape.png"))
@@ -240,7 +241,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             headless=True,
         )
         with patch("cli.platforms.tencent.upload_video", new=AsyncMock()) as mock_upload:
-            asyncio.run(sau_cli.dispatch(args))
+            asyncio.run(dispatch(args))
 
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.thumbnail_landscape_file, Path("landscape.png"))
@@ -261,7 +262,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             headless=False,
         )
         with patch("cli.platforms.xiaohongshu.upload_video", new=AsyncMock()) as mock_upload:
-            asyncio.run(sau_cli.dispatch(args))
+            asyncio.run(dispatch(args))
 
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.title, "视频标题")
@@ -282,7 +283,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             headless=True,
         )
         with patch("cli.platforms.xiaohongshu.upload_note", new=AsyncMock()) as mock_upload:
-            asyncio.run(sau_cli.dispatch(args))
+            asyncio.run(dispatch(args))
 
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.title, "图文标题")

@@ -1,428 +1,74 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { AccountsProvider } from '@/features/accounts/AccountsProvider'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import FloatingLogs from './components/FloatingLogs'
-import { ThemeToggle } from './components/ThemeToggle'
-import { ThemeProvider } from './components/ThemeProvider'
-import { ToastProvider } from '@/components/ui/toast'
-import { CommandPalette } from './components/CommandPalette'
-import { ErrorBoundary } from './components/ErrorBoundary'
-import { NotFound } from './components/NotFound'
-import { cn } from '@/lib/utils'
-import {
-  BarChart3,
-  FileText,
-  HelpCircle,
-  Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Search,
-  Send,
-  Users,
-  Zap,
-} from 'lucide-react'
+import { Suspense, lazy, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { ROUTES, LEGACY_SHIM_REDIRECTS, type LegacyRoute } from '@/routes'
+import { registerNavigate } from '@/lib/navigation'
 
-const AccountsPage = lazy(() => import('@/features/accounts/AccountsPage'))
-const PublishPage = lazy(() => import('./Pages/PublishPage'))
-const LogsPage = lazy(() => import('./Pages/LogsPage'))
-const TasksPage = lazy(() => import('./Pages/TasksPage'))
+// Derived: hoist the `as LegacyRoute` cast out of the map callback
+// so `LEGACY_SHIM_REDIRECTS[legacyPath]` is fully type-safe.
+const LEGACY_PATHS = Object.keys(LEGACY_SHIM_REDIRECTS) as LegacyRoute[]
+import { TooltipProvider } from '@/Components/ui/tooltip'
+import { AccountsProvider } from '@/features/accounts/AccountsProvider'
+import { ThemeProvider } from './Components/ThemeProvider'
+import { ToastProvider } from '@/Components/ui/toast'
+import { ErrorBoundary } from './Components/ErrorBoundary'
+import { NotFound } from './Components/NotFound'
+import { AuthLoadingSkeleton } from './features/auth/AuthLoadingSkeleton'
+import AppShellWithPrefs from './AppShell'
+
+const LoginPage = lazy(() => import('./Pages/LoginPage'))
+const LoginAuthPage = lazy(() => import('./Pages/LoginAuthPage'))
+const ForgotPasswordPage = lazy(() => import('./Pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('./Pages/ResetPasswordPage'))
+const LandingPage = lazy(() => import('./Pages/LandingPage'))
+const CatalogPage = lazy(() => import('./Pages/CatalogPage'))
+const PricingPage = lazy(() => import('./Pages/PricingPage'))
+const AboutPage = lazy(() => import('./Pages/AboutPage'))
+const HotListPage = lazy(() => import('./Pages/HotListPage'))
 
 const LazyOnboardingTour = lazy(() =>
-  import('./components/OnboardingTour').then((m) => ({ default: m.OnboardingTour }))
+  import('./Components/OnboardingTour').then((m) => ({ default: m.OnboardingTour }))
 )
 
-function resetOnboardingTour() {
-  import('./components/OnboardingTour').then((m) => m.resetOnboardingTour())
-}
-
-function PageLoader() {
+// LegacyAppRedirect — Round-OPT-route-rename: catches any URL
+// that still uses the pre-rename `/app/*` prefix and forwards it
+// to the new `/dashboard/*` form, preserving the descending splat
+// (e.g. `/dashboard/studio/abc` → `/dashboard/studio/abc`),
+// the query string, and the hash fragment. `replace` keeps the
+// history stack clean so Back doesn't yank the visitor to a URL
+// that just bounces again. Without this shim, anyone holding
+// bookmarks, team-shared links, or stale OAuth confirmation
+// emails would 404 on the old prefix.
+function LegacyAppRedirect() {
+  const { pathname, search, hash } = useLocation()
   return (
-    <div className="flex items-center justify-center h-64">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
-        <span className="text-sm text-muted-foreground">加载中...</span>
-      </div>
-    </div>
+    <Navigate
+      to={pathname.replace(/^\/app/, '/dashboard') + search + hash}
+      replace
+    />
   )
 }
 
-const MOBILE_BREAKPOINT = 768
-const COLLAPSE_BREAKPOINT = 1024
-const SIDEBAR_STORAGE_KEY = 'sau-sidebar-collapsed'
-
-function getIsMobile() {
-  if (typeof window === 'undefined') return false
-  return window.innerWidth <= MOBILE_BREAKPOINT
-}
-
-function getShouldAutoCollapse() {
-  if (typeof window === 'undefined') return false
-  return window.innerWidth > MOBILE_BREAKPOINT && window.innerWidth <= COLLAPSE_BREAKPOINT
-}
-
-function useViewport() {
-  const [isMobile, setIsMobile] = useState(getIsMobile)
-  const [shouldAutoCollapse, setShouldAutoCollapse] = useState(getShouldAutoCollapse)
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT)
-      setShouldAutoCollapse(
-        window.innerWidth > MOBILE_BREAKPOINT && window.innerWidth <= COLLAPSE_BREAKPOINT,
-      )
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  return { isMobile, shouldAutoCollapse }
-}
-
-const navItems = [
-  { path: '/', label: '账号管理', icon: Users },
-  { path: '/publish', label: '发布中心', icon: Send },
-  { path: '/tasks', label: '任务列表', icon: BarChart3 },
-  { path: '/logs', label: '运行日志', icon: FileText },
-]
-
-// TODO re-add suspense around non-page chrome (command palette, floating logs, etc.) if needed.
-
-function AppShell() {
-  const { isMobile, shouldAutoCollapse } = useViewport()
-  const location = useLocation()
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false
-    const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY)
-    if (stored !== null) return stored === 'true'
-    return getShouldAutoCollapse()
-  })
-  const sidebarRef = useRef<HTMLElement>(null)
-
-  const prevAutoRef = useRef(shouldAutoCollapse)
-  useEffect(() => {
-    if (prevAutoRef.current !== shouldAutoCollapse) {
-      setSidebarCollapsed(shouldAutoCollapse)
-      prevAutoRef.current = shouldAutoCollapse
-    }
-  }, [shouldAutoCollapse])
-
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed((prev) => {
-      const next = !prev
-      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next))
-      return next
-    })
-  }, [])
-
+/**
+ * Round-OPT-3G followup: register the imperative `navigateInApp()`
+ * once at the top of the <BrowserRouter> tree so axios-level
+ * response interceptors can navigate without a hard reload.
+ *
+ * Lives as a SIBLING of <Routes> (NOT a child) so it never gets
+ * unmounted by an error boundary or by a route change. Uses
+ * useEffect (NOT useMemo) — registration is a side-effect and
+ * MUST run after first commit; useMemo would register
+ * synchronously on first render which is technically safe but
+ * not idiomatic for hooks that capture React Router context.
+ *
+ * The `<></>` rendering is intentional — Null-rendering keeps
+ * React's reconciliation pass without adding a wrapper DOM
+ * node. Without this, an empty `<></>` block would still be a
+ * fragment in the tree.
+ */
+function RegisterNavigate() {
   const navigate = useNavigate()
-  const [paletteOpen, setPaletteOpen] = useState(false)
-
-  // Global keyboard shortcuts. ⌘K / Ctrl-K opens the command palette from any
-  // focus state; "/" and "n" are gated on `isTyping` so they only fire when
-  // the user is not actively typing into an input/textarea/contenteditable.
-  //   "/" → focus the current page's [data-search-input]
-  //   "n" → navigate to /publish
-  // Both `setPaletteOpen` (from `useState`) and `navigate` (from `useNavigate`)
-  // are stable across renders, so an empty dependency array is correct.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        e.key.toLowerCase() === 'k' &&
-        !e.shiftKey &&
-        !e.altKey
-      ) {
-        e.preventDefault()
-        setPaletteOpen((v) => !v)
-        return
-      }
-
-      const target = e.target as HTMLElement | null
-      const tag = target?.tagName?.toLowerCase()
-      const isTyping =
-        tag === 'input' || tag === 'textarea' || target?.isContentEditable === true
-      if (isTyping) return
-
-      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        e.preventDefault()
-        const el = document.querySelector<HTMLInputElement>('[data-search-input]')
-        el?.focus()
-        return
-      }
-
-      if (e.key === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        e.preventDefault()
-        navigate('/publish')
-        return
-      }
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setPaletteOpen and navigate are both stable
-  }, [])
-
-  // Top header omits the page label — sidebar nav + in-content PageHeader already convey identity (avoids triple "账号管理" on the Accounts route).
-  if (isMobile) {
-    return (
-      <div className="flex flex-col min-h-screen bg-background">
-        <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur-xl px-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground">
-              <Zap className="h-3.5 w-3.5 text-background" />
-            </div>
-          </div>
-          <ThemeToggle />
-        </header>
-
-        <main className="flex-1 p-4 pb-20">
-          <Suspense fallback={<PageLoader />}>
-            <Routes location={location}>
-              <Route path="/" element={<AccountsPage />} />
-              <Route path="/publish" element={<PublishPage />} />
-              <Route path="/logs" element={<LogsPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </main>
-
-        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-
-        <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/30 bg-background/80 backdrop-blur-xl">
-          <div className="flex items-center justify-around py-2 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-            {navItems.map((item) => {
-              const active = location.pathname === item.path
-              const Icon = item.icon
-              return (
-                <Link
-                  key={item.path}
-                  className={cn(
-                    "flex flex-col items-center gap-1 px-3 py-1.5 text-[10px] transition-all duration-150 rounded-xl",
-                    active
-                      ? "text-foreground"
-                      : "text-muted-foreground"
-                  )}
-                  to={item.path}
-                >
-                  <div className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-150",
-                    active
-                      ? "bg-foreground text-background shadow-sm"
-                      : "bg-muted/50"
-                  )}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <span className={cn(active ? "font-medium" : "")}>{item.label}</span>
-                </Link>
-              )
-            })}
-          </div>
-        </nav>
-      </div>
-    )
-  }
-
-  const isCollapsed = sidebarCollapsed
-  const isTabletMode = shouldAutoCollapse
-
-  return (
-    <div className="flex min-h-screen bg-background">
-      {isTabletMode && !isCollapsed && (
-        <div
-          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm transition-all"
-          onClick={toggleSidebar}
-        />
-      )}
-
-      <aside
-        ref={sidebarRef}
-        className={cn(
-          "flex flex-col border-r border-border/40 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] bg-sidebar",
-          isCollapsed ? "w-[60px]" : "w-[220px]",
-          isTabletMode && !isCollapsed && "fixed inset-y-0 left-0 z-50 shadow-2xl"
-        )}
-      >
-        {/* Logo */}
-        <div className={cn(
-          "flex items-center h-14 border-b border-border/30",
-          isCollapsed ? "justify-center px-2" : "px-4 gap-3"
-        )}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background flex-shrink-0">
-            <Zap className="h-4 w-4" strokeWidth={2.5} />
-          </div>
-          {!isCollapsed && (
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[13px] font-semibold tracking-tight text-foreground">SAU Shell</span>
-              <span className="text-[10px] text-muted-foreground/60">Social Auto Upload</span>
-            </div>
-          )}
-          {!isCollapsed && (
-            <button
-              className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
-              onClick={toggleSidebar}
-              aria-label="Collapse sidebar"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Collapse button */}
-        {isCollapsed && (
-          <div className="flex justify-center py-3">
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
-              onClick={toggleSidebar}
-              aria-label="Expand sidebar"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Navigation */}
-        <ScrollArea className="flex-1 py-3">
-          <nav className={cn("flex flex-col", isCollapsed ? "px-2" : "px-3")}>
-            {/* Section label */}
-            {!isCollapsed && (
-              <div className="px-2 mb-1.5">
-                <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-widest">
-                  导航
-                </span>
-              </div>
-            )}
-            <div className="flex flex-col gap-0.5">
-              {navItems.map((item) => {
-                const active = location.pathname === item.path
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.path}
-                    className={cn(
-                      "group relative flex items-center rounded-lg text-[13px] font-medium transition-all duration-150",
-                      isCollapsed ? "justify-center px-2 py-2 mx-0.5" : "px-2.5 py-2 mx-0.5 gap-2.5",
-                      active
-                        ? "bg-foreground/[0.08] text-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]",
-                    )}
-                    to={item.path}
-                    onClick={isTabletMode ? () => setSidebarCollapsed(true) : undefined}
-                    data-tour={item.path === '/publish' ? 'nav-publish' : undefined}
-                  >
-                    {/* Active indicator */}
-                    {active && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-foreground" />
-                    )}
-                    <Icon className={cn(
-                      "h-4 w-4 shrink-0 transition-colors duration-150",
-                      active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-                    )} />
-                    {!isCollapsed && (
-                      <span className={cn(
-                        "truncate transition-colors duration-150",
-                        active && "font-medium"
-                      )}>
-                        {item.label}
-                      </span>
-                    )}
-                    {/* Tooltip for collapsed state */}
-                    {isCollapsed && (
-                      <div className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-foreground text-background text-xs font-medium opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-150 whitespace-nowrap z-50 shadow-lg scale-95 group-hover:scale-100">
-                        {item.label}
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-foreground rotate-45" />
-                      </div>
-                    )}
-                  </Link>
-                )
-              })}
-            </div>
-          </nav>
-        </ScrollArea>
-
-        {/* Footer */}
-        <div className={cn(
-          "border-t border-border/30",
-          isCollapsed ? "p-2" : "p-3"
-        )}>
-          {isCollapsed ? (
-            <div className="flex flex-col items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-muted/50 flex items-center justify-center">
-                <span className="text-xs font-medium text-muted-foreground">S</span>
-              </div>
-              <ThemeToggle />
-              <button
-                onClick={resetOnboardingTour}
-                className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
-                aria-label="重新引导"
-                title="重新引导"
-              >
-                <HelpCircle className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2.5 px-1">
-              <div className="h-8 w-8 rounded-full bg-muted/50 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-medium text-muted-foreground">S</span>
-              </div>
-              <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-xs font-medium text-foreground truncate">SAU Admin</span>
-                <span className="text-[10px] text-muted-foreground/60">v1.0.0</span>
-              </div>
-              <button
-                onClick={resetOnboardingTour}
-                className="h-7 px-2 flex items-center gap-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors text-xs"
-                aria-label="重新引导"
-                title="重新触发新手引导"
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-                <span>重新引导</span>
-              </button>
-              <ThemeToggle />
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className="flex flex-1 flex-col min-w-0">
-        <header className="flex h-14 items-center justify-end gap-2 border-b border-border/50 bg-background/80 backdrop-blur-xl px-6">
-          {isTabletMode && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleSidebar} aria-label="Toggle sidebar">
-              <Menu className="h-4 w-4" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPaletteOpen(true)}
-            className="gap-2 text-muted-foreground hover:text-foreground btn-elegant"
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span>搜索</span>
-            <kbd className="ml-1 hidden sm:inline-flex h-5 items-center px-1.5 rounded border border-border/40 bg-muted/40 text-[10px] font-mono text-muted-foreground">
-              ⌘K
-            </kbd>
-          </Button>
-        </header>
-
-        <main className="flex-1 overflow-auto">
-          <Suspense fallback={<PageLoader />}>
-            <Routes location={location}>
-              <Route path="/" element={<AccountsPage />} />
-              <Route path="/publish" element={<PublishPage />} />
-              <Route path="/logs" element={<LogsPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </main>
-      </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-    </div>
-  )
+  useEffect(() => registerNavigate(navigate), [navigate])
+  return null
 }
 
 function App() {
@@ -430,19 +76,183 @@ function App() {
    * read `useAccountGroups()` and adapt step 3 (build-first or add-auth)
    * to whether the user already has groups. Without this hoisting the
    * AutoStartTour child of TourProvider would render outside the
-   * accounts context and the selector fallback could not react. */
+   * accounts context and the selector fallback could not react.
+   *
+   * ErrorBoundary is hoisted ABOVE Suspense so the boundary catches
+   * BOTH lazy-load rejections (LazyOnboardingTour + nested lazy Route
+   * components) AND runtime errors from deeper descendants. With the
+   * boundary INSIDE Suspense, a rejected chunk would bubble past Suspense
+   * (which only handles pending→fallback, not throws) to the React root
+   * — producing a white page with no error UI. The hoisted boundary
+   * turns the rejection into ErrorBoundary's inline "页面出错了" card.
+   *
+   * Round-OPT-3J follow-up: Suspense fallbacks now render the shared
+   * `AuthLoadingSkeleton` (see features/auth/AuthLoadingSkeleton.tsx)
+   * instead of the React-default `null`. Same chrome + sketched
+   * content-area contract as the AuthGuard auth window, so a slow
+   * lazy chunk paints identically to a slow /api/auth/me — no
+   * visible "加载中…" overlay, no layout jank. The error path
+   * (rejected chunk / runtime throw) still surfaces via the hoisted
+   * ErrorBoundary card. */
   return (
     <BrowserRouter>
+      {/* Imperative-navigate registry — first child of
+          BrowserRouter so registration happens before any
+          route child can fire an axios 401-driven redirect. */}
+      <RegisterNavigate />
       <ThemeProvider defaultTheme="system" storageKey="sau-ui-theme">
         <TooltipProvider>
           <ToastProvider>
             <AccountsProvider>
-              <LazyOnboardingTour>
-                <ErrorBoundary>
-                  <AppShell />
-                  <FloatingLogs />
-                </ErrorBoundary>
-              </LazyOnboardingTour>
+              <ErrorBoundary>
+                <Suspense fallback={<AuthLoadingSkeleton />}>
+                  <LazyOnboardingTour>
+                    {/* Login route renders standalone — no sidebar, header, or floating logs */}
+                    <Routes>
+                    {/* Root `/` is the public marketing landing page. No
+                     *  AuthGuard — the surface is intentionally open so
+                     *  unauthenticated visitors from the GitHub README
+                     *  see the project pitch before being asked to log
+                     *  in. The "go to Web Shell" CTA in the CTA section
+                     *  is the path that bounces through AppShell →
+                     *  AuthGuard → /login (anonymous) or the
+                     *  dashboard (authenticated). */}
+                    <Route
+                      path={ROUTES.public.landing}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <LandingPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path={ROUTES.public.login}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <LoginPage />
+                        </Suspense>
+                      }
+                    />
+                    {/* Visitor-facing pricing (`/pricing`) — public route,
+                     *  parallel to `/` and `/login`. Drives the paying-
+                     *  customer conversion funnel: anonymous visitors see
+                     *  the 3-tier table, click → /login?plan=<tier> which
+                     *  is also public (no AuthGuard). See DESIGN.md round 4
+                     *  for the visitor-surface composition rule. */}
+                    <Route
+                      path={ROUTES.public.pricing}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <PricingPage />
+                        </Suspense>
+                      }
+                    />
+                    {/* Visitor-facing about (`/about`) — round 12. New
+                     *  public surface composed of SectionHeading + Stat
+                     *  + PricingTier with the `data-section` +
+                     *  `data-section-cell` test-id scaffold. No inline
+                     *  alternatives. Parallel to `/` and `/pricing`
+                     *  (no AuthGuard). */}
+                    <Route
+                      path={ROUTES.public.about}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <AboutPage />
+                        </Suspense>
+                      }
+                    />
+                    {/* Public hot list page — aggregates trending data from
+                     *  12+ Chinese social platforms via DailyHotApi.
+                     *  No AuthGuard — intentionally open for visitors. */}
+                    <Route
+                      path={ROUTES.public.hotlist}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <HotListPage />
+                        </Suspense>
+                      }
+                    />
+                    {/* Auth form (`/login/auth`) — round 12 sub-route.
+                     *  PricingPage's deep-link CTAs land here directly,
+                     *  bypassing the `/login` visitor pitch so mid-funnel
+                     *  visitors go straight to the form with their
+                     *  `?plan=<tier>` / `?intent=contact` preserved. */}
+                    <Route
+                      path={ROUTES.public.loginAuth}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <LoginAuthPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path={ROUTES.public.forgotPassword}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <ForgotPasswordPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path={ROUTES.public.resetPassword}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <ResetPasswordPage />
+                        </Suspense>
+                      }
+                    />
+                    {/* Legacy URL shims — catches the in-app `navigate()`
+                     *  call sites that still target the pre-rename
+                     *  `/publish`, `/tasks`, `/logs`, `/analytics` paths.
+                     *  Each replaces the URL with the new `/dashboard/*`
+                     *  form so React Router resolves the path on the next
+                     *  pass. The `/app/*` LegacyAppRedirect catches
+                     *  bookmarks + shared links that still use the old
+                     *  prefix. */}
+                    {LEGACY_PATHS.map((legacyPath) => (
+                      <Route
+                        key={legacyPath}
+                        path={legacyPath}
+                        element={
+                          <Navigate
+                            to={LEGACY_SHIM_REDIRECTS[legacyPath]}
+                            replace
+                          />
+                        }
+                      />
+                    ))}
+                    {/* Round-OPT-route-rename — bare `/app` shim. React
+                     *  Router v6's `<Route path="/app/*">` requires at
+                     *  least one character after the slash, so a
+                     *  bookmark to `…/app` (no trailing path) would
+                     *  fall through to the 404 handler. This sibling
+                     *  Route covers the bare-prefix case and forwards
+                     *  to `/dashboard` (with no trailing slash so the
+                     *  sidebar's active-state exact match still works). */}
+                    <Route path={ROUTES.legacy.appWildcard} element={<LegacyAppRedirect />} />
+                    {/* Dashboard (auth-protected via the AuthGuard inside
+                     * AppShell's child routes) — nested under `/dashboard`
+                     *  so the public `/` marketing route can share the
+                     *  same SPA without AuthGuard interception. */}
+                    <Route path={`${ROUTES.dashboard.root}/*`} element={<AppShellWithPrefs />} />
+                    {/* Live component catalog (`pnpm dev` → /catalog). No
+                     *  sidebar / header chrome — a standalone surface so
+                     *  you can visually inspect the 9 components without
+                     *  an authed context. */}
+                    <Route
+                      path={ROUTES.public.catalog}
+                      element={
+                        <Suspense fallback={<AuthLoadingSkeleton />}>
+                          <CatalogPage />
+                        </Suspense>
+                      }
+                    />
+                    {/* Standalone 404 — no shell chrome. */}
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </LazyOnboardingTour>
+                </Suspense>
+              </ErrorBoundary>
             </AccountsProvider>
           </ToastProvider>
         </TooltipProvider>

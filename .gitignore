@@ -14,8 +14,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchor to project root — unanchored form swallows `sau_web/frontend/src/lib/` (hand-written source).
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -182,6 +183,8 @@ package-lock.json
 
 # database
 db/database.db
+database.db
+.sau_secret_key
 
 # 临时文件夹
 cookiesFile
@@ -206,3 +209,56 @@ console.publish.log
 .sau-logs/
 .sau-logs/*.log
 node_modules/.vite/
+
+# ── Pre-push hardening (round-OPT-seedance-export) ──
+# 1. Live-credentials backup: `.env.bak` mirrors the real `.env`
+#    — block the FILE pattern. The directory-only `env.bak/`
+#    entry at line 128 catches dirs but NOT files, which let a
+#    plaintext credential copy leak through past `git add -A`.
+#    `*.bak` blanket-covers any future backup convention.
+.env.bak
+*.bak
+
+# 2. Studio render artifacts: `media/studio/<pid>/render.mp4`
+#    + per-scene mp3/png grow into hundreds of MB; never stage.
+media/
+
+# 3. Personal session meta (saved plans + thoughts from the
+#    agent loop) — keeps the public repo focused on shipped
+#    code only.
+.mimocode/
+
+# 4. Noise files like `=1.3`, `=1.8`, `=2.0` left over from
+#    past scratch sessions — harmless but they pollute
+#    `git status`. (NOTE: bare `=` would only match a file
+#    LITERALLY named `=` — gitignore without `/` is basename-
+#    anchored. The `=*` glob is the correct shape to swallow
+#    every `=<digits>.<digits>` leftover and any other
+#    `=`-prefixed scratch file.)
+=*
+
+# ── Session-start dev/debug artifacts (round-OPT-3F-e2e cleanup) ──
+# These were untracked artifacts from session-start work; committing
+# them would pollute the repo. Add to ignore list:
+db/*.sqlite3
+db/*.db
+debug_sse_test.py
+tmp_verify_silence.py
+captions.ass
+captions.srt
+captions.ass
+captions.srt
+
+# ── SQLite + secret-key safety net (round-OPT-3F-e2e follow-up) ────────────────
+# Per reviewer feedback + 547a1aca audit. Anchored-glob family: any path depth,
+# exact filename match. Matches:
+#   *.db-wal       — SQLite WAL main file at any depth
+#   *.db-shm       — SQLite WAL shared-memory file at any depth
+#   *.sqlite3-journal — pre-WAL SQLite journal mode (legacy toolchains)
+#   .secret_key    — Flask session secret at any path depth (unaffected by dir)
+*.db-wal
+*.db-shm
+*.sqlite3-journal
+.secret_key
+# Note: these patterns are intentionally unanchored (no leading /) so they
+# match the target filename at any directory depth in the repo.

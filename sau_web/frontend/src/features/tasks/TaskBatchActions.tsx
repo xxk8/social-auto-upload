@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,7 +13,7 @@ import {
   Badge,
   Button,
   Progress,
-} from '@/components/ui/index'
+} from '@/Components/ui/index'
 import {
   CheckCircle2,
   ChevronDown,
@@ -57,6 +58,7 @@ export const TaskBatchActions = memo(function TaskBatchActions({
   batchDetailOpen: boolean
   onToggleBatchDetail: () => void
 }) {
+  const { t } = useTranslation()
   if (!batchProgress && selectedCount === 0) return null
 
   if (batchProgress) {
@@ -66,7 +68,9 @@ export const TaskBatchActions = memo(function TaskBatchActions({
           <div className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
             <span className="text-sm font-medium">
-              {batchProgress.type === 'retry' ? '批量重试中' : '批量删除中'}
+              {batchProgress.type === 'retry'
+                ? t('tasks.batch.batch_retrying', '批量重试中')
+                : t('tasks.batch.batch_deleting', '批量删除中')}
             </span>
             <Badge variant="secondary" className="text-xs">
               {batchProgress.current} / {batchProgress.total}
@@ -74,7 +78,7 @@ export const TaskBatchActions = memo(function TaskBatchActions({
           </div>
           {batchProgress.current === batchProgress.total ? (
             <Button variant="ghost" size="sm" onClick={onDismissProgress}>
-              关闭
+              {t('tasks.batch.batch_close', '关闭')}
             </Button>
           ) : (
             <span className="text-xs text-muted-foreground">
@@ -90,11 +94,15 @@ export const TaskBatchActions = memo(function TaskBatchActions({
                 the chip color; the count text uses plain toneTextClass. */}
             <span className={cn('flex items-center gap-1', toneTextClass('success'))}>
               <CheckCircle2 className="h-4 w-4" />
-              {batchProgress.results.filter((r) => r.success).length} 成功
+              {t('tasks.batch.batch_success_count', '{{count}} 成功', {
+                count: batchProgress.results.filter((r) => r.success).length,
+              })}
             </span>
             <span className={cn('flex items-center gap-1', toneTextClass('error'))}>
               <XCircle className="h-4 w-4" />
-              {batchProgress.results.filter((r) => !r.success).length} 失败
+              {t('tasks.batch.batch_failed_count', '{{count}} 失败', {
+                count: batchProgress.results.filter((r) => !r.success).length,
+              })}
             </span>
           </div>
         )}
@@ -105,7 +113,9 @@ export const TaskBatchActions = memo(function TaskBatchActions({
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           {batchDetailOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          {batchDetailOpen ? '收起详情' : '查看逐条状态'}
+          {batchDetailOpen
+            ? t('tasks.batch.batch_collapse_detail', '收起详情')
+            : t('tasks.batch.batch_expand_detail', '查看逐条状态')}
         </button>
         {batchDetailOpen && (
           <div className="max-h-[200px] overflow-auto rounded border bg-background space-y-1 p-2">
@@ -154,33 +164,39 @@ export const TaskBatchActions = memo(function TaskBatchActions({
   return (
     <div className="flex items-center justify-between gap-4 mb-4 p-3 rounded-lg border bg-muted/40">
       <div className="flex items-center gap-2">
-        <Badge variant="secondary">已选 {selectedCount} 项</Badge>
+        <Badge variant="secondary">
+          {t('tasks.batch.selected_count', '已选 {{count}} 项', { count: selectedCount })}
+        </Badge>
         <Button variant="ghost" size="sm" onClick={onClearSelection}>
-          取消选择
+          {t('tasks.batch.clear_selection', '取消选择')}
         </Button>
       </div>
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onBatchRetry}>
           <RotateCcw className="h-4 w-4 mr-1" />
-          批量重试
+          {t('tasks.batch.batch_retry', '批量重试')}
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="destructive" size="sm">
               <Trash2 className="h-4 w-4 mr-1" />
-              批量删除
+              {t('tasks.batch.batch_delete', '批量删除')}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>确认批量删除</AlertDialogTitle>
+              <AlertDialogTitle>{t('tasks.batch.batch_delete_dialog.title', '确认批量删除')}</AlertDialogTitle>
               <AlertDialogDescription>
-                确认删除选中的 {selectedCount} 个任务？此操作不可恢复。
+                {t(
+                  'tasks.batch.batch_delete_dialog.description',
+                  '确认删除选中的 {{count}} 个任务?此操作不可恢复。',
+                  { count: selectedCount },
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={onBatchDelete}>删除</AlertDialogAction>
+              <AlertDialogCancel>{t('tasks.batch.batch_delete_dialog.cancel', '取消')}</AlertDialogCancel>
+              <AlertDialogAction onClick={onBatchDelete}>{t('tasks.batch.batch_delete_dialog.confirm', '删除')}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

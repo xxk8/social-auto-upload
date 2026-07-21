@@ -3,6 +3,33 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 import { toneBorderClass, toneChipClasses, toneTextClass } from "@/lib/tone"
 
+// ── `alertVariants` — cva() recipe driving <Alert>'s `variant` prop ────
+//
+// `alertVariants` is the cva() recipe for <Alert>'s `variant` prop.
+// It is intentionally module-local — NOT re-exported from this file —
+// because exporting it triggers
+// `react-refresh/only-export-components`, AND because downstream code
+// should wrap <Alert variant="..."> rather than paste alert class
+// strings around the codebase.
+//
+// Fork-from-stale rationale: a feature-local cva() clone forks from a
+// recipe readers can't import, so they can't grep against the
+// source-of-truth when `alert.tsx` tunes — drift is invisible until
+// it bites. The same invariant that motivated button.tsx / badge.tsx /
+// sheet.tsx applies here.
+//
+// Same pattern as `button.tsx` (buttonVariants), `badge.tsx`
+// (badgeVariants), `sheet.tsx` (sheetVariants). The four together
+// form the verified "module-local cva" set; DESIGN-components.md
+// `cross-cutting.sweep-status` tracks this list as the canonical
+// reference.
+//
+// Type-side escape hatch (NOT deprecated): consumers that need the
+// `variant` type union can index `React.ComponentProps<typeof Alert>['variant']`
+// directly. Alert's internal `VariantProps<typeof alertVariants>`
+// mixed-prop inheritance exposes `variant` as a public literal. Like
+// `ButtonProps`/`SheetContentProps`, the cva() callable is what's
+// gated; the prop literal is public.
 const alertVariants = cva(
   "relative w-full rounded-lg border px-4 py-3 text-sm [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg~*]:pl-7",
   {

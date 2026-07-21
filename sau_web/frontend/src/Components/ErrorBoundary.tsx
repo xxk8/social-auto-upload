@@ -1,5 +1,5 @@
 import React from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/Components/ui/button'
 import { cn } from '@/lib/utils'
 import { toneBgClass, toneTextClass } from '@/lib/tone'
 

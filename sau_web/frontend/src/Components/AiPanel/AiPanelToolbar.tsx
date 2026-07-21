@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button'
+import { Button } from '@/Components/ui/button'
 import { Tip } from '@/lib/tip'
 import { useAiStore } from '@/stores/useAiStore'
 import { useAiConfig } from '@/hooks/useAiConfig'
