@@ -17,7 +17,7 @@ export default defineConfig({
     }),
     // TanStack Start plugin defaults to src/; project uses app/
     tanstackStart({ srcDirectory: 'app' }),
-    react(),
+    react({ fastRefresh: false }),
     tailwindcss(),
   ],
   server: {
