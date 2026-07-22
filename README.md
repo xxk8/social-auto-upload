@@ -162,7 +162,7 @@ AI的发展毋庸置疑，希望你遇到这种安装和使用，不要再怯场
 uv pip install -e ".[web]"
 
 # 启动后端 (http://localhost:6001)
-python web_runner.py
+python run.py
 
 # 另开终端，启动前端开发服务器 (http://localhost:5174)
 cd sau_web/frontend && npm install && npm run dev

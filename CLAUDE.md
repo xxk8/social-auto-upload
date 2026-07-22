@@ -40,9 +40,9 @@ The project also provides a command-line interface (CLI) for users who prefer to
     # Windows PowerShell 用 npmmirror: $env:PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"; patchright install chromium
     ```
 
-3.  **Initialize the database (首次启动 `web_runner.py` 时自动完成，无需手动执行):**
+3.  **Initialize the database (首次启动 `run.py` / `create_app()` 时自动完成，无需手动执行):**
     ```bash
-    python web_runner.py   # 自动调用 web_runner/db.py::init_db()
+    python run.py   # 自动调用 web_runner/db.py::init_db()
     ```
 
 4.  **Run the Web Shell (React + Flask UI):**
@@ -51,7 +51,9 @@ The project also provides a command-line interface (CLI) for users who prefer to
     ```
     Or start the Python backend separately:
     ```bash
-    python web_runner.py
+    export SAU_CORS_ALLOWED_ORIGINS="http://localhost:5173,http://localhost:5174"
+    export SAU_AUTH_ENABLED=false
+    python run.py
     ```
     The Web Shell runs on `http://localhost:5174` (frontend) with API proxy to backend on port 6001.
 
