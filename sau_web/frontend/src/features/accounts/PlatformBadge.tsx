@@ -1,10 +1,6 @@
 import { cn } from '@/lib/utils'
-import {
-  PlatformIcon,
-  PLATFORM_COLORS,
-} from '@/components/ui/platform-icon'
-
-interface PlatformBadgeProps {
+import {PlatformIcon} from '@/components/ui/platform-icon';
+import {PLATFORM_COLORS} from '@/components/ui/platform-icon.helpers';interface PlatformBadgeProps {
   /** Platform key used to look up both the brand-color token and the SVG icon. */
   platform: string
   /**

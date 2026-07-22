@@ -2,8 +2,8 @@ import { memo, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  CheckCircle,
   CheckSquare,
-  CircleDot,
   LayoutGrid,
   List,
   Loader2,
@@ -11,9 +11,11 @@ import {
   Square,
   Trash,
   X,
+  XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { toneDotStyle, type Tone } from '@/lib/tone'
+import { toneDotStyle, toneTextClass, type Tone } from '@/lib/tone'
+import type { LucideIcon } from 'lucide-react'
 import { useAccountsDispatch, useAccountsState } from './AccountsProvider'
 
 /** All four shape axes (value / label / icon / tone) are present on every
@@ -26,12 +28,12 @@ import { useAccountsDispatch, useAccountsState } from './AccountsProvider'
 const VALIDITY_OPTIONS: ReadonlyArray<{
   value: 'all' | 'valid' | 'invalid'
   label: string
-  icon: typeof CircleDot | null
+  icon: LucideIcon | null
   tone: Tone | null
 }> = [
   { value: 'all', label: '全部', icon: null, tone: null },
-  { value: 'valid', label: '有效', icon: CircleDot, tone: 'success' },
-  { value: 'invalid', label: '失效', icon: null, tone: 'error' },
+  { value: 'valid', label: '有效', icon: CheckCircle, tone: 'success' },
+  { value: 'invalid', label: '失效', icon: XCircle, tone: 'error' },
 ] as const
 
 /**
@@ -50,6 +52,7 @@ function GroupToolbarImpl() {
   // ── local search state with debounce ──
   const [localSearch, setLocalSearch] = useState(state.searchQuery)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     const handle = setTimeout(() => {
       if (localSearch !== state.searchQuery) {
         dispatch.setSearchQuery(localSearch)
@@ -72,11 +75,7 @@ function GroupToolbarImpl() {
   const renderValidityIcon = (opt: (typeof VALIDITY_OPTIONS)[number]) => {
     if (opt.icon) {
       const Icon = opt.icon
-      // lucide-react icons propagate the `style` prop down to the SVG where
-      // `toneDotStyle(tone)` paints the canonical --status-{tone}-fg
-      // background + 40% halo (replaces the deleted `.status-dot-{valid,
-      // invalid}` CSS rules previously applied via `className`).
-      return <Icon className="h-3 w-3 mr-1" style={toneDotStyle(opt.tone)} />
+      return <Icon className={cn('h-3 w-3 mr-1', toneTextClass(opt.tone))} />
     }
     if (opt.tone) {
       return <span className="mr-1.5 h-1.5 w-1.5 rounded-full" style={toneDotStyle(opt.tone)} />
@@ -90,10 +89,13 @@ function GroupToolbarImpl() {
       <div className="relative flex-1 min-w-[200px] max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
         <Input
+          id="accounts-group-search"
+          name="search"
           placeholder="搜索分组名称、平台..."
           value={localSearch}
           onChange={(e) => setLocalSearch(e.target.value)}
           className="pl-9 pr-16"
+          autoComplete="off"
           data-search-input
         />
         {!localSearch && (
@@ -188,9 +190,9 @@ function GroupToolbarImpl() {
             type="button"
             onClick={() => dispatch.setViewMode('grid')}
             className={cn(
-              'flex items-center justify-center h-7 w-7 rounded-md transition-all duration-200',
+              'flex items-center justify-center h-7 w-7 rounded-md shadow-sm transition-all duration-200',
               state.viewMode === 'grid'
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-background text-foreground'
                 : 'text-muted-foreground/50 hover:text-muted-foreground',
             )}
             aria-label="Grid view"
@@ -201,9 +203,9 @@ function GroupToolbarImpl() {
             type="button"
             onClick={() => dispatch.setViewMode('list')}
             className={cn(
-              'flex items-center justify-center h-7 w-7 rounded-md transition-all duration-200',
+              'flex items-center justify-center h-7 w-7 rounded-md shadow-sm transition-all duration-200',
               state.viewMode === 'list'
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-background text-foreground'
                 : 'text-muted-foreground/50 hover:text-muted-foreground',
             )}
             aria-label="List view"

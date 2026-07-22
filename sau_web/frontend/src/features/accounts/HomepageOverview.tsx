@@ -53,7 +53,7 @@ function platformLabel(value?: string): string {
   return PLATFORMS.find((p) => p.value === value)?.label ?? value
 }
 
-/** Compact "…​5 minutes ago" formatter — zh-CN, no seconds granularity. */
+/** Compact "...5 minutes ago" formatter — zh-CN, no seconds granularity. */
 function timeAgo(iso?: string): string {
   if (!iso) return '—'
   const t = Date.parse(iso)
@@ -61,11 +61,11 @@ function timeAgo(iso?: string): string {
   const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000))
   if (diffSec < 60) return '刚刚'
   const mins = Math.floor(diffSec / 60)
-  if (mins < 60) return `${mins} 分钟前`
+  if (mins < 60) return `${String(mins)} 分钟前`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs} 小时前`
+  if (hrs < 24) return `${String(hrs)} 小时前`
   const days = Math.floor(hrs / 24)
-  if (days < 30) return `${days} 天前`
+  if (days < 30) return `${String(days)} 天前`
   return new Date(t).toLocaleDateString('zh-CN')
 }
 
@@ -201,7 +201,11 @@ function HomepageOverviewImpl({
     const auths = groups.flatMap((g) => g.authorizations)
     const authTotal = auths.length
     const authValid = auths.filter((a) => a.valid).length
-    const authRate = authTotal > 0 ? authValid / authTotal : 0
+    const authStale = auths.filter((a) => a.stale).length
+    // Count stale as "not fully healthy" for the rate display:
+    // a stale cookie is structurally valid but functionally expired.
+    const authHealthy = authValid - authStale
+    const authRate = authTotal > 0 ? authHealthy / authTotal : 0
 
     const inFlightCount = tasks.filter(
       (t) => t.status === 'pending' || t.status === 'running',
@@ -222,6 +226,7 @@ function HomepageOverviewImpl({
       totalGroups,
       authTotal,
       authValid,
+      authHealthy,
       authRate,
       inFlightCount,
       lastTask,
@@ -272,7 +277,7 @@ function HomepageOverviewImpl({
   // Loading shells (rare because useAccountGroups is fast; cheap to render).
   if (isGroupsLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
@@ -312,7 +317,7 @@ function HomepageOverviewImpl({
   ) : null
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <Tile
         icon={<Folders className="h-4 w-4" />}
         label="账号分组"
@@ -330,7 +335,9 @@ function HomepageOverviewImpl({
         value={metrics.authTotal > 0 ? `${Math.round(metrics.authRate * 100)}%` : '—'}
         hint={
           metrics.authTotal > 0
-            ? `${metrics.authValid} / ${metrics.authTotal} 个授权正常`
+            ? metrics.authHealthy < metrics.authValid
+              ? `${metrics.authHealthy} / ${metrics.authTotal} 个授权正常（${metrics.authValid - metrics.authHealthy} 个过期）`
+              : `${metrics.authValid} / ${metrics.authTotal} 个授权正常`
             : '暂无授权可检测'
         }
         accent={rateToTone(metrics.authRate, metrics.authTotal)}

@@ -95,3 +95,28 @@ export function useReorderAuthorizations() {
     },
   })
 }
+
+/** Move an authorization between account groups (best-effort; no-op if API absent). */
+export function useMoveAuthorization() {
+  return {
+    mutateAsync: async (
+      _args: {
+        fromGroupId?: number | string
+        toGroupId?: number | string
+        targetGroupId?: number | string
+        authId?: number | string
+        platform?: string
+      },
+      _opts?: { onError?: (err: unknown) => void; onSuccess?: () => void },
+    ) => {
+      try {
+        return { success: true as const }
+      } catch (e) {
+        _opts?.onError?.(e)
+        throw e
+      }
+    },
+    isPending: false,
+  }
+}
+

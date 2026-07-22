@@ -15,7 +15,7 @@ export function useAiConfig() {
   })
 }
 
-export function useAiKeys() {
+export function useAiKeys(_enabled: boolean = true) {
   return useQuery({
     queryKey: ['ai-keys'],
     queryFn: async () => {

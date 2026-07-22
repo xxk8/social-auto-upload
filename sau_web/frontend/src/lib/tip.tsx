@@ -1,10 +1,18 @@
-// TODO(migration-stub): minimal placeholder for the pre-existing
-// `src/lib/tip.tsx` component that was missing on origin/main.
-// Use LOOSE TYPING (any props/returns) to avoid downstream TS errors.
-// Replace with the real `Tip` tooltip component in a follow-up PR.
+import type { ReactNode } from 'react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
-export function Tip({ children }: any): any {
-  return <span className="tip-target">{children}</span>
+/** Reusable tooltip wrapper used by AiSidebar, AiPanelToolbar, etc. */
+export function Tip({ children, text }: { children: ReactNode; text: string }) {
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
 }
 
 export default Tip

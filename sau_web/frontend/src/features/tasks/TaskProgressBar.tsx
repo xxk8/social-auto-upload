@@ -1,7 +1,10 @@
 import { memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { toneFillBgClass } from '@/lib/tone'
+import { toneFillBgClass, toneFgVar } from '@/lib/tone'
+import { StackedBarChart } from '@/lib/StackedBarChart'
+import { formatTaskTooltip } from './tooltipFormatter'
 
 type TaskCounts = Record<string, number>
 
@@ -9,7 +12,10 @@ type ProgressSegment = {
   key: string
   label: string
   count: number
+  /** Tailwind bg class for the legend dot. */
   barClass: string
+  /** CSS var string for recharts Cell fill. */
+  color: string
 }
 
 type TaskProgressBarProps = {
@@ -30,45 +36,58 @@ function segments(total: number, counts: TaskCounts): ProgressSegment[] {
   const active = sum(activeKeys, counts)
   const failed = sum(failedKeys, counts)
 
-  if (total === 0) return [{ key: 'empty', label: '暂无任务', count: 0, barClass: 'bg-muted' }]
+  if (total === 0) return [{ key: 'empty', label: '暂无任务', count: 0, barClass: 'bg-muted', color: 'var(--muted)' }]
 
-  // barClass is the bar-segment fill color. Composed via `@/lib/tone`'s
-  // `toneFillBgClass` so the segment fill is sourced from the same
-  // `--status-X-fg` token vocabulary as Badge / Alert / Toast / ChipBar /
-  // ValidityBadge. The literal `bg-[var(--status-X-fg)]` strings only
-  // appear in `@/lib/tone` — Tailwind v4 auto-scanner picks them up there.
   return [
-    { key: 'done', label: '成功', count: done, barClass: toneFillBgClass('success') },
-    { key: 'active', label: '进行中', count: active, barClass: toneFillBgClass('info') },
-    { key: 'failed', label: '失败/异常', count: failed, barClass: toneFillBgClass('error') },
+    { key: 'done', label: '成功', count: done, barClass: toneFillBgClass('success'), color: toneFgVar('success') },
+    { key: 'active', label: '进行中', count: active, barClass: toneFillBgClass('info'), color: toneFgVar('info') },
+    { key: 'failed', label: '失败/异常', count: failed, barClass: toneFillBgClass('error'), color: toneFgVar('error') },
   ].filter((s) => s.count > 0)
 }
 
 /**
  * Stacked progress bar summarising task status distribution.
+ * Now powered by recharts BarChart with Tooltip — hover any segment
+ * to see the status name, count, and percentage.
+ *
  * Pure presentational — reads from pre-computed counts.
  */
 export const TaskProgressBar = memo(function TaskProgressBar({
   total,
   counts,
 }: TaskProgressBarProps) {
-  const segs = segments(total, counts)
+  const { t } = useTranslation()
+  const segLabels: Record<string, string> = {
+    done: t('tasks.progress.done', '成功'),
+    active: t('tasks.progress.active', '进行中'),
+    failed: t('tasks.progress.failed_combined', '失败/异常'),
+    empty: t('tasks.progress.empty', '暂无任务'),
+  }
+  const totalLabel = t('tasks.progress.total', '总计')
+  const segs = segments(total, counts).map((s) => ({
+    ...s,
+    label: segLabels[s.key] ?? s.label,
+  }))
 
   return (
-    <Card className="border-border/40 shadow-none">
+    <Card className="border card-outline shadow-none">
       <CardContent className="flex items-center gap-4 p-4">
-        {/* Bar */}
-        <div className="flex flex-1 h-2.5 rounded-full overflow-hidden bg-muted">
-          {segs.map((s) => (
-            <div
-              key={s.key}
-              className={cn('h-full transition-all duration-500', s.barClass)}
-              style={{ width: total > 0 ? `${(s.count / total) * 100}%` : '100%' }}
+        {/* Stacked bar chart — recharts BarChart, no axes, just
+            stacked segments with Tooltip. Replaces the hand-written
+            div + inline width bar. */}
+        <div className="h-2.5 flex-1 min-w-[100px]">
+          {total === 0 ? (
+            <div className="h-full w-full rounded-full bg-muted" />
+          ) : (
+            <StackedBarChart
+              segments={segs.map((s) => ({ key: s.key, count: s.count, color: s.color }))}
+              name="tasks"
+              tooltipFormatter={(value, key) => formatTaskTooltip(value, key, segs, total)}
             />
-          ))}
+          )}
         </div>
 
-        {/* Stats */}
+        {/* Stats — same layout as before, kept as plain HTML */}
         <div className="flex items-center gap-4 text-xs text-muted-foreground whitespace-nowrap">
           {segs.map((s) => (
             <div key={s.key} className="flex items-center gap-1.5">
@@ -78,7 +97,7 @@ export const TaskProgressBar = memo(function TaskProgressBar({
             </div>
           ))}
           <div className="flex items-center gap-1.5 border-l border-border pl-4">
-            <span>总计</span>
+            <span>{totalLabel}</span>
             <span className="font-medium tabular-nums">{total}</span>
           </div>
         </div>

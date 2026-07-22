@@ -49,7 +49,7 @@ export function useTaskLogs(taskId: string | null, taskStatus: string | undefine
   return useQuery<LogEntry[]>({
     queryKey: ['task-logs', taskId],
     queryFn: async () => {
-      const res = await api.getLogs(undefined, taskId ?? undefined)
+      const res = await api.getLogs(taskId ? { task_id: taskId } : undefined)
       return res.data ?? []
     },
     enabled,

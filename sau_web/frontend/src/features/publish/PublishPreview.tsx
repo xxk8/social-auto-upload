@@ -1,15 +1,10 @@
+import type { FormPreviewData } from './previewTypes'
 import { memo } from 'react'
 import { motion } from 'motion/react'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui/index'
 import { Eye, FileText, Image, Video } from 'lucide-react'
 
-export type FormPreviewData = {
-  title: string
-  desc: string
-  tags: string
-  fileUrls: string[]
-  fileType: 'video' | 'image' | null
-}
+export type { FormPreviewData } from './previewTypes'
 
 type PublishPreviewProps = {
   mode: 'video' | 'note'
@@ -19,8 +14,8 @@ type PublishPreviewProps = {
 const hasContent = (d: FormPreviewData) =>
   d.title || d.desc || d.tags || d.fileUrls.length > 0
 
-const tagList = (tags: string) =>
-  tags
+const tagList = (tags: string | string[] | undefined | null) =>
+  (Array.isArray(tags) ? tags.join(",") : tags || "")
     .split(/[,，]/)
     .map((t) => t.trim().replace(/^#/, ''))
     .filter(Boolean)

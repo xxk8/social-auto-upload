@@ -1,35 +1,6 @@
-import { PLATFORMS } from '../../api/client'
+/* eslint-disable react-refresh/only-export-components */
 import type { ReactNode } from 'react'
-
-/**
- * Per-platform tag-count limits (XHS caps at 10; most others at 5).
- * Used to cap the TagInput and to surface a contextual hint.
- */
-export const PLATFORM_TAG_LIMITS: Record<string, number | undefined> = {
-  xiaohongshu: 10,
-  bilibili: 5,
-  baijiahao: 5,
-  douyin: 5,
-  kuaishou: 5,
-  tencent: 5,
-  tiktok: 5,
-}
-
-export function effectiveMaxTags(platforms: string[]): number | undefined {
-  const limits = platforms
-    .map((p) => PLATFORM_TAG_LIMITS[p])
-    .filter((l): l is number => l !== undefined)
-  if (limits.length === 0) return undefined
-  return Math.min(...limits)
-}
-
-export function platformTagLabel(platforms: string[]): string {
-  const limit = effectiveMaxTags(platforms)
-  if (limit === undefined) return '无限制'
-  const matched = platforms.find((p) => PLATFORM_TAG_LIMITS[p] === limit)
-  const label = matched ? PLATFORMS.find((p) => p.value === matched)?.label || matched : ''
-  return label ? `${label}最多 ${limit} 个` : `最多 ${limit} 个`
-}
+export { effectiveMaxTags, platformTagLabel, formatTaskId } from './shared.helpers'
 
 /**
  * Render an icon-equipped section header used inside publishing cards.
@@ -39,6 +10,12 @@ export function platformTagLabel(platforms: string[]): string {
  * The badge color is the unified `--primary` token; per-section overrides
  * were removed as part of the `feat(ui): unify brand colors` cleanup so
  * the design vocabulary has exactly one accent.
+ *
+ * OPT-follow-up-3-sweep-2: this is the only remaining top-level export
+ * from `publish/shared.tsx`. The four callable helpers
+ * (`PLATFORM_TAG_LIMITS`, `effectiveMaxTags`, `platformTagLabel`,
+ * `formatTaskId`) moved to `publish/shared.helpers.ts` so the
+ * `react-refresh/only-export-components` rule is inviolate.
  */
 export function SectionHeader({
   icon,
@@ -55,16 +32,4 @@ export function SectionHeader({
       <span className="text-sm font-semibold">{title}</span>
     </div>
   )
-}
-
-/**
- * Used by PublishOverview to compactly render recently submitted task IDs.
- * Long IDs are shortened to the last 10 chars preceded by an ellipsis.
- *
- * Note: this is the publish-specific simple-elide form. The cross-page
- * hyphen-aware compactor is `shortenId` in `@/lib/features`.
- */
-export function formatTaskId(value?: string): string {
-  if (!value) return '-'
-  return value.length > 14 ? `...${value.slice(-10)}` : value
 }

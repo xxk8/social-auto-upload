@@ -24,6 +24,7 @@ export function CreateGroupDialog() {
   const dispatch = useAccountsDispatch()
 
   const [touched, setTouched] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (state.createDialogOpen) setTouched(false)
   }, [state.createDialogOpen])

@@ -26,6 +26,7 @@ export function GroupRenameDialog() {
   const dispatch = useAccountsDispatch()
 
   const [newName, setNewName] = useState(state.renameDialogCurrentName)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (state.renameDialogOpen) setNewName(state.renameDialogCurrentName)
   }, [state.renameDialogOpen, state.renameDialogCurrentName])
@@ -46,8 +47,10 @@ export function GroupRenameDialog() {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <Label>新名称</Label>
+          <Label htmlFor="group-rename-name">新名称</Label>
           <Input
+            id="group-rename-name"
+            name="name"
             placeholder="例如：主账号、工作号"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}

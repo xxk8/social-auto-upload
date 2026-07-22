@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, render, renderHook } from '@testing-library/react'
-import { makeQueryClient, TestProviders } from '@/test/render-harness'
+import { TestProviders } from '@/test/render-harness'
+import { makeQueryClient } from '@/test/render-harness.helpers'
 import type { AccountGroup } from '@/api/client'
 
 // ── stable mock data refs (avoid infinite loops from new-array-on-every-call) ──
@@ -11,7 +12,12 @@ let _currentMockData: AccountGroup[] = _defaultGroups
 // ── mocks (must precede under-test imports) ─────────────────────────────
 
 vi.mock('@/components/ui/toast', () => ({
+  ToastProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useToast: () => ({ addToast: vi.fn() }),
+}))
+
+vi.mock('@dnd-kit/react', () => ({
+  useDragDropMonitor: () => {},
 }))
 
 vi.mock('@/hooks/useAccountGroups', () => ({
@@ -44,6 +50,10 @@ vi.mock('@/hooks/useAccountGroups', () => ({
     mutate: vi.fn().mockResolvedValue({ success: true }),
     isPending: false,
   }),
+  useMoveAuthorization: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({ success: true }),
+    isPending: false,
+  }),
 }))
 
 vi.mock('@/api/client', () => ({
@@ -68,9 +78,8 @@ vi.mock('@/api/client', () => ({
 
 // ── imports (post-mock) ────────────────────────────────────────────────
 
-import { AccountsProvider, useAccountsState, useAccountsDispatch, validateGroupName } from './AccountsProvider'
-
-// ── helpers: render context hooks inside AccountsProvider ───────────────
+import {AccountsProvider} from './AccountsProvider';
+import {useAccountsState, useAccountsDispatch, validateGroupName} from './AccountsProvider.helpers';// ── helpers: render context hooks inside AccountsProvider ───────────────
 
 /**
  * Render a combined hook that returns both state and dispatch from the
@@ -259,6 +268,42 @@ describe('AccountsProvider — state updates', () => {
     expect(result.current.state.selectedGroupId).toBe(7)
     expect(result.current.state.selectedPlatform).toBe('')
     expect(result.current.state.authorizeDialogOpen).toBe(true)
+  })
+
+  it('handleReauthorize pre-sets selectedGroupId + selectedPlatform + opens loginModalOpen (TBF-027)', () => {
+    // TBF-027 — re-scan / re-authorize menu item in
+    // SortableAuthorizationItem. The handler is invoked from the
+    // "重新扫码" / "重新登录" DropdownMenuItem and must pre-set both
+    // selectedGroupId AND selectedPlatform (so DialogHost can open
+    // LoginProgressModal directly, skipping the platform-picker
+    // dialog). Same state-transitions contract as handleStartAuthorize
+    // above, but for the re-scan path.
+    //
+    // Note: this test belongs here (not in
+    // SortableAuthorizationItem.test.tsx) because the dispatch +
+    // state pair must share the same provider instance for the
+    // assertion to see the state update. `renderHook` (used here)
+    // provides that shared instance; a separate `DispatchProbe`
+    // consumer in a component-level test (as previously attempted)
+    // triggered a JS heap-out-of-memory crash from the
+    // useEffect+onReady dep churn. See TBF-027 postmortem in
+    // docs/bug-tickets/test-app-bugfix-tickets-2026q3.md.
+    const { result } = renderCombined()
+
+    act(() => {
+      result.current.dispatch.handleReauthorize(42, 'douyin')
+    })
+    expect(result.current.state.selectedGroupId).toBe(42)
+    expect(result.current.state.selectedPlatform).toBe('douyin')
+    expect(result.current.state.loginModalOpen).toBe(true)
+    // Negative invariant — the load-bearing difference from
+    // handleStartAuthorize above. Re-scan SKIPS the platform-picker
+    // dialog (it goes straight to LoginProgressModal), so the
+    // authorize dialog must remain closed. Without this assertion,
+    // a regression that swaps setLoginModalOpen for
+    // setAuthorizeDialogOpen inside handleReauthorize would still
+    // pass the three positive assertions above.
+    expect(result.current.state.authorizeDialogOpen).toBe(false)
   })
 
   it('handleCreateGroup creates a group via mutation (dialog open → create → close)', async () => {
