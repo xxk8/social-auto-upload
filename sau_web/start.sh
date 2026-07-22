@@ -69,9 +69,11 @@ kill_port 5174
 echo "[start] backend -> http://localhost:6001"
 cd "$ROOT"
 export SAU_CORS_ALLOWED_ORIGINS="${SAU_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174}"
+# Local web shell: skip SMTP email login; /api/auth/me returns synthetic admin.
+export SAU_AUTH_ENABLED="${SAU_AUTH_ENABLED:-false}"
 "$PYTHON" run.py > "$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
-echo "[start] backend pid=$BACKEND_PID"
+echo "[start] backend pid=$BACKEND_PID (SAU_AUTH_ENABLED=$SAU_AUTH_ENABLED)"
 
 # 5) 启动前端
 echo "[start] frontend -> http://localhost:5174"

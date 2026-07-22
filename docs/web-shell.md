@@ -22,16 +22,39 @@ Browser → Vite :5174 (dev) / Flask static (prod)
 
 ## 本地 Web Shell 模式（默认）
 
-本仓库 Python 后端是**单机 CLI 壳**（账号/上传/任务/日志/AI），**没有**多用户 `/api/auth/*`。
+本仓库是**单机 CLI + 可视化壳**：前端 TanStack Router SPA，后端 Flask `web_runner`（SQLite）。
 
-- 默认 `VITE_SAU_LOCAL_SHELL` 开启：前端注入本地操作员，不强制 `/login`。
-- 侧栏恢复历史完整导航；**已对接 Flask** 的页面：账号、发布、任务、日志、AI。
-- Inbox / Crawl / Studio / Admin / 日历等页面 UI 已恢复，但对应 `/api` 若未在 `web_runner` 实现会空态或报错——需后续补 Python 接口。
+### 鉴权
 
-关闭本地模式（接真实鉴权后端时）：
+| 变量 | 默认 | 含义 |
+|------|------|------|
+| `SAU_AUTH_ENABLED` | `false` | `false`：`/api/auth/me` 返回本地合成 admin，不强制登录 |
+| `VITE_SAU_LOCAL_SHELL` | 开启 | 前端跳过 SaaS AuthGuard；设 `0` 才走多用户登录 |
+
+### 已对齐 Flask 的 API 面（与前端 `src/api/*` 对应）
+
+| 域 | 主要路径 | 说明 |
+|----|----------|------|
+| Auth | `/api/auth/*` | 本地合成用户 / 可选真登录 |
+| 账号 | `/api/accounts*`、`/api/account-groups*` | 平台 cookie 登录 |
+| 上传 | `/api/upload/video`、`/note` | 调 CLI |
+| 任务/日志 | `/api/tasks*`、`/api/logs` | SQLite 任务队列 |
+| AI | `/api/ai/*` | OpenRouter 等 |
+| 日历 | `/api/calendar/tasks` | 任务按日聚合 |
+| 下载中心 | `/api/inbox/*` | yt-dlp 下载到 `videos/inbox` |
+| 采集 | `/api/crawl/*` | 入队 + `crawler.run_crawl` 写 SQLite；浏览器真爬设 `SAU_CRAWLER_LIVE=1` |
+| 剧本工坊 | `/api/studio/*` | SQLite 项目 CRUD |
+| 分析 | `/api/analytics/*` | 任务统计 |
+| 模板 | `/api/templates*` | 发布模板 |
+| 许可证/配额 | `/api/license/*`、`/api/usage/quota` | 本地不限额 stub |
+
+启动：
 
 ```bash
-export VITE_SAU_LOCAL_SHELL=0
+export SAU_CORS_ALLOWED_ORIGINS="http://localhost:5174"
+export SAU_AUTH_ENABLED=false   # 默认已是 false
+python web_runner.py
+cd sau_web/frontend && npm run dev
 ```
 
 ## 快速启动
