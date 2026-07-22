@@ -220,7 +220,7 @@ function FloatingLogs() {
 
     const fetchLogs = async (): Promise<void> => {
       try {
-        const res = await api.getLogs(latestTsRef.current || undefined)
+        const res = await api.getLogs(latestTsRef.current ? { after: latestTsRef.current } : undefined)
       setLogs((prev) => {
         // Merge new logs with existing ones
         const map = new Map(prev.map((item) => [item.ts, item]))

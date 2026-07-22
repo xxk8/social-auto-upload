@@ -24,6 +24,32 @@ const SheetOverlay = React.forwardRef<
 ))
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
+// ── `sheetVariants` — cva() recipe driving <SheetContent>'s `side` prop ────
+//
+// `sheetVariants` is the cva() recipe for <SheetContent>'s `side`
+// prop. It is intentionally module-local — NOT re-exported from this
+// file — because exporting it triggers
+// `react-refresh/only-export-components`, AND because downstream code
+// should wrap <SheetContent> (with a `side` prop) rather than paste
+// sheet class strings around the codebase.
+//
+// Fork-from-stale rationale: a feature-local cva() clone forks from a
+// recipe readers can't import, so they can't grep against the
+// source-of-truth when `sheet.tsx` tunes — drift is invisible until
+// it bites. The same invariant that motivated button.tsx / badge.tsx
+// / alert.tsx applies here.
+//
+// Same pattern as `button.tsx` (buttonVariants), `badge.tsx`
+// (badgeVariants), `alert.tsx` (alertVariants). The four together
+// form the verified "module-local cva" set; DESIGN-components.md
+// `cross-cutting.sweep-status` tracks this list as the canonical
+// reference.
+//
+// Type-side escape hatch (NOT deprecated): consumers that need the
+// `side` type union can index `SheetContentProps['side']` directly via
+// the inferred `VariantProps<typeof sheetVariants>` in
+// `SheetContentProps`. Like `ButtonProps`, the cva() callable is
+// what's gated; the prop literal is public.
 const sheetVariants = cva(
   "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out",
   {

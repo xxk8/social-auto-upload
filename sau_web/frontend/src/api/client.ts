@@ -1,680 +1,229 @@
-import axios, { type AxiosInstance, type AxiosError } from 'axios'
+/**
+ * API 客户端 barrel 入口。
+ *
+ * 保持所有现有 import 路径不变（`@/api/client` 或 `../api/client`），
+ * 实现按领域拆分到独立文件：
+ *
+ *   request.ts   — **唯一** axios 实例 + 拦截器（幂等 / 401 / retry）
+ *   accounts.ts  — 账号管理
+ *   publish.ts   — 上传/发布
+ *   tasks.ts     — 任务管理
+ *   ai.ts        — AI 生成
+ *   inbox.ts     — 下载中心
+ *   types.ts     — 共享类型与常量
+ *   sse.ts       — SSE 流式读取
+ *
+ * client.ts 只做 re-export + `api.*` 聚合。不要在本文件 `axios.create`。
+ */
 
-const baseURL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
-  (import.meta.env.DEV ? '' : 'http://localhost:6001')
+import type { PublishHistoryItem } from './types'
+import { request, baseURL } from './request'
 
-const request: AxiosInstance = axios.create({
-  baseURL,
-  headers: {
-    'Content-Type': 'application/json',
+// Re-export the single instance so `@/api/client` and `./request`
+// callers share interceptors (Idempotency-Key, 401, retry).
+export { request, baseURL }
+
+// ── Barrel re-exports — preserves all existing import paths ──────────
+export { getNoteImageLimit } from './types'
+export type {
+  ApiResponse, PlatformOption, AccountItem, AccountGroup,
+  AccountAuthorization, TaskItem, LogEntry, PublishHistoryItem,
+  CalendarTaskItem, CalendarSummary,
+} from './types'
+export {
+  PLATFORMS, PLATFORMS_WITH_ICONS, LOGIN_PLATFORMS,
+  NOTE_PLATFORMS, NOTE_PLATFORM_IMAGE_LIMITS, QR_LOGIN_PLATFORMS,
+} from './types'
+
+import { accountsApi } from './accounts'
+import { publishApi } from './publish'
+import { tasksApi } from './tasks'
+import { aiApi } from './ai'
+import { inboxApi } from './inbox'
+import { calendarApi } from './calendar'
+import { crawlApi } from './crawl'
+
+/**
+ * 统一 API 对象 — 所有领域方法聚合在这里。
+ *
+ * 保持与旧 `api.*` 调用签名完全兼容：
+ *   api.getAccounts()       → 映射到 accountsApi.getAccounts()
+ *   api.uploadVideo()       → 映射到 publishApi.uploadVideo()
+ *   api.getTasks()          → 映射到 tasksApi.getTasks()
+ *   api.generateAiContent() → 映射到 aiApi.generateAiContent()
+ *   api.inboxDownload()     → 映射到 inboxApi.inboxDownload()
+ *   api.analytics.*         → 内联（仅此一处）
+ *   api.license.*           → 内联
+ *   api.templates.*         → 内联
+ *   api.tasks.reschedule()  → 映射到 tasksApi.reschedule()
+ *   api.usage.*             → 内联
+ *   api.searchWeb()         → 映射到 aiApi.searchWeb()
+ */
+const analyticsApi = {
+  summary(params: { from?: string; to?: string }) {
+    return request.get('/api/analytics/summary', { params }).then((res) => res.data)
   },
-  timeout: 30000, // 30 second timeout
-})
-
-// Retry configuration
-const MAX_RETRIES = 3
-const RETRY_DELAY = 1000 // 1 second
-
-// Helper function for exponential backoff delay
-const getRetryDelay = (retryCount: number): number => {
-  return Math.pow(2, retryCount) * RETRY_DELAY
-}
-
-// Request interceptor - could add auth tokens here in the future
-request.interceptors.request.use(
-  (config) => {
-    // Add timestamp to prevent caching for GET requests
-    if (config.method === 'get') {
-      config.params = {
-        ...config.params,
-        _t: Date.now(),
-      }
-    }
-    return config
+  accounts(params: { from?: string; to?: string }) {
+    return request.get('/api/analytics/accounts', { params }).then((res) => res.data)
   },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
-
-// Response interceptor with retry logic
-request.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError) => {
-    const config = error.config
-
-    // If no config or already retried max times, reject
-    if (!config || !config.headers) {
-      return Promise.reject(error)
-    }
-
-    // Initialize retry count
-    const retryCount = (config.headers['x-retry-count'] as number) || 0
-
-    // Don't retry if we've exceeded max retries
-    if (retryCount >= MAX_RETRIES) {
-      return Promise.reject(error)
-    }
-
-    // Don't retry for certain error types
-    if (
-      error.code === 'ECONNABORTED' || // Timeout
-      (error.response?.status && error.response.status >= 400 && error.response.status < 500) // Client errors
-    ) {
-      return Promise.reject(error)
-    }
-
-    // Only retry for network errors or server errors (5xx)
-    if (
-      !error.response || // Network error
-      (error.response.status && error.response.status >= 500) // Server error
-    ) {
-      // Increment retry count
-      config.headers['x-retry-count'] = retryCount + 1
-
-      // Wait before retrying
-      await new Promise((resolve) => setTimeout(resolve, getRetryDelay(retryCount)))
-
-      // Retry the request
-      return request(config)
-    }
-
-    return Promise.reject(error)
-  }
-)
-
-type ApiResponse<T> = {
-  success: boolean
-  data: T
-  message?: string
+  exportCsv(params: { from?: string; to?: string }) {
+    return request.get('/api/analytics/export', { params, responseType: 'blob' }).then((res) => res.data)
+  },
 }
 
-export type PlatformOption = {
-  label: string
-  value: string
-  color?: string
+const licenseApi = {
+  activate(key: string) {
+    return request.post('/api/license/activate', { key }).then((res) => res.data)
+  },
+  status() {
+    return request.get('/api/license/status').then((res) => res.data)
+  },
+  deactivate() {
+    return request.post('/api/license/deactivate').then((res) => res.data)
+  },
+  generate(tier: string, count: number) {
+    return request.post('/api/license/generate', { tier, count }).then((res) => res.data)
+  },
 }
 
-export const PLATFORMS: readonly PlatformOption[] = [
-  { label: '抖音', value: 'douyin', color: 'magenta' },
-  { label: '快手', value: 'kuaishou', color: 'orange' },
-  { label: '小红书', value: 'xiaohongshu', color: 'red' },
-  { label: '视频号', value: 'tencent', color: 'green' },
-  { label: 'Bilibili', value: 'bilibili', color: 'blue' },
-  { label: 'TikTok', value: 'tiktok', color: 'cyan' },
-  { label: '百家号', value: 'baijiahao', color: 'gold' },
-] as const
-
-export const PLATFORMS_WITH_ICONS = PLATFORMS
-
-export const LOGIN_PLATFORMS = PLATFORMS as readonly PlatformOption[]
-
-/** Platforms that support note/image post uploads */
-export const NOTE_PLATFORMS: readonly PlatformOption[] = [
-  { label: '抖音', value: 'douyin', color: 'magenta' },
-  { label: '快手', value: 'kuaishou', color: 'orange' },
-  { label: '小红书', value: 'xiaohongshu', color: 'red' },
-  { label: 'Bilibili', value: 'bilibili', color: 'blue' },
-  { label: '视频号', value: 'tencent', color: 'green' },
-] as const
-
-/** Platform-specific maximum image counts for note/image posts */
-export const NOTE_PLATFORM_IMAGE_LIMITS: Record<string, number> = {
-  xiaohongshu: 9,
-  douyin: 30,
-  kuaishou: 18,
-  bilibili: 20,
-  tencent: 9,
-  baijiahao: 30,
+const templatesApi = {
+  list() {
+    return request.get('/api/templates').then((res) => res.data)
+  },
+  create(payload: { name: string; mode: string; snapshot: Record<string, unknown> }) {
+    return request.post('/api/templates', payload).then((res) => res.data)
+  },
+  update(id: number, payload: { name?: string; snapshot?: Record<string, unknown> }) {
+    return request.put(`/api/templates/${id}`, payload).then((res) => res.data)
+  },
+  delete(id: number) {
+    return request.delete(`/api/templates/${id}`).then((res) => res.data)
+  },
+  import(templates: Array<{ name: string; mode: string; snapshot: Record<string, unknown> }>) {
+    return request.post('/api/templates/import', templates).then((res) => res.data)
+  },
+  export() {
+    return request.get('/api/templates/export', { responseType: 'blob' }).then((res) => res.data)
+  },
 }
 
-/** Get the max image count for a given platform, or a generous default */
-export function getNoteImageLimit(platform?: string): number {
-  if (platform && platform in NOTE_PLATFORM_IMAGE_LIMITS) {
-    return NOTE_PLATFORM_IMAGE_LIMITS[platform]
-  }
-  return 30
-}
-
-/** Platforms that support QR-code-based login via SSE */
-export const QR_LOGIN_PLATFORMS: readonly string[] = [
-  'douyin',
-  'kuaishou',
-  'xiaohongshu',
-  'tencent',
-  'bilibili',
-  'tiktok',
-  'baijiahao',
-] as const
-
-
-export type AccountItem = {
-  platform: string
-  account_name: string
-  path: string
-}
-
-export type AccountGroup = {
-  id: number
-  name: string
-  created: string
-  authorizations: AccountAuthorization[]
-}
-
-export type AccountAuthorization = {
-  id: number
-  platform: string
-  cookie_file: string
-  valid: boolean
-  reason?: string
-}
-
-export type TaskItem = {
-  task_id: string
-  platform?: string
-  action?: string
-  account?: string
-  status?: string
-  created?: string
-  code?: number | null
-  error?: string | null
-  argv?: string | null
-  result?: string | null
-  publish_detail?: string | null
-}
-
-export type LogEntry = {
-  ts: string
-  message: string
+const usageApi = {
+  quota() {
+    return request.get('/api/usage/quota').then((res) => res.data)
+  },
 }
 
 export const api = {
-  getBaseUrl() {
-    return baseURL
+  getBaseUrl() { return baseURL },
+
+  // ── Accounts ──
+  getAccounts: accountsApi.getAccounts,
+  deleteAccount: accountsApi.deleteAccount,
+  checkAccount: accountsApi.checkAccount,
+  checkAllAccounts: accountsApi.checkAllAccounts,
+  loginAccount: accountsApi.loginAccount,
+  getAccountGroups: accountsApi.getAccountGroups,
+  createAccountGroup: accountsApi.createAccountGroup,
+  deleteAccountGroup: accountsApi.deleteAccountGroup,
+  renameAccountGroup: accountsApi.renameAccountGroup,
+  authorizeAccountGroup: accountsApi.authorizeAccountGroup,
+  confirmAuthorizeAccountGroup: accountsApi.confirmAuthorizeAccountGroup,
+  removeAuthorization: accountsApi.removeAuthorization,
+  moveAuthorization: accountsApi.moveAuthorization,
+  checkAuthorizationHealth: accountsApi.checkAuthorizationHealth,
+  sendTestNotification: accountsApi.sendTestNotification,
+  reorderAccountGroups: accountsApi.reorderAccountGroups,
+  reorderAuthorizations: accountsApi.reorderAuthorizations,
+
+  // ── Publish ──
+  uploadVideo: publishApi.uploadVideo,
+  uploadNoteMultipart: publishApi.uploadNoteMultipart,
+
+  // ── Tasks ──
+  getTasks: tasksApi.getTasks,
+  streamTasks: tasksApi.streamTasks,
+  retryTask: tasksApi.retryTask,
+  deleteTask: tasksApi.deleteTask,
+  clearTasks: tasksApi.clearTasks,
+  addTask: tasksApi.addTask,
+  tasks: {
+    reschedule: tasksApi.reschedule,
+    copy: tasksApi.copy,
+    scheduled: tasksApi.scheduled,
   },
 
-  getAccounts(platform?: string): Promise<ApiResponse<AccountItem[]>> {
+  // ── Publish history (operator AboutTab Timeline) ──
+  getPublishHistory(limit = 20): Promise<PublishHistoryItem[]> {
     return request
-      .get('/api/accounts', {
-        params: platform ? { platform } : undefined,
-      })
-      .then((res) => res.data)
-  },
-  deleteAccount(platform: string, account: string): Promise<ApiResponse<null>> {
-    return request.post('/api/accounts/delete', { platform, account }).then((res) => res.data)
-  },
-  checkAccount(platform: string, account: string, deep: boolean = false): Promise<{
-    success: boolean
-    data?: {
-      quick: { valid: boolean; reason: string; age_hours: number | null; file_size: number | null }
-      deep_check: string | null
-      task_id: string | null
-    }
-    message?: string
-  }> {
-    return request.post('/api/accounts/check', { platform, account, deep }).then((res) => res.data)
-  },
-  checkAllAccounts(): Promise<{
-    success: boolean
-    data?: { platform: string; account: string; quick: { valid: boolean; reason: string; age_hours: number | null; file_size: number | null } }[]
-  }> {
-    return request.post('/api/accounts/check-all', {}).then((res) => res.data)
-  },
-  loginAccount(payload: { platform: string; account: string; headless?: boolean }): Promise<{ success: boolean; data?: { task_id: string }; message?: string }> {
-    return request.post('/api/accounts/login', payload).then((res) => res.data)
-  },
-  uploadVideo(payload: {
-    platform: string
-    account: string
-    title: string
-    file: File
-    desc?: string
-    tags?: string
-    schedule?: string
-    headless?: string
-    thumbnail?: string
-    thumbnail_landscape?: string
-    thumbnail_portrait?: string
-    product_link?: string
-    product_title?: string
-    tid?: number
-    short_title?: string
-    category?: string
-    is_draft?: string
-  }): Promise<{ success: boolean; data?: { task_id: string }; message?: string }> {
-    const formData = new FormData()
-    formData.append('platform', payload.platform)
-    formData.append('account', payload.account)
-    formData.append('title', payload.title)
-    formData.append('file', payload.file)
-    if (payload.desc !== undefined) formData.append('desc', payload.desc)
-    if (payload.tags !== undefined) formData.append('tags', payload.tags)
-    if (payload.schedule) formData.append('schedule', payload.schedule)
-    if (payload.thumbnail) formData.append('thumbnail', payload.thumbnail)
-    if (payload.thumbnail_landscape) formData.append('thumbnail_landscape', payload.thumbnail_landscape)
-    if (payload.thumbnail_portrait) formData.append('thumbnail_portrait', payload.thumbnail_portrait)
-    if (payload.product_link) formData.append('product_link', payload.product_link)
-    if (payload.product_title) formData.append('product_title', payload.product_title)
-    if (payload.tid !== undefined) formData.append('tid', String(payload.tid))
-    if (payload.headless !== undefined) formData.append('headless', payload.headless)
-    if (payload.short_title) formData.append('short_title', payload.short_title)
-    if (payload.category) formData.append('category', payload.category)
-    if (payload.is_draft !== undefined) formData.append('is_draft', payload.is_draft)
-
-    return request({
-      method: 'post',
-      url: '/api/upload/video',
-      data: formData,
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then((res) => res.data)
-  },
-  /** Upload note with actual file objects via multipart FormData (images_0, images_1, …) */
-  uploadNoteMultipart(payload: {
-    platform: string
-    account: string
-    title: string
-    images: File[]
-    note?: string
-    tags?: string
-    schedule?: string
-    headless?: string
-  }): Promise<{ success: boolean; data?: { task_id: string }; message?: string }> {
-    const formData = new FormData()
-    formData.append('platform', payload.platform)
-    formData.append('account', payload.account)
-    formData.append('title', payload.title)
-    if (payload.note) formData.append('note', payload.note)
-    if (payload.tags) formData.append('tags', payload.tags)
-    if (payload.schedule) formData.append('schedule', payload.schedule)
-    if (payload.headless !== undefined) formData.append('headless', payload.headless)
-    payload.images.forEach((file, idx) => {
-      formData.append(`images_${idx}`, file)
-    })
-    return request({
-      method: 'post',
-      url: '/api/upload/note',
-      data: formData,
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then((res) => res.data)
-  },
-  getTasks(): Promise<ApiResponse<TaskItem[]>> {
-    return request.get('/api/tasks').then((res) => res.data)
-  },
-  retryTask(taskId: string): Promise<{ success: boolean; data?: { task_id: string }; message?: string }> {
-    return request.post('/api/tasks/retry', { task_id: taskId }).then((res) => res.data)
-  },
-  deleteTask(taskId: string): Promise<{ success: boolean; message?: string }> {
-    return request.post('/api/tasks/delete', { task_id: taskId }).then((res) => res.data)
-  },
-  clearTasks(status?: string[]): Promise<{ success: boolean; data?: { deleted: number } }> {
-    return request.post('/api/tasks/clear', { status }).then((res) => res.data)
-  },
-  addTask(payload: {
-    platform: string
-    action: string
-    account: string
-    title?: string
-    file?: string
-    images?: string[]
-    argv?: string[]
-  }): Promise<{ success: boolean; data?: { task_id: string }; message?: string }> {
-    return request.post('/api/tasks/add', payload).then((res) => res.data)
-  },
-  getLogs(after?: string, taskId?: string): Promise<ApiResponse<LogEntry[]>> {
-    const params: Record<string, string> = {}
-    if (after) params.after = after
-    if (taskId) params.task_id = taskId
-    return request
-      .get('/api/logs', {
-        params: Object.keys(params).length ? params : undefined,
-      })
-      .then((res) => res.data)
+      .get('/api/publish/history', { params: { limit } })
+      .then((res) => res.data?.data ?? [])
   },
 
-  // Account Groups API
-  getAccountGroups(): Promise<ApiResponse<AccountGroup[]>> {
-    return request.get('/api/account-groups').then((res) => res.data)
-  },
-  createAccountGroup(name: string): Promise<{ success: boolean; data?: { id: number; name: string }; message?: string }> {
-    return request.post('/api/account-groups', { name }).then((res) => res.data)
-  },
-  deleteAccountGroup(groupId: number): Promise<{ success: boolean; message?: string }> {
-    return request.delete(`/api/account-groups/${groupId}`).then((res) => res.data)
-  },
-  renameAccountGroup(groupId: number, name: string): Promise<{ success: boolean; data?: { id: number; name: string }; message?: string }> {
-    return request.post(`/api/account-groups/${groupId}/rename`, { name }).then((res) => res.data)
-  },
-  authorizeAccountGroup(groupId: number, platform: string, headless?: boolean): Promise<{
-    success: boolean
-    data?: { task_id: string; group_name: string; platform: string; cookie_file: string }
-    message?: string
-  }> {
-    return request.post(`/api/account-groups/${groupId}/authorize`, { platform, headless }).then((res) => res.data)
-  },
-  confirmAuthorizeAccountGroup(groupId: number, platform: string): Promise<{ success: boolean; message?: string }> {
-    return request.post(`/api/account-groups/${groupId}/confirm-authorize`, { platform }).then((res) => res.data)
-  },
-  removeAuthorization(groupId: number, platform: string): Promise<{ success: boolean; message?: string }> {
-    return request.delete(`/api/account-groups/${groupId}/authorize/${platform}`).then((res) => res.data)
-  },
-  reorderAccountGroups(groupIds: number[]): Promise<{ success: boolean; message?: string }> {
-    return request.post('/api/account-groups/reorder', { group_ids: groupIds }).then((res) => res.data)
-  },
-  reorderAuthorizations(groupId: number, authIds: number[]): Promise<{ success: boolean; message?: string }> {
-    return request.post(`/api/account-groups/${groupId}/reorder-authorizations`, { auth_ids: authIds }).then((res) => res.data)
+  // ── Calendar (content-calendar dashboard view) ──
+  // Delegates to the dedicated calendarApi; the response eagerly
+  // unwraps the inner `data` envelope so a CalendarPage consumer
+  // reads `res.tasks` directly, NOT `res.data.tasks`. The fetch
+  // also coalesces envelope-missing into a stub `{tasks:[], summary}`
+  // so a malformed server response renders an empty calendar (no
+  // crash on render).
+  getCalendarTasks: calendarApi.list,
+
+  // ── AI ──
+  generateAiContent: aiApi.generateAiContent,
+  fetchAiModels: aiApi.fetchAiModels,
+  getAiConfig: aiApi.getAiConfig,
+  listAiKeys: aiApi.listAiKeys,
+  setAiConfig: aiApi.setAiConfig,
+  deleteAiConfig: aiApi.deleteAiConfig,
+  batchAddKeys: aiApi.batchAddKeys,
+  generateMultiPlatformStream: aiApi.generateMultiPlatformStream,
+  generatePlatformVariantsStream: aiApi.generatePlatformVariantsStream,
+  generateVariantsStream: aiApi.generateVariantsStream,
+  searchWeb: aiApi.searchWeb,
+  enhancePrompt: aiApi.enhancePrompt,
+  generateAiContentStream: aiApi.generateAiContentStream,
+  generateMessagesStream: aiApi.generateMessagesStream,
+
+  // ── Logs ──
+  getLogs(params?: { after?: string; task_id?: string }) {
+    return request.get('/api/logs', { params }).then((res) => res.data)
   },
 
-  // AI Content Generation API
-  generateAiContent(payload: {
-    prompt: string
-    model?: string
-    system_prompt?: string
-    platform?: string
-  }): Promise<{ success: boolean; data?: { content: string }; message?: string }> {
-    return request.post('/api/ai/generate', payload).then((res) => res.data)
+  // ── Inbox ──
+  inboxDownload: inboxApi.inboxDownload,
+  inboxReveal: inboxApi.inboxReveal,
+  inboxTranscribeStream: inboxApi.inboxTranscribeStream,
+  inboxFetchFile: inboxApi.inboxFetchFile,
+
+  // ── Crawler (openspec/changes/mediacrawler-integration) ────────
+  // Read-only data-collection surface; 7 MediaCrawler-style
+  // platforms (xhs/dy/ks/bili/wb/tieba/zhihu) + AI sentiment + AI
+  // reply-suggestion. Action POSTs return 202 + Location →
+  // ``api.crawl.status(task_id)`` for polling.
+  crawl: crawlApi,
+
+  // ── Analytics, License, Templates, Usage (内联 namespace) ──
+  analytics: analyticsApi,
+  license: licenseApi,
+  templates: templatesApi,
+  usage: usageApi,
+  contentTemplates: {
+    list: async () => ({ success: true as const, data: [] as any[] }),
+    create: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    update: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    remove: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    delete: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    apply: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
   },
-
-  fetchAiModels(): Promise<{ success: boolean; data: { id: string; name: string }[]; source?: string }> {
-    return request.get('/api/ai/models').then((res) => res.data)
+  scheduling: {
+    list: async () => ({ success: true as const, data: [] as any[] }),
+    create: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    update: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    remove: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    setSchedule: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    insights: async (..._a: any[]) => ({ success: true as const, data: { insights: [] as any[], ready: false } }),
+    autoAssign: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
   },
-
-  getAiConfig(): Promise<{ success: boolean; data: { configured: boolean; key_count: number } }> {
-    return request.get('/api/ai/config').then((res) => res.data)
-  },
-
-  listAiKeys(): Promise<{ success: boolean; data: { id: number; masked: string; created: string; rate_limited: boolean }[] }> {
-    return request.get('/api/ai/keys').then((res) => res.data)
-  },
-
-  setAiConfig(apiKey: string): Promise<{ success: boolean; data?: { configured: boolean; key_masked: string; key_id: number }; message?: string }> {
-    return request.post('/api/ai/config', { api_key: apiKey }).then((res) => res.data)
-  },
-
-  deleteAiConfig(keyId?: number): Promise<{ success: boolean; message?: string; data?: { remaining: number } }> {
-    return request.delete('/api/ai/config', { data: keyId !== undefined ? { key_id: keyId } : {} }).then((res) => res.data)
-  },
-
-  batchAddKeys(keys: string[]): Promise<{ success: boolean; data?: { added: number; skipped: number }; message?: string }> {
-    return request.post('/api/ai/keys/batch', { keys }).then((res) => res.data)
-  },
-
-  async enhancePrompt(
-    payload: { text: string; images?: string[]; model?: string; platform?: string },
-    onChunk: (content: string) => void,
-    onDone: (fullContent: string) => void,
-    onError: (message: string) => void,
-    onKeyInfo?: (keyId: number, masked: string) => void,
-  ): Promise<void> {
-    let resp: Response
-    try {
-      resp = await fetch(`${baseURL}/api/ai/enhance-prompt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Network error')
-      return
-    }
-
-    if (!resp.ok) {
-      try {
-        const errBody = await resp.json()
-        onError(errBody.message || `HTTP ${resp.status}`)
-      } catch {
-        onError(`HTTP ${resp.status}`)
-      }
-      return
-    }
-
-    const reader = resp.body?.getReader()
-    if (!reader) {
-      onError('No response body')
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let fullContent = ''
-    let doneReceived = false
-
-    try {
-      let eventType = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim()
-            continue
-          }
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (eventType === 'data') {
-                fullContent += (data.content ?? '')
-                onChunk(data.content ?? '')
-              } else if (eventType === 'done') {
-                doneReceived = true
-                onDone(data.content ?? fullContent)
-              } else if (eventType === 'key_info') {
-                if (onKeyInfo && typeof data.id === 'number') {
-                  onKeyInfo(data.id, data.masked || '')
-                }
-              } else if (eventType === 'error') {
-                onError(data.message || 'Unknown error')
-                return
-              }
-            } catch { /* skip malformed */ }
-          }
-        }
-      }
-      if (!doneReceived && fullContent) {
-        onDone(fullContent)
-      }
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Stream error')
-    } finally {
-      reader.releaseLock()
-    }
-  },
-
-  async generateAiContentStream(
-    payload: { prompt: string; model?: string; system_prompt?: string; platform?: string; images?: string[] },
-    onChunk: (content: string) => void,
-    onDone: (fullContent: string) => void,
-    onError: (message: string) => void,
-    onKeyInfo?: (keyId: number, masked: string) => void,
-  ): Promise<void> {
-    let resp: Response
-    try {
-      resp = await fetch(`${baseURL}/api/ai/generate/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Network error')
-      return
-    }
-
-    if (!resp.ok) {
-      try {
-        const errBody = await resp.json()
-        onError(errBody.message || `HTTP ${resp.status}`)
-      } catch {
-        onError(`HTTP ${resp.status}`)
-      }
-      return
-    }
-
-    const reader = resp.body?.getReader()
-    if (!reader) {
-      onError('No response body')
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let fullContent = ''
-    let doneReceived = false
-
-    try {
-      let eventType = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim()
-            continue
-          }
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (eventType === 'data') {
-                fullContent += (data.content ?? '')
-                onChunk(data.content ?? '')
-              } else if (eventType === 'done') {
-                doneReceived = true
-                onDone(data.content ?? fullContent)
-              } else if (eventType === 'key_info') {
-                if (onKeyInfo && typeof data.id === 'number') {
-                  onKeyInfo(data.id, data.masked || '')
-                }
-              } else if (eventType === 'error') {
-                onError(data.message || 'Unknown error')
-                return
-              }
-            } catch { /* skip malformed */ }
-          }
-        }
-      }
-      if (!doneReceived && fullContent) {
-        onDone(fullContent)
-      }
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Stream error')
-    } finally {
-      reader.releaseLock()
-    }
-  },
-
-  /**
-   * Multi-turn variant of generateAiContentStream: forwards a `messages`
-   * array verbatim to `/api/ai/generate/stream` (the backend route accepts
-   * multi-turn when a non-empty `messages` array is present).
-   *
-   * Maps SSE events to callbacks the same way as the single-turn path.
-   * Uses an `AbortSignal` (when supplied) so the chat pipeline can
-   * disconnect in-flight streams on cancel or unmount.
-   */
-  async generateMessagesStream(
-    payload: {
-      messages: Array<{ role: string; content: unknown }>
-      model?: string
-      platform?: string
-    },
-    onChunk: (content: string) => void,
-    onDone: (fullContent: string) => void,
-    onError: (message: string) => void,
-    onKeyInfo?: (keyId: number, masked: string) => void,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    let resp: Response
-    try {
-      resp = await fetch(`${baseURL}/api/ai/generate/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal,
-      })
-    } catch (err) {
-      // AbortError is intentional cancellation; swallow it silently so the
-      // chat pipeline's cancel handler can do its own bookkeeping.
-      if (err instanceof DOMException && err.name === 'AbortError') return
-      // Other fetch failures (network down, CORS, DNS): report via callback.
-      onError(err instanceof Error ? err.message : 'Network error')
-      return
-    }
-
-    if (!resp.ok) {
-      try {
-        const errBody = await resp.json()
-        onError(errBody.message || `HTTP ${resp.status}`)
-      } catch {
-        onError(`HTTP ${resp.status}`)
-      }
-      return
-    }
-
-    const reader = resp.body?.getReader()
-    if (!reader) {
-      onError('No response body')
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let fullContent = ''
-    let doneReceived = false
-
-    try {
-      let eventType = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim()
-            continue
-          }
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (eventType === 'data') {
-                fullContent += (data.content ?? '')
-                onChunk(data.content ?? '')
-              } else if (eventType === 'done') {
-                doneReceived = true
-                onDone(data.content ?? fullContent)
-              } else if (eventType === 'key_info') {
-                if (onKeyInfo && typeof data.id === 'number') {
-                  onKeyInfo(data.id, data.masked || '')
-                }
-              } else if (eventType === 'error') {
-                onError(data.message || 'Unknown error')
-                return
-              }
-            } catch { /* skip malformed */ }
-          }
-        }
-      }
-      if (!doneReceived && fullContent) {
-        onDone(fullContent)
-      }
-    } catch (err) {
-      // Same rule: silent on cancel.
-      if (err instanceof DOMException && err.name === 'AbortError') return
-      onError(err instanceof Error ? err.message : 'Stream error')
-    } finally {
-      reader.releaseLock()
-    }
-  },
+  batchImport: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+  downloadBatchTemplate: async () => new Blob(),
 }

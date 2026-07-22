@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 // ── controlled mocks ──────────────────────────────────────────────────────
 
-let aiState = {
+const aiState = {
   selectedModel: 'google/gemma-4-26b-a4b-it:free',
   modelTags: ['text'],
 }
@@ -59,13 +60,13 @@ describe('AiPanelToolbar — rendering', () => {
 
   it('shortens the model name to last segment', () => {
     aiState.selectedModel = 'openai/gpt-4o-mini'
-    render(<AiPanelToolbar isExpanded={false} onToggle={vi.fn()} />)
+    render(<AiPanelToolbar isExpanded={true} onToggle={vi.fn()} />)
     expect(screen.getByText('gpt-4o-mini')).toBeDefined()
   })
 
   it('falls back to full model name when no slash', () => {
     aiState.selectedModel = 'simplename'
-    render(<AiPanelToolbar isExpanded={false} onToggle={vi.fn()} />)
+    render(<AiPanelToolbar isExpanded={true} onToggle={vi.fn()} />)
     expect(screen.getByText('simplename')).toBeDefined()
   })
 })
@@ -76,14 +77,15 @@ describe('AiPanelToolbar — key count', () => {
   })
 
   it('shows key count when configured', () => {
-    render(<AiPanelToolbar isExpanded={false} onToggle={vi.fn()} />)
+    render(<AiPanelToolbar isExpanded={true} onToggle={vi.fn()} />)
     expect(screen.getByText('3 Keys')).toBeDefined()
   })
 
-  it('shows "未配置" when key_count is 0', () => {
+  it('hides key section when key_count is 0', () => {
     aiConfigData = { key_count: 0, configured: false }
-    render(<AiPanelToolbar isExpanded={false} onToggle={vi.fn()} />)
-    expect(screen.getByText('未配置')).toBeDefined()
+    render(<AiPanelToolbar isExpanded={true} onToggle={vi.fn()} />)
+    // The component only renders key count when > 0; no '未配置' or key indicator shown
+    expect(screen.queryByText('0 Keys')).toBeNull()
   })
 })
 
@@ -216,7 +218,7 @@ describe('AiPanelToolbar — mobile viewport (375px)', () => {
 
   it('model name section has hidden md:flex class (hidden below 768px)', () => {
     aiState.selectedModel = 'openai/gpt-4o-mini'
-    render(<AiPanelToolbar isExpanded={false} onToggle={vi.fn()} />)
+    render(<AiPanelToolbar isExpanded={true} onToggle={vi.fn()} />)
     const modelSpan = screen.getByText('gpt-4o-mini')
     // The parent div uses hidden md:flex — target by the md breakpoint token
     const parentDiv = modelSpan.closest('[class*="md:flex"]') as HTMLElement

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useRouter } from '@tanstack/react-router'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,19 +76,16 @@ export default function TasksPage() {
     title: '',
   })
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const [searchParams, setSearchParams] = useSearchParams()
+  const router = useRouter()
   useEffect(() => {
-    const focusId = searchParams.get('focus')
+    const focusId = (router.state.location.search as Record<string, string>)?.focus
     if (!focusId) return
     if (tasks.length === 0) return
     if (tasks.some((t) => t.task_id === focusId)) {
-      const id = focusId
-      requestAnimationFrame(() => setDrawerTaskId(id))
+      requestAnimationFrame(() => setDrawerTaskId(focusId))
     }
-    const next = new URLSearchParams(searchParams)
-    next.delete('focus')
-    setSearchParams(next, { replace: true })
-  }, [searchParams, tasks, setSearchParams])
+    router.navigate({ to: '/dashboard/tasks', search: { focus: undefined }, replace: true })
+  }, [router.state.location.search, tasks])
   const filtered = useMemo(() => {
     const kw = debouncedKeyword.trim().toLowerCase()
     return tasks
@@ -113,7 +110,7 @@ export default function TasksPage() {
     return map
   }, [tasks])
   const chipOptions = useMemo(
-    () => STATUS_CHIPS.map((c) => ({ ...c, count: counts[c.value] ?? 0 })),
+    () => STATUS_CHIPS.map((c) => ({ value: c.value, label: (c as any).label ?? (c as any).labelFallback ?? c.value, count: counts[c.value] ?? 0, icon: (c as any).icon, variant: (c as any).variant as any })),
     [counts],
   )
   const refresh = useCallback(async () => {
@@ -244,7 +241,7 @@ export default function TasksPage() {
       await runWithConcurrency(
         targets,
         BATCH_CONCURRENCY,
-        async (t) => {
+        async (t: TaskItem) => {
           try {
             const res = await callApi(t)
             return { taskId: t.task_id, success: res.success, message: res.message, status: t.status }
@@ -257,7 +254,7 @@ export default function TasksPage() {
             }
           }
         },
-        (_idx, result) => {
+        (_idx: number, result: BatchResultItem) => {
           setBatchProgress((prev) =>
             prev ? { ...prev, current: prev.current + 1, results: [...prev.results, result] } : prev,
           )

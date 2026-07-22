@@ -2,33 +2,58 @@ import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 're
 import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 import { toneRingClass, toneTextClass } from '@/lib/tone'
-
-function normalizeTag(raw: string): string {
-  const cleaned = raw.trim().replace(/^#+/, '').replace(/,/g, '')
-  return cleaned ? `#${cleaned}` : ''
-}
-
-function parseTags(value: string): string[] {
-  return value
-    .split(',')
-    .map((t) => normalizeTag(t))
-    .filter(Boolean)
-}
-
-function tagText(tag: string): string {
-  return tag.replace(/^#+/, '')
-}
+import { normalizeTag, tagText } from '@/lib/tags'
 
 interface TagInputProps {
-  value: string
-  onChange: (value: string) => void
+  /**
+   * Canonical `#tag` array. Path C: native `string[]` everywhere inside
+   * the wizard; the wire-format string only exists at the HTTP boundary
+   * (`api.uploadVideo({ tags })`) and is constructed via
+   * `lib/tags::serializeTags` at the call site.
+   *
+   * Reference equality matters: callers SHOULD pass down the store's
+   * `s.content.tags` directly so subscribers don't trigger on
+   * unrelated field changes (the canonical Zustand selector pattern).
+   */
+  value: string[]
+  onChange: (tags: string[]) => void
   placeholder?: string
   maxLength?: number
   maxTags?: number
   className?: string
   disabled?: boolean
+  /** See the component JSDoc below for the `<Label htmlFor>` pairing contract. */
+  id?: string
 }
 
+/**
+ * TagInput — chip + typing-input combo.
+ *
+ * **Accessibility contract (a11y)**
+ * Callers that pair this component with a `<Label htmlFor>` MUST pass
+ * the SAME `id` so screen readers and Playwright `getByLabel` both
+ * resolve the form association. Skipping the `id` while rendering a
+ * sibling `<Label htmlFor>` is the silent regression this contract was
+ * added to catch — the label becomes orphaned and the field falls back
+ * to a positional announcement. Conversely, omit `id` when
+ * no `<Label>` pairs this control.
+ *
+ * Internally:
+ * - chips render as deletable `<span>` elements with a remove-X button
+ * - the trailing typing `<input>` accepts comma / `Enter` to add new chips
+ * - paste of comma-/hash-separated tokens is batched
+ * - the `id` is forwarded onto the typing-target `<input>` — NOT onto
+ *   the chip-token spans (those expose their own remove-button text)
+ *
+ * Tag count: when `maxTags` is set, a small `<span>` underneath shows
+ * the counter; counter colour ramps at 80 % and turns error at 100 %.
+ *
+ * Path C refactor: `value` is `string[]` natively — no parse-→-join
+ * churn inside the component. `addTag / removeTag` push to / splice
+ * out of the array directly, then emit in `onChange`. Reference
+ * identity is preserved when the upstream caller passes the same
+ * array (e.g. `usePublishWizardStore((s) => s.content.tags)`).
+ */
 export function TagInput({
   value,
   onChange,
@@ -37,17 +62,11 @@ export function TagInput({
   maxTags,
   className,
   disabled,
+  id,
 }: TagInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [inputValue, setInputValue] = useState('')
-  const tags = parseTags(value)
-
-  const emitTags = useCallback(
-    (next: string[]) => {
-      onChange(next.join(','))
-    },
-    [onChange],
-  )
+  const tags = value
 
   const isAtLimit = maxTags !== undefined && tags.length >= maxTags
 
@@ -60,17 +79,16 @@ export function TagInput({
       if (text.length > maxLength) return
       const existingTexts = tags.map(tagText)
       if (existingTexts.includes(text)) return
-      emitTags([...tags, normalized])
+      onChange([...tags, normalized])
     },
-    [tags, emitTags, maxLength, maxTags],
+    [tags, onChange, maxLength, maxTags],
   )
 
   const removeTag = useCallback(
     (index: number) => {
-      const next = tags.filter((_, i) => i !== index)
-      emitTags(next)
+      onChange(tags.filter((_, i) => i !== index))
     },
-    [tags, emitTags],
+    [tags, onChange],
   )
 
   const handleKeyDown = useCallback(
@@ -109,14 +127,15 @@ export function TagInput({
             remaining--
           }
         }
-        emitTags(next)
+        onChange(next)
       }
     },
-    [tags, emitTags, maxLength, maxTags],
+    [tags, onChange, maxLength, maxTags],
   )
 
   // Sync external value changes (reset input on clear)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!value) setInputValue('')
   }, [value])
 
@@ -155,13 +174,14 @@ export function TagInput({
             key={tag}
             className={cn(
               'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
-              'bg-primary/10 text-primary',
+              'bg-primary/15 text-primary border border-primary/20',
             )}
           >
             <span>{tag}</span>
             {!disabled && (
               <button
                 type="button"
+                aria-label={`移除标签 ${tagText(tag)}`}
                 className="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-primary/20 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation()
@@ -175,6 +195,7 @@ export function TagInput({
         ))}
         <input
           ref={inputRef}
+          id={id}
           type="text"
           className="min-w-[80px] flex-1 border-none bg-transparent py-0.5 text-sm outline-none placeholder:text-muted-foreground"
           placeholder={isAtLimit ? '已达标签上限' : tags.length === 0 ? placeholder : ''}
@@ -188,7 +209,7 @@ export function TagInput({
       </div>
       {maxTags !== undefined && (
         <div className="flex justify-end mt-1">
-          <span className={cn('text-xs tabular-nums', tagCountColor)}>
+          <span className={cn('text-xs tabular-nums transition-colors duration-200', tagCountColor)}>
             {tags.length}/{maxTags}
           </span>
         </div>

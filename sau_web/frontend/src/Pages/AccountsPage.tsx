@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageHeader } from '@/components/ui/page-header'
@@ -38,8 +38,8 @@ function AccountsShell() {
     () => void dispatch.handleCheckAllStatus(),
     [dispatch],
   )
-  const handleOpenTasks = useCallback(() => navigate('/tasks'), [navigate])
-  const handleOpenPublish = useCallback(() => navigate('/publish'), [navigate])
+  const handleOpenTasks = useCallback(() => navigate({ to: '/dashboard/tasks', search: { focus: undefined } }), [navigate])
+  const handleOpenPublish = useCallback(() => navigate({ to: '/dashboard/publish' }), [navigate])
 
   return (
     <div className="space-y-5 p-6">

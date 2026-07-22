@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { Search } from 'lucide-react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { useTasks } from '@/hooks/useTasks'
+import { ROUTES } from '@/routes'
 import { cn } from '@/lib/utils'
 import { toneChipClasses, type Tone } from '@/lib/tone'
 
@@ -96,7 +97,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const goToTasks = (taskId: string) => {
     onOpenChange(false)
     // Encode the focus param so TasksPage can match and auto-open that row's drawer.
-    navigate(`/tasks?focus=${encodeURIComponent(taskId)}`)
+    navigate({ to: `${ROUTES.dashboard.tasks}?focus=${encodeURIComponent(taskId)}` as never })
   }
 
   return (

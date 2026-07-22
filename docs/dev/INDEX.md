@@ -46,7 +46,8 @@ You're planning a PR. You want to know **what not to redo**, **what trade-offs w
 | [VALUE-UPGRADE](VALUE-UPGRADE.md) | Quick-win product-value uplift proposals (confetti, brand color, content preview) — pick low-effort-high-perceived-value PRs here |
 | [skill-distribution](skill-distribution.md) | How Claude skills get distributed (PyPI vs. standalone repo vs. Docker); read before adding a new skill to `skills/` |
 | [sau-recovery-tmp-2026](sau-recovery-tmp-2026.md) | `/tmp/sau_recovery/` backup contents from round-OPT-3F-e2e cleanup (malformed-parser drafts); read before discarding the recovery dir |
-| [08-toast-context-case-mismatch](second-batch-tickets/08-toast-context-case-mismatch.md) | `/` 路由 500 的 `useToast must be used within a ToastProvider` 根因 — `app/routes/__root.tsx` (PR #5 引入的 TanStack Router 根布局) 用 lowercase `@/components/...` import，与代码库 canonical `@/Components/...` 不一致，造成 `toast.helpers.ts` 被加载 2 次 → 2 个 `ToastContext` 实例 → context lookup 失败；fix = `sed s\|@/components/\|@/Components/\|g app/routes/__root.tsx` (2-4 行替换) |
+| [web-shell-architecture-lock](web-shell-architecture-lock.md) | **LOCKED**：Web Shell = TanStack Router SPA + Flask；不上 Start/SSR/`createServerFn`；axios 仅 `src/api/request.ts` 一实例 |
+| [08-toast-context-case-mismatch](second-batch-tickets/08-toast-context-case-mismatch.md) | 历史：`@/components` vs `@/Components` 双加载导致 ToastContext 分裂（casing 事故）；现行约定以小写 `components` + architecture-lock 为准 |
 
 If your PR is going to touch **anything** in the Web Shell publish surface, start at `optimization-checklist.md` (it groups by ID and tracks ✅/⏳ per item).
 
@@ -87,6 +88,7 @@ If you already know the document name and just want to know who reads it:
 | `hot-reload-philosophy.md` | — | ✅ | ✅ |
 | `optimization-checklist.md` | — | ✅ | — |
 | `FRONTEND-UI-UPGRADE.md` | — | ✅ | — |
+| `web-shell-architecture-lock.md` | — | ✅ | — |
 | `VALUE-UPGRADE.md` | — | ✅ | ✅ |
 | `VALUE-STRATEGY.md` | — | — | ✅ |
 | `skill-distribution.md` | — | ✅ | — |

@@ -1,9 +1,10 @@
-import { Link } from 'react-router-dom'
+import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Compass } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toneBgClass, toneTextClass } from '@/lib/tone'
 
+import { ROUTES } from '@/routes'
 // Linear DESIGN.md — 404 keeps the same empty-state grammar as the rest of
 // the app (centered icon chip in a status-info tint, neutral copy, primary
 // CTA) so a bad route doesn't fall back to bare HTML. The status-info
@@ -22,7 +23,7 @@ export function NotFound() {
         请检查 URL 是否正确，或返回首页继续操作。
       </p>
       <Button asChild className="mt-6">
-        <Link to="/">返回首页</Link>
+        <Link to={ROUTES.public.landing}>返回首页</Link>
       </Button>
     </div>
   )

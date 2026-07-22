@@ -1,36 +1,42 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-
-export type Theme = 'light' | 'dark' | 'system'
+/* eslint-disable react-refresh/only-export-components */
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { AccentHue, Theme } from './ThemeProvider.helpers'
+import { ThemeProviderContext } from './ThemeProvider.helpers'
+export { useTheme } from './ThemeProvider.helpers'
 
 type ThemeProviderProps = {
   children: React.ReactNode
   defaultTheme?: Theme
   storageKey?: string
+  accentStorageKey?: string
 }
 
-type ThemeProviderState = {
-  theme: Theme
-  resolved: 'light' | 'dark'
-  setTheme: (theme: Theme) => void
-}
-
-const initialState: ThemeProviderState = {
-  theme: 'system',
-  resolved: 'light',
-  setTheme: () => null,
-}
-
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
+// OPT-follow-up-3-sweep-2: `useTheme`, the `Theme` / `ThemeProviderState`
+// types, the `initialState` const, and the `ThemeProviderContext` object
+// moved to `./ThemeProvider.helpers.ts`. This file's only remaining
+// top-level export is the `ThemeProvider` React component; the imported
+// context wraps `children`.
 
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
   storageKey = 'sau-ui-theme',
+  accentStorageKey = 'sau-accent-hue',
   ...props
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(
     () => (typeof window !== 'undefined' ? (localStorage.getItem(storageKey) as Theme) || defaultTheme : defaultTheme),
   )
+
+  const [accentHue, setAccentHueState] = useState<AccentHue>(() => {
+    if (typeof window === 'undefined') return 145
+    const stored = localStorage.getItem(accentStorageKey)
+    if (stored) {
+      const n = Number(stored)
+      if ([15, 45, 145, 175, 240, 280].includes(n)) return n as AccentHue
+    }
+    return 145
+  })
 
   const [systemDark, setSystemDark] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -57,21 +63,30 @@ export function ThemeProvider({
     [storageKey],
   )
 
+  const setAccentHue = useCallback(
+    (h: AccentHue) => {
+      localStorage.setItem(accentStorageKey, String(h))
+      setAccentHueState(h)
+    },
+    [accentStorageKey],
+  )
+
   useEffect(() => {
     const root = document.documentElement
     root.classList.remove('light', 'dark')
     root.classList.add(resolved)
   }, [resolved])
 
+  // Sync --accent-hue CSS custom property to the :root element
+  useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--accent-hue', String(accentHue))
+  }, [accentHue])
+
   return (
-    <ThemeProviderContext.Provider {...props} value={{ theme, resolved, setTheme }}>
+    <ThemeProviderContext.Provider {...props} value={{ theme, resolved, setTheme, accentHue, setAccentHue }}>
       {children}
     </ThemeProviderContext.Provider>
   )
 }
 
-export const useTheme = () => {
-  const context = useContext(ThemeProviderContext)
-  if (context === undefined) throw new Error('useTheme must be used within a ThemeProvider')
-  return context
-}

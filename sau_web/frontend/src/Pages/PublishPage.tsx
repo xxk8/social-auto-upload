@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageHeader } from '@/components/ui/page-header'
@@ -41,7 +41,7 @@ export default function PublishPage() {
   const setSubmitSuccess = usePublishStore((s) => s.setSubmitSuccess)
 
   const [mode, setMode] = useState<'video' | 'note'>('video')
-  const [previewData, setPreviewData] = useState<FormPreviewData>({ title: '', desc: '', tags: '', fileUrls: [], fileType: null })
+  const [, setPreviewData] = useState<FormPreviewData>({ title: '', desc: '', tags: '', fileUrls: [], fileType: null })
   const [groupSelection, setGroupSelection] = useState<GroupSelection | null>(null)
 
   const videoFormRef = useRef<VideoFormHandle>(null)
@@ -61,12 +61,15 @@ export default function PublishPage() {
 
   const handleGoToTasks = useCallback(() => {
     if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current)
-    navigate('/tasks')
+    navigate({ to: '/dashboard/tasks', search: { focus: undefined } })
   }, [navigate])
 
   const scheduleNavigateAfterSubmit = useCallback(() => {
     if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current)
-    navigateTimerRef.current = setTimeout(() => navigate('/tasks'), 1500)
+    navigateTimerRef.current = setTimeout(
+      () => navigate({ to: '/dashboard/tasks', search: { focus: undefined } }),
+      1500,
+    )
   }, [navigate])
 
   const handleVideoSuccess = useCallback(
@@ -102,13 +105,6 @@ export default function PublishPage() {
     /* form already toasted */
   }, [])
 
-  const handleAiGenerated = useCallback(
-    (result: { title: string; desc: string; tags: string }) => {
-      if (mode === 'video') videoFormRef.current?.applyAiResult(result)
-      else noteFormRef.current?.applyAiResult(result)
-    },
-    [mode],
-  )
 
   const handleFormChange = useCallback((data: FormPreviewData) => {
     setPreviewData(data)
@@ -239,9 +235,6 @@ export default function PublishPage() {
             <PublishAiSidebar
               mode={mode}
               platform={groupSelection?.platforms[0] ?? ''}
-              onGenerated={handleAiGenerated}
-              previewMode={mode}
-              previewData={previewData}
               formRef={mode === 'video' ? videoFormRef : noteFormRef}
             />
           </div>
@@ -265,9 +258,6 @@ export default function PublishPage() {
         <PublishAiSidebar
           mode={mode}
           platform={groupSelection?.platforms[0] ?? ''}
-          onGenerated={handleAiGenerated}
-          previewMode={mode}
-          previewData={previewData}
           formRef={mode === 'video' ? videoFormRef : noteFormRef}
         />
       </MobileAiDrawer>

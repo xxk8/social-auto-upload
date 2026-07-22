@@ -63,7 +63,8 @@ export function ModelSelector() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium">AI 模型</Label>
+
+        <Label htmlFor="ai-model-select" className="text-sm font-medium">AI 模型</Label>
         <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
           {isRefetching ? (
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -76,7 +77,7 @@ export function ModelSelector() {
         </div>
       </div>
       <Select value={selectedModel} onValueChange={setSelectedModel} disabled={isLoading}>
-        <SelectTrigger className="w-full">
+        <SelectTrigger id="ai-model-select" className="w-full text-xs" aria-label="选择模型">
           <SelectValue placeholder={isLoading ? '加载模型列表...' : '选择模型'} />
         </SelectTrigger>
         <SelectContent>
