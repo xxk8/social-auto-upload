@@ -1,12 +1,25 @@
 """Analytics — aggregates from local SQLite ``tasks`` table.
 
-Front-end: ``api.analytics.*`` in ``client.ts``
+Front-end contract (``useAnalytics`` / charts):
+
+- ``GET /api/analytics/summary`` →
+  ``{ success, data: {
+      total, success, failed, today, prev_total, prev_success,
+      by_platform: { [platform]: { success, failed } },
+      by_day: [{ date, success, failed }, ...],
+      failure_reasons: [{ reason, count }, ...],
+  }}``
+
+- ``GET /api/analytics/accounts`` →
+  ``{ success, data: { accounts: [{ account, platform, total, success, failed, success_rate, last_active }] } }``
+
+- ``GET /api/analytics/export`` → CSV download
 """
 from __future__ import annotations
 
 import csv
 import io
-from collections import Counter
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from flask import Blueprint, Response, jsonify, request
@@ -20,48 +33,129 @@ def _parse_day(s: str | None, default: datetime) -> str:
     if not s:
         return default.strftime("%Y-%m-%d")
     try:
-        datetime.strptime(s[:10], "%Y-%m-%d")
-        return s[:10]
+        # Accept full ISO timestamps from the SPA (rangeToParams).
+        raw = s[:10]
+        datetime.strptime(raw, "%Y-%m-%d")
+        return raw
     except ValueError:
         return default.strftime("%Y-%m-%d")
+
+
+def _range_bounds() -> tuple[str, str]:
+    """Return inclusive-start / exclusive-end day bounds for SQL filters.
+
+    SPA ``rangeToParams`` sends ``to=now`` as the *inclusive* end of the
+    window. Our SQL uses ``created < end``, so a raw ``to`` of today would
+    drop every task dated today. When the client supplies ``to``, bump it
+    by one calendar day for the exclusive upper bound.
+    """
+    today = datetime.now()
+    start = _parse_day(request.args.get("from"), today - timedelta(days=30))
+    if request.args.get("to"):
+        end_day = _parse_day(request.args.get("to"), today)
+        end = (datetime.strptime(end_day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        end = _parse_day(None, today + timedelta(days=1))
+    return start, end
+
+
+def _is_success(status: str) -> bool:
+    return status in ("success", "done", "completed")
+
+
+def _is_failed(status: str) -> bool:
+    return status in ("failed", "error")
 
 
 @bp.get("/api/analytics/summary")
 def analytics_summary():
     today = datetime.now()
-    start = _parse_day(request.args.get("from"), today - timedelta(days=30))
-    end = _parse_day(request.args.get("to"), today + timedelta(days=1))
+    today_str = today.strftime("%Y-%m-%d")
+    start, end = _range_bounds()
+
+    # Previous window of equal length (for trend arrows).
+    try:
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.strptime(end, "%Y-%m-%d")
+        span = max((end_dt - start_dt).days, 1)
+    except ValueError:
+        start_dt = today - timedelta(days=30)
+        span = 30
+    prev_end = start
+    prev_start = (start_dt - timedelta(days=span)).strftime("%Y-%m-%d")
 
     with get_connection() as conn:
         conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
         rows = conn.execute(
-            "SELECT status, platform, created FROM tasks "
+            "SELECT status, platform, created, error FROM tasks "
             "WHERE substr(COALESCE(created,''),1,10) >= ? "
             "AND substr(COALESCE(created,''),1,10) < ?",
             (start, end),
         ).fetchall()
+        prev_rows = conn.execute(
+            "SELECT status FROM tasks "
+            "WHERE substr(COALESCE(created,''),1,10) >= ? "
+            "AND substr(COALESCE(created,''),1,10) < ?",
+            (prev_start, prev_end),
+        ).fetchall()
 
-    by_status: Counter[str] = Counter()
-    by_platform: Counter[str] = Counter()
-    by_day: Counter[str] = Counter()
-    for r in rows:
-        by_status[r.get("status") or "unknown"] += 1
-        by_platform[r.get("platform") or "unknown"] += 1
-        by_day[(r.get("created") or "")[:10]] += 1
-
+    by_platform: dict[str, dict[str, int]] = defaultdict(lambda: {"success": 0, "failed": 0})
+    by_day: dict[str, dict[str, int]] = defaultdict(lambda: {"success": 0, "failed": 0})
+    failure_reasons: dict[str, int] = defaultdict(int)
     total = len(rows)
-    success = by_status.get("success", 0)
+    success = 0
+    failed = 0
+    today_count = 0
+
+    for r in rows:
+        status = (r.get("status") or "").lower()
+        platform = r.get("platform") or "unknown"
+        day = (r.get("created") or "")[:10] or "unknown"
+        if day == today_str:
+            today_count += 1
+        if _is_success(status):
+            success += 1
+            by_platform[platform]["success"] += 1
+            by_day[day]["success"] += 1
+        elif _is_failed(status):
+            failed += 1
+            by_platform[platform]["failed"] += 1
+            by_day[day]["failed"] += 1
+            reason = (r.get("error") or "").strip() or "未知错误"
+            # Keep reason short for chart labels.
+            if len(reason) > 80:
+                reason = reason[:77] + "..."
+            failure_reasons[reason] += 1
+        else:
+            # pending/running/scheduled still contribute to platform volume as non-terminal
+            by_platform[platform]["success"] += 0
+            by_day[day]["success"] += 0
+
+    prev_total = len(prev_rows)
+    prev_success = sum(1 for r in prev_rows if _is_success((r.get("status") or "").lower()))
+
+    by_day_list = [
+        {"date": d, "success": v["success"], "failed": v["failed"]}
+        for d, v in sorted(by_day.items())
+        if d and d != "unknown"
+    ]
+    reasons_list = [
+        {"reason": reason, "count": count}
+        for reason, count in sorted(failure_reasons.items(), key=lambda x: -x[1])[:20]
+    ]
+
     return jsonify({
         "success": True,
         "data": {
             "total": total,
             "success": success,
-            "failed": by_status.get("failed", 0) + by_status.get("error", 0),
-            "pending": by_status.get("pending", 0) + by_status.get("running", 0),
-            "success_rate": (success / total) if total else 0,
-            "by_status": dict(by_status),
+            "failed": failed,
+            "today": today_count,
+            "prev_total": prev_total,
+            "prev_success": prev_success,
             "by_platform": dict(by_platform),
-            "by_day": dict(sorted(by_day.items())),
+            "by_day": by_day_list,
+            "failure_reasons": reasons_list,
             "from": start,
             "to": end,
         },
@@ -70,14 +164,13 @@ def analytics_summary():
 
 @bp.get("/api/analytics/accounts")
 def analytics_accounts():
-    today = datetime.now()
-    start = _parse_day(request.args.get("from"), today - timedelta(days=30))
-    end = _parse_day(request.args.get("to"), today + timedelta(days=1))
+    start, end = _range_bounds()
 
     with get_connection() as conn:
         conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
         rows = conn.execute(
-            "SELECT platform, account, status, COUNT(*) AS cnt FROM tasks "
+            "SELECT platform, account, status, COUNT(*) AS cnt, "
+            "MAX(created) AS last_active FROM tasks "
             "WHERE substr(COALESCE(created,''),1,10) >= ? "
             "AND substr(COALESCE(created,''),1,10) < ? "
             "GROUP BY platform, account, status",
@@ -93,23 +186,33 @@ def analytics_accounts():
             "total": 0,
             "success": 0,
             "failed": 0,
+            "last_active": "",
         })
         cnt = int(r.get("cnt") or 0)
-        status = r.get("status") or ""
+        status = (r.get("status") or "").lower()
         slot["total"] += cnt
-        if status == "success":
+        if _is_success(status):
             slot["success"] += cnt
-        elif status in ("failed", "error"):
+        elif _is_failed(status):
             slot["failed"] += cnt
+        la = r.get("last_active") or ""
+        if la > (slot.get("last_active") or ""):
+            slot["last_active"] = la
 
-    return jsonify({"success": True, "data": list(accounts.values())})
+    out = []
+    for slot in accounts.values():
+        total = slot["total"] or 0
+        slot["success_rate"] = round((slot["success"] / total) * 100, 1) if total else 0.0
+        out.append(slot)
+
+    out.sort(key=lambda x: (-x["total"], x["platform"], x["account"]))
+    # Nested under `accounts` for the SPA hook; also keep raw list for older clients.
+    return jsonify({"success": True, "data": {"accounts": out}})
 
 
 @bp.get("/api/analytics/export")
 def analytics_export():
-    today = datetime.now()
-    start = _parse_day(request.args.get("from"), today - timedelta(days=30))
-    end = _parse_day(request.args.get("to"), today + timedelta(days=1))
+    start, end = _range_bounds()
 
     with get_connection() as conn:
         conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
@@ -128,10 +231,10 @@ def analytics_export():
     )
     writer.writeheader()
     for r in rows:
-        writer.writerow(r)
-    data = buf.getvalue().encode("utf-8-sig")
+        writer.writerow({k: r.get(k, "") for k in writer.fieldnames})
+
     return Response(
-        data,
+        buf.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=analytics_{start}_{end}.csv"},
+        headers={"Content-Disposition": "attachment; filename=analytics-export.csv"},
     )

@@ -10,13 +10,14 @@ export function formatDay(iso: string): string {
 /** Per-day success rate (percentage) derived from `by_day`.
  *  Days with no tasks map to `null` so charts can skip them (no false 0). */
 export function computeSuccessRates(
-  byDay: AnalyticsSummary['by_day'],
+  byDay: AnalyticsSummary['by_day'] | null | undefined,
 ): Array<{ date: string; rate: number | null }> {
+  if (!Array.isArray(byDay)) return []
   return byDay.map((d) => {
-    const total = d.success + d.failed
+    const total = (d?.success ?? 0) + (d?.failed ?? 0)
     return {
-      date: formatDay(d.date),
-      rate: total > 0 ? Math.round((d.success / total) * 100 * 10) / 10 : null,
+      date: formatDay(d?.date ?? ''),
+      rate: total > 0 ? Math.round(((d.success ?? 0) / total) * 100 * 10) / 10 : null,
     }
   })
 }
