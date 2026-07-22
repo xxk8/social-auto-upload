@@ -150,7 +150,7 @@ async def _is_xhs_login_completed(page: Page) -> bool:
 
     try:
         return not await login_box.is_visible()
-    except Exception:
+    except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
         return True
 
 
@@ -184,12 +184,12 @@ async def cookie_auth(account_file):
                     if await login_box.is_visible():
                         xiaohongshu_logger.info(_msg("🥹", "页面仍然停留在登录二维码页，按 cookie 失效处理"))
                         return False
-                except Exception:
+                except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                     return False
 
             xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
             return True
-        except Exception as exc:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             xiaohongshu_logger.warning(_msg("😵", f"cookie 校验时出错，按失效处理: {exc}"))
             return False
         finally:
@@ -274,7 +274,7 @@ async def xiaohongshu_cookie_gen(
                 qrcode_info,
                 page.url,
             )
-        except Exception as exc:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             result = _build_login_result(False, "failed", str(exc), account_file, current_url=page.url if "page" in locals() else "")
         finally:
             if remove_qrcode_file(qrcode_path):
@@ -342,7 +342,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         await page.wait_for_timeout(2000)
         try:
             await page.wait_for_selector(dropdown_selector, timeout=3000)
-        except Exception:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             xiaohongshu_logger.warning(_msg("😵", "位置下拉列表没按预期出现，小人继续按旧逻辑查找"))
         await page.wait_for_timeout(1000)
         flexible_xpath = (
@@ -371,7 +371,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             await location_option.click()
             xiaohongshu_logger.success(_msg("🥳", f"位置已经设置成 {location}"))
             return True
-        except Exception as e:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
             xiaohongshu_logger.error(_msg("😢", f"设置位置失败: {e}"))
             try:
                 all_options = await page.query_selector_all(
@@ -384,7 +384,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 for i, option in enumerate(all_options[:3]):
                     option_text = await option.inner_text()
                     xiaohongshu_logger.debug(_msg("🧾", f"候选位置 {i + 1}: {option_text.strip()[:50]}"))
-            except Exception as inner_e:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as inner_e:
                 xiaohongshu_logger.debug(_msg("😵", f"读取位置候选列表失败: {inner_e}"))
             return False
 
@@ -432,7 +432,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 first_item = page.locator('#creator-editor-topic-container .item').first
                 await first_item.wait_for(state="visible", timeout=4000)
                 await first_item.click()
-            except Exception as exc:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
                 xiaohongshu_logger.warning(
                     _msg("🏷️", f"话题『{tag}』未出现候选，跳过该标签继续发布: {exc}")
                 )
@@ -464,7 +464,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 return
 
             xiaohongshu_logger.info(_msg("🧾", "未发现原创声明选项，跳过"))
-        except Exception as exc:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             xiaohongshu_logger.warning(_msg("⚠️", f"勾选原创声明时出错，跳过: {exc}"))
 
 
@@ -581,7 +581,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                         xiaohongshu_logger.success(_msg("🥳", "虽然没看到预览区，但标题框出来了，小人继续"))
                         break
                     xiaohongshu_logger.debug(_msg("🧍", "还没拿到预览区域，小人继续等一会"))
-            except Exception as e:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
                 xiaohongshu_logger.debug(_msg("😵", f"上传状态还没稳定下来，小人继续观察: {e}"))
             await asyncio.sleep(2)
 
@@ -609,7 +609,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                 )
                 xiaohongshu_logger.success(_msg("🥳", "视频发布成功，小人开心收工"))
                 break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布视频"))
                 if self.debug:
                     await page.screenshot(full_page=True)
@@ -708,7 +708,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
                 await title_container.wait_for(state="visible", timeout=3000)
                 xiaohongshu_logger.success(_msg("🥳", "图文素材已经传完，可以开始填写内容了"))
                 break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 xiaohongshu_logger.debug(_msg("🧍", "图文素材还在上传，小人继续等一会"))
                 await asyncio.sleep(1)
 
@@ -732,7 +732,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
                 )
                 xiaohongshu_logger.success(_msg("🥳", "图文发布成功，小人开心收工"))
                 break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布图文"))
                 if self.debug:
                     await page.screenshot(full_page=True)

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import inspect
 
 from patchright.async_api import Page
@@ -55,7 +57,7 @@ async def _check_login_markers(page: Page, markers: list[str]) -> bool:
             locator = page.get_by_text(text, exact=True).first
             if await locator.count() and await locator.is_visible():
                 return True
-        except Exception:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             continue
     return False
 
@@ -74,8 +76,8 @@ async def _all_login_markers_hidden(page: Page, markers: list[str]) -> bool:
                 try:
                     if await locator.is_visible():
                         return False
-                except Exception:
+                except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                     continue
-        except Exception:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             continue
     return True

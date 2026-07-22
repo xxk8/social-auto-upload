@@ -62,7 +62,7 @@ async def cookie_auth(account_file):
             await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
             try:
                 await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload", timeout=5000)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 return False
 
             if await page.get_by_text("手机号登录").count() or await page.get_by_text("扫码登录").count():
@@ -113,7 +113,7 @@ async def _save_douyin_qrcode(page: Page, account_file: str, previous_qrcode_pat
     # 提取二维码 src 仅为了保存/终端显示；定位不到时不致命——有头浏览器里二维码可见，直接扫码即可
     try:
         qrcode_src = await _extract_douyin_qrcode_src(page)
-    except Exception as exc:
+    except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
         douyin_logger.warning(_msg("😵", f"没定位到二维码元素（{str(exc)[:50]}）——请直接在弹出的浏览器里扫码，小人继续等登录跳转"))
         return {"image_path": "", "image_data_url": ""}
     qrcode_path = save_data_url_image(qrcode_src, build_login_qrcode_path(account_file))
@@ -152,7 +152,7 @@ async def _is_douyin_login_completed(page: Page) -> bool:
         try:
             if await marker.is_visible():
                 return False
-        except Exception:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             continue
 
     return True
@@ -217,7 +217,7 @@ async def douyin_cookie_gen(
                         qrcode_info,
                         page.url,
                     )
-        except Exception as exc:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             result = _build_login_result(False, "failed", str(exc), account_file, current_url=page.url if "page" in locals() else "")
         finally:
             if remove_qrcode_file(qrcode_path):
@@ -369,7 +369,7 @@ class DouYinBaseUploader(BaseVideoUploader):
 
             douyin_logger.debug(_msg("🥳", "商品链接设置好了"))
             return True
-        except Exception as e:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
             douyin_logger.error(_msg("😢", f"设置商品链接时出错: {str(e)}"))
             return False
 
@@ -399,7 +399,7 @@ class DouYinBaseUploader(BaseVideoUploader):
             await dialog.get_by_role("button", name="确定").click(timeout=6000)
             await dialog.wait_for(state="hidden", timeout=6000)
             douyin_logger.info(_msg("🧾", f"自主声明已选择「{declaration}」"))
-        except Exception as exc:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             douyin_logger.warning(_msg("🧾", f"自主声明设置失败，跳过该步骤继续发布：{exc}"))
 
     async def select_bgm(self, page: Page, bgm_name: str) -> bool:
@@ -425,7 +425,7 @@ class DouYinBaseUploader(BaseVideoUploader):
             first_card = sidesheet.locator(".card-container-tmocjc").first
             try:
                 await first_card.wait_for(state="visible", timeout=8000)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 douyin_logger.warning(_msg("🎵", f"音乐「{bgm_name}」搜索结果为空，小人跳过"))
                 await self._close_music_sidesheet(page)
                 return False
@@ -436,7 +436,7 @@ class DouYinBaseUploader(BaseVideoUploader):
                 if await song_name_el.count():
                     song_name = await song_name_el.inner_text()
                     douyin_logger.info(_msg("🎵", f"小人找到了: {song_name}"))
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 pass
 
             # JS 点击「使用」（按钮 visibility:hidden，普通 click 无效）
@@ -447,15 +447,15 @@ class DouYinBaseUploader(BaseVideoUploader):
             # 等待侧边栏关闭，超时则手动关闭
             try:
                 await sidesheet.wait_for(state="hidden", timeout=5000)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 await self._close_music_sidesheet(page)
 
             return True
-        except Exception as exc:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
             douyin_logger.warning(_msg("🎵", f"添加 BGM 时出错，跳过该步骤继续发布：{exc}"))
             try:
                 await self._close_music_sidesheet(page)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 pass
             return False
 
@@ -465,7 +465,7 @@ class DouYinBaseUploader(BaseVideoUploader):
             if await close_btn.count() and await close_btn.is_visible():
                 await close_btn.click()
                 await asyncio.sleep(1)
-        except Exception:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             pass
 
 
@@ -534,7 +534,7 @@ class DouYinVideo(DouYinBaseUploader):
                         await asyncio.sleep(1)
                     douyin_logger.info(_msg("🥳", "封面选择流程完成"))
                     return True
-                except Exception as e:
+                except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
                     douyin_logger.warning(_msg("😵", f"推荐封面没选成功: {e}"))
         return False
 
@@ -564,7 +564,7 @@ class DouYinVideo(DouYinBaseUploader):
             try:
                 await cover_locator.get_by_text("设置竖封面", exact=True).first.click(timeout=3000)
                 await page.wait_for_timeout(800)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 pass
             await cover_upload.set_input_files(self.thumbnail_portrait_path)
             await page.wait_for_timeout(3000)
@@ -573,7 +573,7 @@ class DouYinVideo(DouYinBaseUploader):
             try:
                 await cover_locator.get_by_text("设置横封面", exact=True).first.click(timeout=3000)
                 await page.wait_for_timeout(800)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 pass
             await cover_upload.set_input_files(self.thumbnail_landscape_path)
             await page.wait_for_timeout(3000)
@@ -613,7 +613,7 @@ class DouYinVideo(DouYinBaseUploader):
                 )
                 douyin_logger.info(_msg("🥳", "已经进入 version_1 发布页面"))
                 break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 try:
                     await page.wait_for_url(
                         "https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page",
@@ -621,7 +621,7 @@ class DouYinVideo(DouYinBaseUploader):
                     )
                     douyin_logger.info(_msg("🥳", "已经进入 version_2 发布页面"))
                     break
-                except Exception:
+                except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                     douyin_logger.debug(_msg("🧍", "还没进到视频发布页面，小人继续等一会"))
                     await asyncio.sleep(0.5)
 
@@ -641,7 +641,7 @@ class DouYinVideo(DouYinBaseUploader):
                 if await page.locator('div.progress-div > div:has-text("上传失败")').count():
                     douyin_logger.error(_msg("😵", "检测到上传失败，小人准备重试"))
                     await self.handle_upload_error(page)
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 douyin_logger.debug(_msg("🧍", "小人还在等视频上传完成"))
                 await asyncio.sleep(2)
 
@@ -677,7 +677,7 @@ class DouYinVideo(DouYinBaseUploader):
                 )
                 douyin_logger.success(_msg("🥳", "视频发布成功，小人开心收工"))
                 break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 await self.handle_auto_video_cover(page)
                 douyin_logger.info(_msg("🏃", "小人正在冲刺发布视频"))
                 if self.debug:
@@ -768,7 +768,7 @@ class DouYinNote(DouYinBaseUploader):
                 )
                 douyin_logger.info(_msg("🥳", "已经进入图文发布页面"))
                 break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 douyin_logger.debug(_msg("🧍", "小人还在等图片上传完成"))
                 await asyncio.sleep(0.5)
 
@@ -798,7 +798,7 @@ class DouYinNote(DouYinBaseUploader):
                 )
                 douyin_logger.success(_msg("🥳", "图文发布成功，小人开心收工"))
                 break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 douyin_logger.info(_msg("🏃", "小人正在冲刺发布图文"))
                 await asyncio.sleep(0.5)
 

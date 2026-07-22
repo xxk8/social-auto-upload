@@ -25,7 +25,7 @@ try:
     # 国内直连 youtube.com 会超时，且 patchright 启的 chromium 不吃系统代理。
     # 在 conf.py 设 YT_PROXY = "http://127.0.0.1:7890"（本地代理端口）即可；不设则不走代理。
     from conf import YT_PROXY
-except Exception:
+except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
     YT_PROXY = None
 
 STUDIO_URL = "https://studio.youtube.com"
@@ -61,7 +61,7 @@ async def cookie_auth(account_file) -> bool:
             if "accounts.google.com" in url or "/signin" in url.lower():
                 return False
             return "/channel/" in url
-        except Exception:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             return False
         finally:
             await browser.close()
@@ -114,14 +114,14 @@ async def _dismiss_autocomplete(page: Page):
     避免在没有浮层时误关掉整个上传对话框。"""
     try:
         await page.evaluate("() => { const a = document.activeElement; if (a && a.blur) a.blur(); }")
-    except Exception:
+    except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
         pass
     try:
         dropdown = page.locator("tp-yt-iron-dropdown:visible")
         if await dropdown.count() > 0:
             await page.keyboard.press("Escape")
             await page.wait_for_timeout(200)
-    except Exception:
+    except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
         pass
 
 
@@ -138,7 +138,7 @@ async def _fill_editable(page: Page, selector: str, text: str):
     await page.keyboard.press("Delete")
     try:
         await box.fill(text)            # 一次性灌入，不逐字触发 # 话题自动补全
-    except Exception:
+    except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
         await box.type(text, delay=6)   # 个别 contenteditable 不支持 fill 时退回逐字输入
     await page.wait_for_timeout(400)
     await _dismiss_autocomplete(page)   # 收尾关掉可能弹出的补全浮层
@@ -150,7 +150,7 @@ async def _click_if_present(page: Page, selector: str, timeout: int = 4000) -> b
         await el.wait_for(state="visible", timeout=timeout)
         await el.click()
         return True
-    except Exception:
+    except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
         return False
 
 
@@ -168,7 +168,7 @@ async def _wait_upload_complete(page: Page, max_polls: int = 360) -> bool:
                     txt = (await loc.inner_text()).strip()
                     if txt:
                         break
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 pass
         if txt:
             if any(k in txt for k in ("处理", "检查", "上传完成", "已上传", "Processing", "complete", "Checks", "Finished")):
@@ -241,7 +241,7 @@ class YouTubeVideo(BaseVideoUploader):
                 await thumb_input.set_input_files(self.thumbnail_path)
                 await page.wait_for_timeout(2000)
                 youtube_logger.info(_msg("🖼️", "封面已上传"))
-            except Exception as exc:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
                 youtube_logger.warning(_msg("⚠️", f"封面上传跳过（不影响发布）: {exc}"))
 
         # 6) 加入播放列表（连载/系列追更）。弹窗务必关闭，否则挡住后续步骤。
@@ -264,7 +264,7 @@ class YouTubeVideo(BaseVideoUploader):
                             await title_box.click()
                             await title_box.type(self.playlist, delay=6)
                             await _click_if_present(page, "ytcp-button#create-button, tp-yt-paper-dialog ytcp-button:has-text('Create'), tp-yt-paper-dialog ytcp-button:has-text('创建')", 4000)
-            except Exception as exc:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
                 youtube_logger.warning(_msg("⚠️", f"播放列表处理跳过（不影响发布）: {exc}"))
             finally:
                 await _click_if_present(page, "ytcp-playlist-dialog #save-button, ytcp-button:has-text('Done'), ytcp-button:has-text('完成')", 3000)
@@ -283,7 +283,7 @@ class YouTubeVideo(BaseVideoUploader):
                 tag_input = page.locator("#tags-container #text-input, ytcp-form-input-container#tags-container input").first
                 await tag_input.click()
                 await tag_input.type(",".join(self.tags)[:500] + ",", delay=4)
-            except Exception as exc:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
                 youtube_logger.warning(_msg("⚠️", f"标签填写跳过（不影响发布）: {exc}"))
 
         # 9) 连点 Next 到“可见性”步骤
@@ -315,7 +315,7 @@ class YouTubeVideo(BaseVideoUploader):
                 link = page.locator("a[href*='youtu.be'], a[href*='watch?v=']").first
                 if await link.count():
                     video_url = await link.get_attribute("href") or ""
-            except Exception:
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
                 pass
             await _click_if_present(page, "ytcp-button:has-text('Close'), ytcp-button:has-text('关闭'), #close-button", 8000)
             youtube_logger.success(_msg("🥳", f"发布完成（{self.visibility}）{(' ' + video_url) if video_url else ''}"))
@@ -323,7 +323,7 @@ class YouTubeVideo(BaseVideoUploader):
         # 刷新 cookie
         try:
             await context.storage_state(path=self.account_file)
-        except Exception:
+        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             pass
         await page.wait_for_timeout(2000)
         await browser.close()
