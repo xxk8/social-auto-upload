@@ -12,24 +12,26 @@ import pytest
 def client():
     """Build a Flask test client with isolated cookies dir; uses the real DB.
 
-    Each test purges its own ``error_events`` rows before and after so we don't
-    pollute the rest of the suite.
+    COOKIES_DIR override is applied BEFORE ``create_app()`` so cookie sync
+    walks the empty tmp dir, not the real cookies/ tree.
     """
-    import web_runner as wr
+    import web_runner.utils as wr_utils
+    from web_runner import create_app
 
-    wr.app.config["TESTING"] = True
     with tempfile.TemporaryDirectory() as tmp_dir:
-        orig_cookies_dir = wr.COOKIES_DIR
-        wr.COOKIES_DIR = Path(tmp_dir)
-        with wr.app.test_client() as c:
+        orig_cookies_dir = wr_utils.COOKIES_DIR
+        wr_utils.COOKIES_DIR = Path(tmp_dir)
+        application = create_app()
+        application.config["TESTING"] = True
+        with application.test_client() as c:
             yield c
-        wr.COOKIES_DIR = orig_cookies_dir
+        wr_utils.COOKIES_DIR = orig_cookies_dir
 
 
 def _purge_error_events() -> None:
-    import web_runner as wr
-    with wr.db_lock:
-        with sqlite3.connect(wr.DB_PATH) as conn:
+    from web_runner.db import DB_PATH, db_lock
+    with db_lock:
+        with sqlite3.connect(DB_PATH) as conn:
             conn.execute("DELETE FROM error_events")
             conn.commit()
 
@@ -42,7 +44,7 @@ class TestLogErrorEventHelper:
         _purge_error_events()
 
     def test_writes_exc_type_message_and_traceback(self) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         try:
             raise ValueError("programmer bug")
@@ -73,17 +75,18 @@ class TestLogErrorEventHelper:
         assert rows[0]["id"] > 0
 
     def test_truncates_oversized_traceback(self) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
-        def recurse(n: int) -> None:
-            if n == 0:
-                raise RuntimeError("bottom")
-            recurse(n - 1)
-
-        try:
-            recurse(80)
-        except RuntimeError as exc:
-            wr._log_error_event(phase="cli", exc=exc)
+        # Python 3.12+ compresses deep recursion ("Previous line repeated N times"),
+        # so force an oversized payload via the explicit ``tb`` argument instead.
+        huge_tb = "line\n" * 5000
+        assert len(huge_tb) > 8100
+        wr._log_error_event(
+            phase="cli",
+            exc_type="RuntimeError",
+            exc_message="bottom",
+            tb=huge_tb,
+        )
 
         rows = wr._db_get_error_events()
         assert len(rows) == 1
@@ -92,7 +95,7 @@ class TestLogErrorEventHelper:
         assert len(tb) <= 8100, f"traceback tail-cap broke (got {len(tb)})"
 
     def test_non_zero_exit_writes_synthetic_exc(self) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         wr._log_error_event(
             phase="cli",
@@ -121,7 +124,7 @@ class TestLogErrorEventHelper:
         assert row["traceback"] == "", "NonZeroExit (no live exc) must not invent traceback"
 
     def test_argv_captured_and_roundtrips(self) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         argv = ["douyin", "upload-video", "--account", "u", "--title", "hi"]
         wr._log_error_event(
@@ -132,7 +135,7 @@ class TestLogErrorEventHelper:
         assert json.loads(row["argv"]) == argv
 
     def test_filter_by_account_returns_only_rows(self) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         for acct in ("alice", "bob", "carol"):
             try:
@@ -146,7 +149,7 @@ class TestLogErrorEventHelper:
         assert "fail-alice" in alice_rows[0]["exc_message"]
 
     def test_filter_combination(self) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         wr._log_error_event(
             phase="cli", platform="douyin", account="x", action="login",
@@ -167,7 +170,7 @@ class TestLogErrorEventHelper:
         assert len(all_uploads) == 2
 
     def test_after_filter_excludes_old_rows(self) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         wr._log_error_event(phase="cli", exc_type="NonZeroExit", exc_message="x", status_code=1)
         far_future = "2099-01-01T00:00:00"
@@ -183,7 +186,7 @@ class TestErrorEventsApiRoute:
         _purge_error_events()
 
     def test_get_endpoint_returns_rows(self, client) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         try:
             raise OSError("transient I/O")
@@ -204,7 +207,7 @@ class TestErrorEventsApiRoute:
         assert entry["platform"] == "tk"
 
     def test_get_endpoint_filters_by_account_and_exc_type(self, client) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         wr._log_error_event(
             phase="cli", platform="douyin", account="alice-account",
@@ -226,7 +229,7 @@ class TestErrorEventsApiRoute:
         assert rows[0]["account"] == "bob-account"
 
     def test_get_endpoint_limit_offset(self, client) -> None:
-        import web_runner as wr
+        import web_runner.utils as wr
 
         for i in range(5):
             wr._log_error_event(

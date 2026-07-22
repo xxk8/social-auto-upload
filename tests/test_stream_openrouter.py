@@ -50,14 +50,14 @@ def _key_rows(*masked_ids):
 class TestStreamOpenRouterSuccess:
     """Normal 200 response with streamed content."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_200_streams_content_and_done(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"), (2, "sk-****ef01"))
         mock_next_key.return_value = "sk-key-1"
@@ -77,14 +77,14 @@ class TestStreamOpenRouterSuccess:
         assert events[-1][1]["content"] == "Hello world!"
         assert mock_mark.call_count == 0
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_empty_stream_returns_done_with_empty_content(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"
@@ -103,14 +103,14 @@ class TestStreamOpenRouterSuccess:
 class TestStreamOpenRouterRetryOn429:
     """429 rate-limit triggers key rotation."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_429_retries_with_next_key(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****aaaa"), (2, "sk-****bbbb"))
         mock_next_key.side_effect = ["sk-key-1", "sk-key-2"]
@@ -138,14 +138,14 @@ class TestStreamOpenRouterRetryOn429:
         assert events[-1][0] == "done"
         assert events[-1][1]["content"] == "ok"
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_multiple_429s_rotate_through_all_keys(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows(
             (1, "sk-****aa"), (2, "sk-****bb"), (3, "sk-****cc")
@@ -179,14 +179,14 @@ class TestStreamOpenRouterRetryOn429:
 class TestStreamOpenRouterKeyExhaustion:
     """All keys rate-limited — graceful error."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_all_keys_429_emits_exhaustion_error(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****aa"))
         mock_next_key.side_effect = ["sk-key-1"] * 2
@@ -204,14 +204,14 @@ class TestStreamOpenRouterKeyExhaustion:
         assert "All API keys rate-limited" in events[-1][1]["message"]
         assert mock_mark.call_count == 1  # only 1 key to mark
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_no_keys_available_emits_error(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = []  # empty pool
         mock_next_key.return_value = ""
@@ -229,14 +229,14 @@ class TestStreamOpenRouterKeyExhaustion:
 class TestStreamOpenRouterApiError:
     """Non-200, non-429 responses yield error events."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_500_emits_error_with_message(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"
@@ -256,14 +256,14 @@ class TestStreamOpenRouterApiError:
         assert "Internal server error" in events[1][1]["message"]
         assert mock_mark.call_count == 0
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_401_emits_error_with_status(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"
@@ -284,14 +284,14 @@ class TestStreamOpenRouterApiError:
 class TestStreamOpenRouterHttpException:
     """HTTP request-level exceptions yield error events."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_connection_error_emits_error(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"
@@ -312,14 +312,14 @@ class TestStreamOpenRouterHttpException:
 class TestStreamOpenRouterKeyInfo:
     """key_info SSE event contains correct key metadata."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_key_info_emitted_before_data(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((5, "sk-****zzzz"), (7, "sk-****yyyy"))
         mock_next_key.return_value = "sk-key-5"
@@ -334,14 +334,14 @@ class TestStreamOpenRouterKeyInfo:
         assert events[0][1] == {"id": 5, "masked": "sk-****zzzz"}
         assert events[1][0] == "data"
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_key_info_uses_first_matching_key(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         # Two keys with the same api_key — should match the first one
         mock_all_keys.return_value = _key_rows((99, "sk-****zz"), (100, "sk-****ww"))
@@ -359,14 +359,14 @@ class TestStreamOpenRouterKeyInfo:
 class TestStreamOpenRouterCustomParams:
     """max_tokens and temperature are passed through to the API call."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_model_param_passed_to_api(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"
@@ -381,14 +381,14 @@ class TestStreamOpenRouterCustomParams:
         assert call_kwargs["json"]["model"] == "custom/model-id"
         assert call_kwargs["json"]["messages"] == [{"role": "user", "content": "hi"}]
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_custom_max_tokens_and_temperature(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"
@@ -408,14 +408,14 @@ class TestStreamOpenRouterCustomParams:
         assert call_kwargs["json"]["max_tokens"] == 500
         assert call_kwargs["json"]["temperature"] == 0.3
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_default_max_tokens_and_temperature(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"
@@ -434,14 +434,14 @@ class TestStreamOpenRouterCustomParams:
 class TestStreamOpenRouterConnectTimeout:
     """Verify timeout=(10, 120) is used."""
 
-    @patch("web_runner._get_all_keys")
-    @patch("web_runner._get_next_key")
-    @patch("web_runner.http_requests.post")
-    @patch("web_runner._mark_rate_limited")
+    @patch("web_runner.routes.ai._get_all_keys")
+    @patch("web_runner.routes.ai._get_next_key")
+    @patch("web_runner.routes.ai.http_requests.post")
+    @patch("web_runner.routes.ai._mark_rate_limited")
     def test_connect_timeout_is_tuple(
         self, mock_mark, mock_post, mock_next_key, mock_all_keys
     ):
-        from web_runner import _stream_openrouter
+        from web_runner.routes.ai import _stream_openrouter
 
         mock_all_keys.return_value = _key_rows((1, "sk-****abcd"))
         mock_next_key.return_value = "sk-key-1"

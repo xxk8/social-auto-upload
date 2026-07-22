@@ -167,3 +167,33 @@ def login_account_sse():
         generate(), mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+@bp.get("/api/accounts/refresh-stale")
+def refresh_stale_accounts_sse():
+    """SSE placeholder — emits a single done event."""
+    def generate():
+        yield f"event: done\ndata: {json.dumps({'success': True, 'refreshed': 0})}\n\n"
+    return Response(
+        generate(), mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@bp.get("/api/account-authorizations/<int:auth_id>/health")
+def auth_health(auth_id: int):
+    return jsonify({
+        "success": True,
+        "data": {
+            "id": auth_id,
+            "health": "unknown",
+            "valid": True,
+            "stale": False,
+            "message": "local shell: deep health not run",
+        },
+    })
+
+
+@bp.post("/api/account-authorizations/<int:auth_id>/health-check")
+def auth_health_check(auth_id: int):
+    return auth_health(auth_id)

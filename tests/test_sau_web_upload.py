@@ -10,20 +10,24 @@ import pytest
 
 @pytest.fixture
 def app():
-    import web_runner as wr
+    """Flask test client with isolated cookies/uploads dirs via create_app()."""
+    import web_runner.utils as wr_utils
+    from web_runner import create_app
 
-    wr.app.config["TESTING"] = True
+    application = create_app()
+    application.config["TESTING"] = True
     with tempfile.TemporaryDirectory() as tmp_dir:
-        orig_cookies_dir = wr.COOKIES_DIR
-        orig_uploads_dir = wr.UPLOADS_DIR
-        wr.COOKIES_DIR = Path(tmp_dir) / "cookies"
-        wr.COOKIES_DIR.mkdir(exist_ok=True)
-        wr.UPLOADS_DIR = Path(tmp_dir) / "uploads"
-        wr.UPLOADS_DIR.mkdir(exist_ok=True)
-        with wr.app.test_client() as client:
+        tmp = Path(tmp_dir)
+        orig_cookies_dir = wr_utils.COOKIES_DIR
+        orig_uploads_dir = wr_utils.UPLOADS_DIR
+        wr_utils.COOKIES_DIR = tmp / "cookies"
+        wr_utils.COOKIES_DIR.mkdir(exist_ok=True)
+        wr_utils.UPLOADS_DIR = tmp / "uploads"
+        wr_utils.UPLOADS_DIR.mkdir(exist_ok=True)
+        with application.test_client() as client:
             yield client
-        wr.COOKIES_DIR = orig_cookies_dir
-        wr.UPLOADS_DIR = orig_uploads_dir
+        wr_utils.COOKIES_DIR = orig_cookies_dir
+        wr_utils.UPLOADS_DIR = orig_uploads_dir
 
 
 def _data_uri_png() -> str:
@@ -43,10 +47,10 @@ def _data_uri_png() -> str:
 
 def _read_task_argv(task_id: str) -> list[str]:
     """Read the stored argv for a task from the DB."""
-    import web_runner as wr
     import sqlite3
+    from web_runner.db import DB_PATH
 
-    with sqlite3.connect(wr.DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT argv FROM tasks WHERE task_id = ?", (task_id,)
@@ -57,10 +61,10 @@ def _read_task_argv(task_id: str) -> list[str]:
 
 def _read_task_status(task_id: str) -> str:
     """Read the stored status for a task from the DB."""
-    import web_runner as wr
     import sqlite3
+    from web_runner.db import DB_PATH
 
-    with sqlite3.connect(wr.DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
@@ -77,9 +81,10 @@ def _read_task_status(task_id: str) -> str:
 def _post_upload(app, **fields) -> tuple[dict, list[str]]:
     """Submit a video upload, patch _run_sau, return (json_data, argv_list)."""
     with (
-        patch("web_runner._run_sau"),
-        patch("web_runner.task_executor.submit"),
-        patch("web_runner.MIN_UPLOAD_BYTES", 0),
+        patch("web_runner.routes.upload._run_sau"),
+        patch("web_runner.routes.upload.task_executor.submit"),
+        patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+        patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
     ):
         # Always include file_data unless 'file' is explicitly set
         if "file_data" not in fields and "file" not in fields:
@@ -173,10 +178,11 @@ class TestBilibiliUploadVideo:
     def test_schedule_status(self, app):
         """Scheduled bilibili upload should have status 'scheduled'."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
-            patch("web_runner._schedule_task"),
+            patch("web_runner.routes.upload._run_sau"),
+            patch("web_runner.routes.upload.task_executor.submit"),
+            patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.routes.upload._schedule_task"),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -198,10 +204,11 @@ class TestBilibiliUploadVideo:
     def test_schedule_argv_has_no_schedule_flag(self, app):
         """Scheduled task argv must NOT include --schedule (server-side timer handles delay)."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
-            patch("web_runner._schedule_task"),
+            patch("web_runner.routes.upload._run_sau"),
+            patch("web_runner.routes.upload.task_executor.submit"),
+            patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.routes.upload._schedule_task"),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -301,10 +308,11 @@ class TestTencentUploadVideo:
     def test_schedule_status(self, app):
         """Scheduled tencent upload should have status 'scheduled'."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
-            patch("web_runner._schedule_task"),
+            patch("web_runner.routes.upload._run_sau"),
+            patch("web_runner.routes.upload.task_executor.submit"),
+            patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.routes.upload._schedule_task"),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -375,9 +383,10 @@ class TestCrossPlatform:
     def test_headless_absent_when_not_sent(self, app):
         """When headless is not provided, no --headless/--headed in argv."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.routes.upload._run_sau"),
+            patch("web_runner.routes.upload.task_executor.submit"),
+            patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
         ):
             resp = app.post(
                 "/api/upload/video",
@@ -566,7 +575,7 @@ class TestUploadVideoErrors:
 
     def test_missing_file(self, app):
         """Missing both file and file_data should return 400."""
-        with patch("web_runner.MIN_UPLOAD_BYTES", 0):
+        with patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0), patch("web_runner.utils.MIN_UPLOAD_BYTES", 0):
             resp = app.post(
                 "/api/upload/video",
                 data={"platform": "douyin", "account": "test", "title": "test"},
@@ -588,9 +597,10 @@ class TestUploadVideoErrors:
     def test_schedule_passed_time_already_passed_runs_immediately(self, app):
         """When schedule time has passed, task should run immediately (not scheduled)."""
         with (
-            patch("web_runner._run_sau"),
-            patch("web_runner.task_executor.submit"),
-            patch("web_runner.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.routes.upload._run_sau"),
+            patch("web_runner.routes.upload.task_executor.submit"),
+            patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
         ):
             resp = app.post(
                 "/api/upload/video",

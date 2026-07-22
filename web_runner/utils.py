@@ -28,6 +28,10 @@ COOKIES_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR = BASE_DIR / ".sau_uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 
+# Share-link downloads (inbox page) — public download centre root.
+INBOX_DIR = BASE_DIR / "videos" / "inbox"
+INBOX_DIR.mkdir(parents=True, exist_ok=True)
+
 task_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sau-task")
 _scheduled_timers: dict[str, threading.Timer] = {}
 _timer_lock = threading.Lock()
@@ -208,6 +212,9 @@ def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: in
             return [dict(r) for r in rows]
 
 
+_MAX_TRACEBACK_CHARS = 8000
+
+
 def _log_error_event(
     phase: str,
     platform: str = "",
@@ -229,8 +236,23 @@ def _log_error_event(
         exc_type = type(exc).__name__
     if exc is not None and not exc_message:
         exc_message = str(exc)
+    # Synthetic NonZeroExit rows (CLI non-zero) prefix the message with the exit code.
+    if (
+        status_code is not None
+        and exc_type == "NonZeroExit"
+        and exc_message
+        and not exc_message.startswith(f"exit code {status_code}")
+    ):
+        exc_message = f"exit code {status_code} {exc_message}"
     if tb is None and exc is not None:
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    if tb is None:
+        tb = ""
+    if tb and len(tb) > _MAX_TRACEBACK_CHARS:
+        # Keep the head + a clear marker + the tail so the root raise is preserved.
+        head = tb[: _MAX_TRACEBACK_CHARS // 2]
+        tail = tb[-(_MAX_TRACEBACK_CHARS // 2) :]
+        tb = f"{head}\n... [truncated] ...\n{tail}"
     with db_lock:
         with get_connection() as conn:
             conn.execute(
@@ -465,6 +487,9 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
 def _schedule_task(task_id: str, argv: list[str], schedule_time: datetime) -> None:
     delay = (schedule_time - datetime.now()).total_seconds()
     if delay <= 0:
+        # Past (or now) schedule → run immediately; flip status back to pending
+        # so the task is treated as a normal runnable job (not left "scheduled").
+        _db_update_task(task_id, status="pending")
         task_executor.submit(_run_sau, task_id, argv)
         return
     log(f"[{task_id}] scheduled for {schedule_time.isoformat()} (in {delay:.0f}s)")

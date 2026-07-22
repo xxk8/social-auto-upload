@@ -5,7 +5,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from web_runner.db import DB_PATH, db_lock, get_connection
 from web_runner.utils import (
@@ -142,6 +142,103 @@ def get_logs():
     limit = request.args.get("limit", type=int)
     offset = request.args.get("offset", 0, type=int)
     return jsonify({"success": True, "data": _db_get_logs(after, task_id, limit=limit, offset=offset)})
+
+
+@bp.post("/api/tasks/reschedule")
+def reschedule_task():
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    new_scheduled_at = payload.get("new_scheduled_at") or payload.get("scheduled_at")
+    if not task_id or not new_scheduled_at:
+        return jsonify({"success": False, "message": "task_id and new_scheduled_at required"}), 400
+    task = _db_get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": f"Task not found: {task_id}"}), 404
+    with db_lock:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE tasks SET scheduled_at = ? WHERE task_id = ?",
+                (new_scheduled_at, task_id),
+            )
+            conn.commit()
+    log(f"[tasks] reschedule {task_id} -> {new_scheduled_at}")
+    return jsonify({"success": True, "data": {"task_id": task_id, "scheduled_at": new_scheduled_at}})
+
+
+@bp.post("/api/tasks/copy")
+def copy_task():
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    new_scheduled_at = payload.get("new_scheduled_at") or payload.get("scheduled_at")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id required"}), 400
+    task = _db_get_task(task_id)
+    if not task:
+        return jsonify({"success": False, "message": f"Task not found: {task_id}"}), 404
+    stored_argv = task.get("argv")
+    try:
+        argv = json.loads(stored_argv) if stored_argv else None
+    except (json.JSONDecodeError, TypeError):
+        argv = None
+    new_id = _new_task_id("copy")
+    _db_insert_task(
+        task_id=new_id,
+        status="pending",
+        platform=task.get("platform", "") or "",
+        action=task.get("action", "copy") or "copy",
+        account=task.get("account", "") or "",
+        created=datetime.now().isoformat(timespec="seconds"),
+        argv=argv,
+    )
+    if new_scheduled_at:
+        with db_lock:
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE tasks SET scheduled_at = ? WHERE task_id = ?",
+                    (new_scheduled_at, new_id),
+                )
+                conn.commit()
+    if argv:
+        task_executor.submit(_run_sau, new_id, argv)
+    log(f"[tasks] copy {task_id} -> {new_id}")
+    return jsonify({"success": True, "data": {"task_id": new_id}})
+
+
+@bp.get("/api/tasks/scheduled")
+def list_scheduled():
+    start = request.args.get("from") or request.args.get("start")
+    end = request.args.get("to") or request.args.get("end")
+    sql = (
+        "SELECT task_id, platform, account, action, status, created, scheduled_at, argv "
+        "FROM tasks WHERE scheduled_at IS NOT NULL AND scheduled_at != ''"
+    )
+    params: list = []
+    if start:
+        sql += " AND substr(scheduled_at, 1, 10) >= ?"
+        params.append(start[:10])
+    if end:
+        sql += " AND substr(scheduled_at, 1, 10) < ?"
+        params.append(end[:10])
+    sql += " ORDER BY scheduled_at"
+    with get_connection() as conn:
+        conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
+        rows = conn.execute(sql, params).fetchall()
+    return jsonify({"success": True, "data": rows})
+
+
+@bp.get("/api/tasks/stream")
+def stream_tasks():
+    """Lightweight SSE heartbeats + task list snapshots for polling UIs."""
+    import time as _time
+
+    def generate():
+        for _ in range(30):
+            rows = _db_get_all_tasks(limit=50)
+            payload = json.dumps({"success": True, "data": rows}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+            _time.sleep(2)
+
+    return Response(generate(), mimetype="text/event-stream")
 
 
 @bp.get("/api/error-events")

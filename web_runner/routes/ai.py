@@ -55,6 +55,10 @@ def _get_all_keys_cached() -> list[dict]:
             return [dict(r) for r in rows]
 
 
+# Alias used by unit tests / older patch targets (``web_runner._get_all_keys``).
+_get_all_keys = _get_all_keys_cached
+
+
 def _get_next_key() -> str:
     keys = _get_all_keys_cached()
     if not keys:
@@ -158,28 +162,52 @@ def _ensure_ai_worker():
 
 
 def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000, temperature: float = 0.7) -> Generator[str, None, None]:
-    all_keys = _get_all_keys_cached()
+    """Shared SSE streaming generator with key rotation and 429 retry logic."""
+    all_keys = _get_all_keys()
     max_attempts = max(len(all_keys), 1)
     current_key = _get_next_key()
+
     for _ in range(max_attempts):
         if not current_key:
             yield f"event: error\ndata: {json.dumps({'message': 'No API keys available.'})}\n\n"
             return
+
+        key_info = None
+        for k in _get_all_keys():
+            if k["api_key"] == current_key:
+                key_info = {"id": k["id"], "masked": k["masked"]}
+                break
+        if key_info:
+            yield f"event: key_info\ndata: {json.dumps(key_info)}\n\n"
+
         try:
             resp = http_requests.post(
                 f"{OPENROUTE_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {current_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature, "stream": True},
-                timeout=(10, 120), stream=True,
+                headers={
+                    "Authorization": f"Bearer {current_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stream": True,
+                },
+                timeout=(10, 120),
+                stream=True,
             )
+
             if resp.status_code == 429:
                 _mark_rate_limited(current_key)
                 current_key = _get_next_key()
                 continue
+
             if resp.status_code != 200:
                 error_msg = resp.json().get("error", {}).get("message", f"API error: {resp.status_code}")
                 yield f"event: error\ndata: {json.dumps({'message': error_msg})}\n\n"
                 return
+
             full_content = ""
             for line in resp.iter_lines():
                 if not line:
@@ -198,11 +226,14 @@ def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000,
                         yield f"event: data\ndata: {json.dumps({'content': content})}\n\n"
                 except json.JSONDecodeError:
                     continue
+
             yield f"event: done\ndata: {json.dumps({'content': full_content.strip()})}\n\n"
             return
+
         except (http_requests.RequestException, OSError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, KeyError) as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e) or type(e).__name__})}\n\n"
             return
+
     yield f"event: error\ndata: {json.dumps({'message': 'All API keys rate-limited. Please wait a few minutes and try again.'})}\n\n"
 
 
@@ -418,3 +449,77 @@ def ai_generate_stream():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Optional AI endpoints used by restored SPA (best-effort stubs) ──
+
+@bp.post("/api/ai/generate/variants")
+def ai_generate_variants():
+    if not _has_any_api_key():
+        def err():
+            yield f"event: error\ndata: {json.dumps({'message': 'AI service not configured.'})}\n\n"
+        return Response(err(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    data = request.get_json(silent=True) or {}
+    model = data.get("model", "google/gemma-4-26b-a4b-it:free")
+    prompt = (data.get("prompt") or data.get("instruction") or "").strip()
+    system_prompt = data.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
+    messages = data.get("messages")
+    if not isinstance(messages, list) or not messages:
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt or "请生成一组标题、描述、标签"},
+        ]
+    return Response(
+        _stream_openrouter(model, messages),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@bp.post("/api/ai/generate/multi-platform")
+def ai_generate_multi_platform():
+    return ai_generate_variants()
+
+
+@bp.post("/api/ai/search")
+def ai_search():
+    data = request.get_json(silent=True) or {}
+    q = data.get("q") or data.get("query") or ""
+    return jsonify({
+        "success": True,
+        "data": {"query": q, "results": [], "message": "web search not configured in local shell"},
+    })
+
+
+@bp.post("/api/ai/images/search")
+def ai_images_search():
+    data = request.get_json(silent=True) or {}
+    q = data.get("q") or data.get("query") or data.get("keyword") or ""
+    return jsonify({
+        "success": True,
+        "data": {"query": q, "images": [], "message": "image search not configured"},
+    })
+
+
+@bp.post("/api/ai/recommend-images")
+def ai_recommend_images():
+    return jsonify({"success": True, "data": {"images": []}})
+
+
+@bp.get("/api/ai/images/fetch")
+def ai_images_fetch():
+    """Proxy-fetch a remote image URL into a binary response (best-effort)."""
+    import requests as http_requests
+
+    url = request.args.get("url") or ""
+    if not url.startswith("http"):
+        return jsonify({"success": False, "message": "invalid url"}), 400
+    try:
+        resp = http_requests.get(url, timeout=20)
+        resp.raise_for_status()
+        return Response(
+            resp.content,
+            mimetype=resp.headers.get("Content-Type", "application/octet-stream"),
+        )
+    except Exception as exc:  # strict-exceptions: allow
+        return jsonify({"success": False, "message": str(exc)}), 502

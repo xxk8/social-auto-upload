@@ -1,25 +1,30 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+import web_runner.utils as wr_utils
+from web_runner import create_app
+
 
 @pytest.fixture
 def app():
-    import web_runner as wr
+    """Flask test client with isolated temporary cookies dir.
 
-    wr.app.config["TESTING"] = True
+    Uses ``create_app()`` factory instead of a module-level ``app`` instance.
+    """
+    application = create_app()
+    application.config["TESTING"] = True
     with tempfile.TemporaryDirectory() as tmp_dir:
-        orig_cookies_dir = wr.COOKIES_DIR
-        wr.COOKIES_DIR = Path(tmp_dir)
-        with wr.app.test_client() as client:
+        orig_cookies_dir = wr_utils.COOKIES_DIR
+        wr_utils.COOKIES_DIR = Path(tmp_dir)
+        with application.test_client() as client:
             yield client
-        wr.COOKIES_DIR = orig_cookies_dir
+        wr_utils.COOKIES_DIR = orig_cookies_dir
 
 
 class TestHealth:
@@ -31,7 +36,7 @@ class TestHealth:
 
 
 def _data_uri_png() -> str:
-    """Minimal 1x1 red PNG as data URI for testing."""
+    """Minimal 1x1 red PNG as data URI for testing — padded past MIN_UPLOAD_BYTES."""
     raw = (
         b"\x89PNG\r\n\x1a\n"
         b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
@@ -39,6 +44,8 @@ def _data_uri_png() -> str:
         b"\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
     )
     import base64
+
+    raw = raw + b"\x00" * 10240
     return f"data:image/png;base64,{base64.b64encode(raw).decode()}"
 
 
@@ -51,19 +58,18 @@ class TestAccounts:
         assert data["data"] == []
 
     def test_list_accounts_with_files(self, app):
-        import web_runner as wr
-        from unittest.mock import patch
-
         mock_accounts = [
             {"platform": "douyin", "account_name": "testuser", "path": "/fake/douyin_testuser.json"},
             {"platform": "kuaishou", "account_name": "testuser", "path": "/fake/kuaishou_testuser.json"},
         ]
+
         def mock_account_files(platform=None):
             if platform:
                 return [a for a in mock_accounts if a["platform"] == platform]
             return mock_accounts
 
-        with patch.object(wr, '_account_files', side_effect=mock_account_files):
+        # Patch at the route import site (bound name), not only utils.
+        with patch("web_runner.routes.accounts._account_files", side_effect=mock_account_files):
             resp = app.get("/api/accounts")
             data = resp.get_json()
             accounts = data["data"]
@@ -77,10 +83,8 @@ class TestAccounts:
             assert accounts[0]["account_name"] == "testuser"
 
     def test_delete_account(self, app):
-        import web_runner as wr
-
-        (wr.COOKIES_DIR / "douyin_testuser.json").write_text("{}")
-        assert (wr.COOKIES_DIR / "douyin_testuser.json").exists()
+        (wr_utils.COOKIES_DIR / "douyin_testuser.json").write_text("{}")
+        assert (wr_utils.COOKIES_DIR / "douyin_testuser.json").exists()
 
         resp = app.post(
             "/api/accounts/delete",
@@ -89,7 +93,7 @@ class TestAccounts:
         )
         data = resp.get_json()
         assert data["success"] is True
-        assert not (wr.COOKIES_DIR / "douyin_testuser.json").exists()
+        assert not (wr_utils.COOKIES_DIR / "douyin_testuser.json").exists()
 
     def test_delete_account_not_found(self, app):
         resp = app.post(
@@ -116,7 +120,7 @@ class TestAccounts:
         assert resp.status_code == 400
 
     def test_login_response_has_data_task_id(self, app):
-        with patch("web_runner._run_sau"):
+        with patch("web_runner.routes.accounts._run_sau"):
             resp = app.post(
                 "/api/accounts/login",
                 data=json.dumps({"platform": "douyin", "account": "test"}),
@@ -137,7 +141,12 @@ class TestUpload:
         assert resp.status_code == 400
 
     def test_upload_video_response_has_data_task_id(self, app):
-        with patch("web_runner._run_sau"), patch("web_runner.MIN_UPLOAD_BYTES", 0):
+        with (
+            patch("web_runner.routes.upload._run_sau"),
+            patch("web_runner.routes.upload.task_executor.submit"),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+        ):
             resp = app.post(
                 "/api/upload/video",
                 data={
@@ -152,7 +161,12 @@ class TestUpload:
         assert "task_id" in data["data"]
 
     def test_upload_note_with_data_uris(self, app):
-        with patch("web_runner._run_sau"), patch("web_runner.MIN_UPLOAD_BYTES", 0):
+        with (
+            patch("web_runner.routes.upload._run_sau"),
+            patch("web_runner.routes.upload.task_executor.submit"),
+            patch("web_runner.utils.MIN_UPLOAD_BYTES", 0),
+            patch("web_runner.routes.upload.MIN_UPLOAD_BYTES", 0),
+        ):
             resp = app.post(
                 "/api/upload/note",
                 data=json.dumps({
@@ -185,10 +199,8 @@ class TestLogs:
         assert isinstance(data["data"], list)
 
     def test_get_logs_with_data(self, app):
-        import web_runner as wr
-
-        wr.log("test message 1")
-        wr.log("test message 2")
+        wr_utils.log("test message 1")
+        wr_utils.log("test message 2")
 
         resp = app.get("/api/logs")
         data = resp.get_json()
@@ -196,9 +208,7 @@ class TestLogs:
         assert any("test message 1" in entry["message"] for entry in data["data"])
 
     def test_get_logs_with_after_filter(self, app):
-        import web_runner as wr
-
-        wr.log("before message")
+        wr_utils.log("before message")
         ts = "2099-01-01T00:00:00"
         resp = app.get(f"/api/logs?after={ts}")
         data = resp.get_json()

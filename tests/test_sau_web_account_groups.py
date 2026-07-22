@@ -12,30 +12,39 @@ import pytest
 @pytest.fixture
 def app():
     """Flask test client with isolated temporary cookies dir and DB."""
-    import web_runner as wr
+    import web_runner.db as wr_db
+    import web_runner.utils as wr_utils
+    from web_runner import create_app
 
-    wr.app.config["TESTING"] = True
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
 
-        # Redirect COOKIES_DIR to temp
-        orig_cookies_dir = wr.COOKIES_DIR
-        wr.COOKIES_DIR = tmp / "cookies"
-        wr.COOKIES_DIR.mkdir(exist_ok=True)
+        # Redirect COOKIES_DIR to temp BEFORE create_app (cookie sync)
+        orig_cookies_dir = wr_utils.COOKIES_DIR
+        wr_utils.COOKIES_DIR = tmp / "cookies"
+        wr_utils.COOKIES_DIR.mkdir(exist_ok=True)
 
-        # Redirect DB to temp
-        orig_db_path = wr.DB_PATH
+        # Redirect DB to temp BEFORE create_app / get_connection
+        orig_db_path = wr_db.DB_PATH
         db_path = tmp / "test.db"
-        wr.DB_PATH = db_path
+        wr_db.DB_PATH = db_path
+        # utils also imports DB_PATH at module load; keep them in sync
+        orig_utils_db = getattr(wr_utils, "DB_PATH", None)
+        wr_utils.DB_PATH = db_path
 
         # Re-initialise DB tables in the temp DB
         _init_temp_db(db_path)
 
-        with wr.app.test_client() as client:
+        application = create_app()
+        application.config["TESTING"] = True
+
+        with application.test_client() as client:
             yield client
 
-        wr.COOKIES_DIR = orig_cookies_dir
-        wr.DB_PATH = orig_db_path
+        wr_utils.COOKIES_DIR = orig_cookies_dir
+        wr_db.DB_PATH = orig_db_path
+        if orig_utils_db is not None:
+            wr_utils.DB_PATH = orig_utils_db
 
 
 def _init_temp_db(db_path: Path) -> None:
@@ -121,10 +130,11 @@ class TestAuthorizeQrPlatforms:
     QR_PLATFORMS = ["douyin", "kuaishou", "xiaohongshu", "tencent", "bilibili"]
 
     def test_all_qr_platforms_return_200(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
         for platform in self.QR_PLATFORMS:
-            group_id = _create_group(wr.DB_PATH, f"test-{platform[:4]}")
+            group_id = _create_group(wr_db.DB_PATH, f"test-{platform[:4]}")
 
             status, data = _authorize(app, group_id, platform)
             assert status == 200, f"{platform}: expected 200, got {status}"
@@ -134,7 +144,7 @@ class TestAuthorizeQrPlatforms:
             assert "cookie_file" in data["data"]
 
             # cookie_file should point to cookies/{platform}_{group_name}.json
-            expected_cookie = str(wr.COOKIES_DIR / f"{platform}_test-{platform[:4]}.json")
+            expected_cookie = str(wr_utils.COOKIES_DIR / f"{platform}_test-{platform[:4]}.json")
             assert data["data"]["cookie_file"] == expected_cookie
 
             # task_id must NOT be in response (was removed in a prev fix)
@@ -143,12 +153,13 @@ class TestAuthorizeQrPlatforms:
     # ---- Douyin specific ----
 
     def test_douyin_authorize_returns_correct_cookie_path(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "创作组")
+        group_id = _create_group(wr_db.DB_PATH, "创作组")
         _, data = _authorize(app, group_id, "douyin")
 
-        expected = str(wr.COOKIES_DIR / "douyin_创作组.json")
+        expected = str(wr_utils.COOKIES_DIR / "douyin_创作组.json")
         assert data["data"]["cookie_file"] == expected
         assert data["data"]["group_name"] == "创作组"
         assert data["data"]["platform"] == "douyin"
@@ -156,23 +167,25 @@ class TestAuthorizeQrPlatforms:
     # ---- Bilibili specific ----
 
     def test_bilibili_authorize_returns_correct_cookie_path(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "B站组")
+        group_id = _create_group(wr_db.DB_PATH, "B站组")
         _, data = _authorize(app, group_id, "bilibili")
 
-        expected = str(wr.COOKIES_DIR / "bilibili_B站组.json")
+        expected = str(wr_utils.COOKIES_DIR / "bilibili_B站组.json")
         assert data["data"]["cookie_file"] == expected
 
     # ---- Tencent specific ----
 
     def test_tencent_authorize_returns_correct_cookie_path(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "视频号组")
+        group_id = _create_group(wr_db.DB_PATH, "视频号组")
         _, data = _authorize(app, group_id, "tencent")
 
-        expected = str(wr.COOKIES_DIR / "tencent_视频号组.json")
+        expected = str(wr_utils.COOKIES_DIR / "tencent_视频号组.json")
         assert data["data"]["cookie_file"] == expected
 
 
@@ -187,10 +200,11 @@ class TestAuthorizeNonQrPlatforms:
     NON_QR_PLATFORMS = ["tiktok", "baijiahao"]
 
     def test_all_non_qr_platforms_return_200(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
         for platform in self.NON_QR_PLATFORMS:
-            group_id = _create_group(wr.DB_PATH, f"test-{platform[:4]}")
+            group_id = _create_group(wr_db.DB_PATH, f"test-{platform[:4]}")
 
             status, data = _authorize(app, group_id, platform)
             assert status == 200, f"{platform}: expected 200, got {status}"
@@ -201,30 +215,35 @@ class TestAuthorizeNonQrPlatforms:
             assert "task_id" not in data["data"], f"{platform}: task_id should not be in response"
 
     def test_tiktok_authorize_returns_correct_cookie_path(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "海外组")
+        group_id = _create_group(wr_db.DB_PATH, "海外组")
         _, data = _authorize(app, group_id, "tiktok")
 
-        expected = str(wr.COOKIES_DIR / "tiktok_海外组.json")
+        expected = str(wr_utils.COOKIES_DIR / "tiktok_海外组.json")
         assert data["data"]["cookie_file"] == expected
 
     def test_baijiahao_authorize_returns_correct_cookie_path(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "自媒体组")
+        group_id = _create_group(wr_db.DB_PATH, "自媒体组")
         _, data = _authorize(app, group_id, "baijiahao")
 
-        expected = str(wr.COOKIES_DIR / "baijiahao_自媒体组.json")
+        expected = str(wr_utils.COOKIES_DIR / "baijiahao_自媒体组.json")
         assert data["data"]["cookie_file"] == expected
 
     def test_non_qr_branch_does_not_trigger_background_task(self, app):
         """Non-QR authorize must NOT spawn a background task (no _run_sau call)."""
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "manual-test")
+        group_id = _create_group(wr_db.DB_PATH, "manual-test")
 
-        with patch("web_runner._run_sau") as mock_run:
+        # authorize is sync (no background task); patch utils so a regression
+        # that starts calling _run_sau is still caught.
+        with patch("web_runner.utils._run_sau") as mock_run:
             status, data = _authorize(app, group_id, "tiktok")
 
         assert status == 200
@@ -258,10 +277,11 @@ class TestAuthorizeErrors:
         assert "not found" in data["message"].lower()
 
     def test_already_authorized_returns_409(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "dup-test")
-        _insert_authorization(wr.DB_PATH, group_id, "douyin", "/fake/path.json")
+        group_id = _create_group(wr_db.DB_PATH, "dup-test")
+        _insert_authorization(wr_db.DB_PATH, group_id, "douyin", "/fake/path.json")
 
         status, data = _authorize(app, group_id, "douyin")
 
@@ -271,10 +291,11 @@ class TestAuthorizeErrors:
 
     def test_already_authorized_returns_409_for_non_qr_too(self, app):
         """Duplicate check applies to non-QR platforms as well."""
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "dup-nonqr")
-        _insert_authorization(wr.DB_PATH, group_id, "tiktok", "/fake/tiktok.json")
+        group_id = _create_group(wr_db.DB_PATH, "dup-nonqr")
+        _insert_authorization(wr_db.DB_PATH, group_id, "tiktok", "/fake/tiktok.json")
 
         status, data = _authorize(app, group_id, "tiktok")
 
@@ -284,9 +305,10 @@ class TestAuthorizeErrors:
 
     def test_group_still_accepts_different_platforms(self, app):
         """Authorizing one platform does not block another platform on the same group."""
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "multi-platform")
+        group_id = _create_group(wr_db.DB_PATH, "multi-platform")
 
         # Authorize douyin (endpoint returns 200 but does NOT insert into DB)
         status1, data1 = _authorize(app, group_id, "douyin")
@@ -297,7 +319,7 @@ class TestAuthorizeErrors:
         assert status2 == 200
 
         # Manually persist the douyin authorization to simulate confirm-authorize
-        _insert_authorization(wr.DB_PATH, group_id, "douyin", "/fake/douyin.json")
+        _insert_authorization(wr_db.DB_PATH, group_id, "douyin", "/fake/douyin.json")
 
         # Now douyin again is 409 (duplicate check works once persisted)
         status3, _ = _authorize(app, group_id, "douyin")
@@ -313,30 +335,33 @@ class TestAuthorizeEdgeCases:
     """Edge cases: special characters in group names, concurrent behavior."""
 
     def test_group_name_with_spaces(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "My Test Group")
+        group_id = _create_group(wr_db.DB_PATH, "My Test Group")
         _, data = _authorize(app, group_id, "douyin")
 
-        expected = str(wr.COOKIES_DIR / "douyin_My Test Group.json")
+        expected = str(wr_utils.COOKIES_DIR / "douyin_My Test Group.json")
         assert data["data"]["cookie_file"] == expected
         assert data["data"]["group_name"] == "My Test Group"
 
     def test_group_name_with_special_chars(self, app):
         """Group names with underscores and hyphens are valid."""
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "test_user-01")
+        group_id = _create_group(wr_db.DB_PATH, "test_user-01")
         _, data = _authorize(app, group_id, "xiaohongshu")
 
-        expected = str(wr.COOKIES_DIR / "xiaohongshu_test_user-01.json")
+        expected = str(wr_utils.COOKIES_DIR / "xiaohongshu_test_user-01.json")
         assert data["data"]["cookie_file"] == expected
 
     def test_multiple_qr_platforms_on_same_group(self, app):
         """A single group can have multiple QR platform authorizations."""
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "全能组")
+        group_id = _create_group(wr_db.DB_PATH, "全能组")
         platforms = ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent"]
 
         for platform in platforms:
@@ -346,9 +371,10 @@ class TestAuthorizeEdgeCases:
 
     def test_unlisted_platform_treated_as_non_qr(self, app):
         """A platform not in _QR_LOGIN_PLATFORMS falls through to the non-QR branch (200)."""
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "unlisted-plat")
+        group_id = _create_group(wr_db.DB_PATH, "unlisted-plat")
         status, data = _authorize(app, group_id, "weibo")
 
         # weibo is not in _QR_LOGIN_PLATFORMS, so it hits the non-QR branch
@@ -453,16 +479,17 @@ class TestAccountGroupFsSafety:
         return resp.status_code, resp.get_json()
 
     def test_rename_happy_path_updates_db_and_disk(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "\u65e7\u540d")
+        group_id = _create_group(wr_db.DB_PATH, "\u65e7\u540d")
         _insert_authorization(
-            wr.DB_PATH,
+            wr_db.DB_PATH,
             group_id,
             "douyin",
-            str(wr.COOKIES_DIR / "douyin_\u65e7\u540d.json"),
+            str(wr_utils.COOKIES_DIR / "douyin_\u65e7\u540d.json"),
         )
-        (wr.COOKIES_DIR / "douyin_\u65e7\u540d.json").write_text('{"cookies":[]}')
+        (wr_utils.COOKIES_DIR / "douyin_\u65e7\u540d.json").write_text('{"cookies":[]}')
 
         status, body = self._post_rename(app, group_id, "\u65b0\u540d")
 
@@ -471,7 +498,7 @@ class TestAccountGroupFsSafety:
         assert body["data"]["name"] == "\u65b0\u540d"
 
         # DB row updated + cookie_file column points to new path
-        with sqlite3.connect(wr.DB_PATH) as conn:
+        with sqlite3.connect(wr_db.DB_PATH) as conn:
             assert conn.execute(
                 "SELECT name FROM account_groups WHERE id = ?", (group_id,)
             ).fetchone()[0] == "\u65b0\u540d"
@@ -479,26 +506,28 @@ class TestAccountGroupFsSafety:
                 "SELECT cookie_file FROM account_authorizations WHERE group_id = ?",
                 (group_id,),
             ).fetchone()
-            assert cookie_row[0] == str(wr.COOKIES_DIR / "douyin_\u65b0\u540d.json")
+            assert cookie_row[0] == str(wr_utils.COOKIES_DIR / "douyin_\u65b0\u540d.json")
 
         # Disk file renamed (old gone, new exists, content preserved)
-        assert not (wr.COOKIES_DIR / "douyin_\u65e7\u540d.json").exists()
-        assert (wr.COOKIES_DIR / "douyin_\u65b0\u540d.json").exists()
+        assert not (wr_utils.COOKIES_DIR / "douyin_\u65e7\u540d.json").exists()
+        assert (wr_utils.COOKIES_DIR / "douyin_\u65b0\u540d.json").exists()
         assert (
-            (wr.COOKIES_DIR / "douyin_\u65b0\u540d.json").read_text() == '{"cookies":[]}'
+            (wr_utils.COOKIES_DIR / "douyin_\u65b0\u540d.json").read_text() == '{"cookies":[]}'
         )
 
     def test_rename_rejects_empty_name(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "stable")
+        group_id = _create_group(wr_db.DB_PATH, "stable")
         status, _ = self._post_rename(app, group_id, "   ")
         assert status == 400
 
     def test_rename_rejects_illegal_chars(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "stable")
+        group_id = _create_group(wr_db.DB_PATH, "stable")
         status, body = self._post_rename(app, group_id, "bad/name")
         assert status == 400
         assert "\u4e0d\u5141\u8bb8" in body["message"]
@@ -509,25 +538,28 @@ class TestAccountGroupFsSafety:
         assert "\u4e0d\u5b58\u5728" in body["message"]
 
     def test_rename_dup_name_returns_409(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        _create_group(wr.DB_PATH, "alpha")
-        b = _create_group(wr.DB_PATH, "beta")
+        _create_group(wr_db.DB_PATH, "alpha")
+        b = _create_group(wr_db.DB_PATH, "beta")
         status, _ = self._post_rename(app, b, "alpha")
         assert status == 409
 
     def test_rename_idempotent_when_name_unchanged(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "stable")
+        group_id = _create_group(wr_db.DB_PATH, "stable")
         status, body = self._post_rename(app, group_id, "stable")
         assert status == 200
         assert body["data"]["name"] == "stable"
 
     def test_rename_with_no_authorizations_succeeds(self, app):
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "empty")
+        group_id = _create_group(wr_db.DB_PATH, "empty")
         status, body = self._post_rename(app, group_id, "renamed")
         assert status == 200
         assert body["data"]["name"] == "renamed"
@@ -536,23 +568,24 @@ class TestAccountGroupFsSafety:
         """1 platform: forward rename works; 2nd platform: PermissionError.
         Verify rollback restored the first file and DB row unchanged.
         """
-        import web_runner as wr
+        import web_runner.utils as wr_utils
+        import web_runner.db as wr_db
 
-        group_id = _create_group(wr.DB_PATH, "\u539f\u59cb")
+        group_id = _create_group(wr_db.DB_PATH, "\u539f\u59cb")
         _insert_authorization(
-            wr.DB_PATH,
+            wr_db.DB_PATH,
             group_id,
             "douyin",
-            str(wr.COOKIES_DIR / "douyin_\u539f\u59cb.json"),
+            str(wr_utils.COOKIES_DIR / "douyin_\u539f\u59cb.json"),
         )
         _insert_authorization(
-            wr.DB_PATH,
+            wr_db.DB_PATH,
             group_id,
             "kuaishou",
-            str(wr.COOKIES_DIR / "kuaishou_\u539f\u59cb.json"),
+            str(wr_utils.COOKIES_DIR / "kuaishou_\u539f\u59cb.json"),
         )
-        (wr.COOKIES_DIR / "douyin_\u539f\u59cb.json").write_text("d")
-        (wr.COOKIES_DIR / "kuaishou_\u539f\u59cb.json").write_text("k")
+        (wr_utils.COOKIES_DIR / "douyin_\u539f\u59cb.json").write_text("d")
+        (wr_utils.COOKIES_DIR / "kuaishou_\u539f\u59cb.json").write_text("k")
 
         real_rename = _test_os.rename
         counter = {"n": 0}
@@ -569,7 +602,7 @@ class TestAccountGroupFsSafety:
         assert status == 409
 
         # DB row untouched
-        with sqlite3.connect(wr.DB_PATH) as conn:
+        with sqlite3.connect(wr_db.DB_PATH) as conn:
             assert (
                 conn.execute(
                     "SELECT name FROM account_groups WHERE id = ?", (group_id,)
@@ -578,8 +611,8 @@ class TestAccountGroupFsSafety:
             )
 
         # Disk files restored to original names; no new-name files exist
-        assert (wr.COOKIES_DIR / "douyin_\u539f\u59cb.json").exists()
-        assert (wr.COOKIES_DIR / "kuaishou_\u539f\u59cb.json").exists()
-        assert not (wr.COOKIES_DIR / "douyin_\u65b0\u540d.json").exists()
-        assert not (wr.COOKIES_DIR / "kuaishou_\u65b0\u540d.json").exists()
+        assert (wr_utils.COOKIES_DIR / "douyin_\u539f\u59cb.json").exists()
+        assert (wr_utils.COOKIES_DIR / "kuaishou_\u539f\u59cb.json").exists()
+        assert not (wr_utils.COOKIES_DIR / "douyin_\u65b0\u540d.json").exists()
+        assert not (wr_utils.COOKIES_DIR / "kuaishou_\u65b0\u540d.json").exists()
 

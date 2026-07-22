@@ -55,13 +55,26 @@ def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool
         async def click(self, *_args, **_kwargs) -> None:
             return None
 
-        async def first(self) -> "_Locator":
+        async def set_input_files(self, *_args, **_kwargs) -> None:
+            return None
+
+        @property
+        def first(self) -> "_Locator":
             return self
+
+    class _Kbd:
+        async def press(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def type(self, *_args, **_kwargs) -> None:
+            return None
 
     class _Page:
         def __init__(self) -> None:
             self.url = "https://channels.weixin.qq.com/platform/post/create"
             self.calls: list[str] = []
+            self.keyboard = _Kbd()
+            self.frames: list = []
 
         def locator(self, selector: str) -> _Locator:
             self.calls.append(selector)
@@ -76,7 +89,13 @@ def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool
                 return _Locator(count=1, visible=True)
             if "div:has-text" in selector or "get_by_text" in selector or "[role=\"tab\"]" in selector:
                 return _Locator(count=1 if upload_selectors_visible else 0, visible=upload_selectors_visible)
+            if "图文" in selector:
+                return _Locator(count=1 if upload_selectors_visible else 0, visible=upload_selectors_visible)
             return _Locator(count=0, visible=False)
+
+        def get_by_text(self, text: str, **_kwargs) -> _Locator:
+            self.calls.append(f"get_by_text:{text}")
+            return _Locator(count=1 if upload_selectors_visible else 0, visible=upload_selectors_visible)
 
         async def wait_for_load_state(self, *_args, **_kwargs) -> None:
             return None
@@ -87,20 +106,13 @@ def _make_fake_page(upload_selectors_visible: bool = True, has_image_input: bool
         async def wait_for_url(self, *_args, **_kwargs) -> None:
             return None
 
-        async def goto(self, _url: str) -> None:
-            self.url = _url
+        async def goto(self, url: str, **_kwargs) -> None:
+            self.url = url
+            self.calls.append(url)
 
-        async def keyboard(self) -> object:
-            class _Kbd:
-                async def press(self, *_args, **_kwargs) -> None:
-                    return None
-
-                async def type(self, *_args, **_kwargs) -> None:
-                    return None
-
-            return _Kbd()
-
-    return _Page()
+    page = _Page()
+    page.frames = [page]
+    return page
 
 
 def _build_tencent_note(tmp_path: Path, image_count: int = 2) -> tuple:
@@ -144,8 +156,15 @@ def test_tencent_note_methods_are_coroutines() -> None:
 
 def test_tencent_note_validate_caps_excess_images(tmp_path: Path) -> None:
     """When more than ``TENCENT_NOTE_MAX_IMAGES`` images are supplied, the uploader truncates the list after validation."""
+    from unittest.mock import AsyncMock, patch
+
     note, _ = _build_tencent_note(tmp_path, image_count=19)
-    asyncio.run(note.validate_upload_args())
+    # Cookie live-check needs a real browser; stub it so this unit test stays hermetic.
+    with patch(
+        "uploader.tencent_uploader.main.cookie_auth",
+        new=AsyncMock(return_value=True),
+    ):
+        asyncio.run(note.validate_upload_args())
     assert len(note.image_paths) == 18
 
 
@@ -174,9 +193,14 @@ def test_fill_note_title_and_tags_types_through_stubbed_page(tmp_path: Path) -> 
     asyncio.run(note.fill_note_title_and_tags(fake_page))
 
 
-def test_cli_tencent_upload_note_parser_has_expected_flags() -> None:
+def test_cli_tencent_upload_note_parser_has_expected_flags(tmp_path: Path) -> None:
     """sau_cli must register tencent upload-note with --images/--title/--note/--tags/--schedule/--draft."""
     import sau_cli
+
+    img_a = tmp_path / "a.png"
+    img_b = tmp_path / "b.png"
+    img_a.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    img_b.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
 
     parser = sau_cli.build_parser()
     args = parser.parse_args(
@@ -184,7 +208,7 @@ def test_cli_tencent_upload_note_parser_has_expected_flags() -> None:
             "tencent",
             "upload-note",
             "--account", "demo",
-            "--images", "/tmp/a.png", "/tmp/b.png",
+            "--images", str(img_a), str(img_b),
             "--title", "demo",
             "--note", "正文",
             "--tags", "a,b",
@@ -196,7 +220,7 @@ def test_cli_tencent_upload_note_parser_has_expected_flags() -> None:
     assert args.platform == "tencent"
     assert args.action == "upload-note"
     assert args.account == "demo"
-    assert args.images == [Path("/tmp/a.png"), Path("/tmp/b.png")]
+    assert args.images == [img_a, img_b]
     assert args.title == "demo"
     assert args.note == "\u6b63\u6587"
     assert args.tags == "a,b"
@@ -211,6 +235,6 @@ def test_web_runner_marks_tencent_supporting_notes() -> None:
     import importlib
     web_runner = importlib.import_module("web_runner")  # noqa: WPS433 - intentional lazy import
 
-    cfg = web_runner.PLATATFORM_CONFIG["tencent"]
+    cfg = web_runner.PLATFORM_CONFIG["tencent"]
     assert cfg["note"] is True, "tencent entry should advertise note support"
     assert "tencent" in web_runner.NOTE_PLATFORMS

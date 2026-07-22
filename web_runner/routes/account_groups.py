@@ -12,12 +12,12 @@ from flask import Blueprint, jsonify, request
 
 from web_runner.db import DB_PATH, get_connection
 from web_runner.utils import (
-    COOKIES_DIR,
     _QR_LOGIN_PLATFORMS,
     _quick_check_cookie,
     _validate_group_name,
     log,
 )
+import web_runner.utils as wr_utils
 
 bp = Blueprint("account_groups", __name__)
 
@@ -101,7 +101,7 @@ def rename_account_group(group_id: int):
         rename_plan: list[tuple[Path, Path]] = []
         for auth in auth_rows:
             old_path = Path(auth["cookie_file"])
-            new_path = COOKIES_DIR / f"{auth['platform']}_{new_name}.json"
+            new_path = wr_utils.COOKIES_DIR / f"{auth['platform']}_{new_name}.json"
             if old_path.exists():
                 rename_plan.append((old_path, new_path))
         renamed_so_far: list[tuple[Path, Path]] = []
@@ -120,7 +120,7 @@ def rename_account_group(group_id: int):
         try:
             conn.execute("UPDATE account_groups SET name = ? WHERE id = ?", (new_name, group_id))
             for auth in auth_rows:
-                new_path = COOKIES_DIR / f"{auth['platform']}_{new_name}.json"
+                new_path = wr_utils.COOKIES_DIR / f"{auth['platform']}_{new_name}.json"
                 conn.execute("UPDATE account_authorizations SET cookie_file = ? WHERE id = ?", (str(new_path), auth["id"]))
             conn.commit()
         except sqlite3.IntegrityError:
@@ -148,7 +148,7 @@ def authorize_account_group(group_id: int):
         existing = conn.execute("SELECT * FROM account_authorizations WHERE group_id = ? AND platform = ?", (group_id, platform)).fetchone()
         if existing:
             return jsonify({"success": False, "message": f"Platform '{platform}' already authorized"}), 409
-    cookie_file = COOKIES_DIR / f"{platform}_{group['name']}.json"
+    cookie_file = wr_utils.COOKIES_DIR / f"{platform}_{group['name']}.json"
     return jsonify({"success": True, "data": {"group_name": group["name"], "platform": platform, "cookie_file": str(cookie_file)}})
 
 
@@ -163,7 +163,7 @@ def confirm_authorize_account_group(group_id: int):
         group = conn.execute("SELECT * FROM account_groups WHERE id = ?", (group_id,)).fetchone()
         if not group:
             return jsonify({"success": False, "message": "Group not found"}), 404
-    cookie_file = COOKIES_DIR / f"{platform}_{group['name']}.json"
+    cookie_file = wr_utils.COOKIES_DIR / f"{platform}_{group['name']}.json"
     for _ in range(10):
         if cookie_file.exists():
             quick = _quick_check_cookie(platform, group["name"])
@@ -234,3 +234,47 @@ def reorder_authorizations(group_id: int):
         conn.commit()
     log(f"[account-groups] reordered authorizations: group {group_id}, {len(auth_ids)} items")
     return jsonify({"success": True, "message": "Authorizations reordered successfully"})
+
+
+@bp.post("/api/account-groups/move-authorization")
+def move_authorization():
+    """Move a platform authorization from one group to another."""
+    payload = request.get_json(silent=True) or {}
+    from_id = payload.get("fromGroupId") or payload.get("from_group_id")
+    to_id = payload.get("toGroupId") or payload.get("to_group_id") or payload.get("targetGroupId")
+    platform = payload.get("platform")
+    if not from_id or not to_id or not platform:
+        return jsonify({
+            "success": False,
+            "message": "fromGroupId, toGroupId, platform are required",
+        }), 400
+    with get_connection() as conn:
+        conn.row_factory = None
+        auth = conn.execute(
+            "SELECT * FROM account_authorizations WHERE group_id = ? AND platform = ?",
+            (from_id, platform),
+        ).fetchone()
+        if not auth:
+            return jsonify({"success": False, "message": "authorization not found"}), 404
+        # auth is tuple when row_factory None — re-query with names
+        conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
+        auth = conn.execute(
+            "SELECT * FROM account_authorizations WHERE group_id = ? AND platform = ?",
+            (from_id, platform),
+        ).fetchone()
+        exists = conn.execute(
+            "SELECT id FROM account_authorizations WHERE group_id = ? AND platform = ?",
+            (to_id, platform),
+        ).fetchone()
+        if exists:
+            return jsonify({
+                "success": False,
+                "message": f"target group already has platform {platform}",
+            }), 400
+        conn.execute(
+            "UPDATE account_authorizations SET group_id = ? WHERE id = ?",
+            (to_id, auth["id"]),
+        )
+        conn.commit()
+    log(f"[account-groups] moved {platform}: group {from_id} -> {to_id}")
+    return jsonify({"success": True, "message": "moved"})
