@@ -135,18 +135,34 @@ export function AccountTab() {
     }
   }
 
+  const initial =
+    (displayName !== '—' ? displayName : email !== '—' ? email : '?').slice(0, 1).toUpperCase()
+
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-[15px] flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <UserCircle className="h-4 w-4" />
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-4">
+          <div className="flex items-center gap-3.5">
+            <span
+              aria-hidden
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[15px] font-semibold text-primary ring-1 ring-primary/15"
+            >
+              {initial}
             </span>
-            账号信息
-          </CardTitle>
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2 text-[14px] font-semibold tracking-tight">
+                <UserCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                账号信息
+              </CardTitle>
+              <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
+                {email}
+                <span className="mx-1.5 text-border">·</span>
+                {roleLabel}
+              </p>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="pt-1">
           <InfoRow label="邮箱" value={email} />
           <InfoRow label="角色" value={roleLabel} />
           <InfoRow label="显示名" value={displayName} />
@@ -159,38 +175,38 @@ export function AccountTab() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-[15px] flex items-center gap-2">
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-4">
+          <CardTitle className="flex items-center gap-2.5 text-[14px] font-semibold tracking-tight">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Lock className="h-4 w-4" />
+              <Lock className="h-3.5 w-3.5" />
             </span>
             {hasPassword ? '修改密码' : '设置密码'}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
+        <CardContent className="space-y-4 pt-5">
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
             {hasPassword
-              ? '修改您的登录密码。密码至少 8 位，需包含字母和数字。'
-              : '设置密码后可使用密码登录。密码至少 8 位，需包含字母和数字。'}
+              ? '修改登录密码。至少 8 位，需包含字母和数字。'
+              : '设置密码后可使用密码登录。至少 8 位，需包含字母和数字。'}
           </p>
 
           {passwordError && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3.5 py-2.5 text-[13px] text-destructive">
               {passwordError}
             </div>
           )}
 
           {passwordSuccess && (
-            <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300">
+            <div className="rounded-lg border border-[color:var(--status-success-border)] bg-[var(--status-success-bg)] px-3.5 py-2.5 text-[13px] text-[color:var(--status-success-fg)]">
               密码已更新
             </div>
           )}
 
-          <div className="space-y-4">
+          <div className="space-y-3.5">
             {hasPassword && (
-              <div className="space-y-2">
-                <Label htmlFor="old-password" className="text-sm font-medium">
+              <div className="space-y-1.5">
+                <Label htmlFor="old-password" className="text-[13px] font-medium">
                   旧密码
                 </Label>
                 <Input
@@ -205,8 +221,8 @@ export function AccountTab() {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="new-password" className="text-sm font-medium">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password" className="text-[13px] font-medium">
                 {hasPassword ? '新密码' : '密码'}
               </Label>
               <Input
@@ -220,8 +236,8 @@ export function AccountTab() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password" className="text-sm font-medium">
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-password" className="text-[13px] font-medium">
                 确认密码
               </Label>
               <Input

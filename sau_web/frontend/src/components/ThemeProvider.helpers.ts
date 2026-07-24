@@ -18,6 +18,9 @@ import { createContext, useContext } from 'react'
 
 export type Theme = 'light' | 'dark' | 'system'
 
+/** UI density for dashboard / dense surfaces. */
+export type UiDensity = 'comfortable' | 'compact'
+
 export type AccentHue = 15 | 45 | 145 | 175 | 240 | 280
 
 export interface AccentPaletteMeta {
@@ -38,12 +41,23 @@ export const ACCENT_PALETTES: ReadonlyArray<AccentPaletteMeta> = [
   { id: 15,  label: '红',          description: '强烈 · 促销 / 警告',                   swatch: 'oklch(0.55 0.17 15)' },
 ]
 
+export const DENSITY_OPTIONS: ReadonlyArray<{
+  id: UiDensity
+  label: string
+  description: string
+}> = [
+  { id: 'comfortable', label: '舒适', description: '默认间距 · 更易点按' },
+  { id: 'compact', label: '紧凑', description: '更密列表 · 一屏更多信息' },
+]
+
 export type ThemeProviderState = {
   theme: Theme
   resolved: 'light' | 'dark'
   setTheme: (theme: Theme) => void
   accentHue: AccentHue
   setAccentHue: (hue: AccentHue) => void
+  density: UiDensity
+  setDensity: (d: UiDensity) => void
 }
 
 const initialState: ThemeProviderState = {
@@ -52,6 +66,8 @@ const initialState: ThemeProviderState = {
   setTheme: () => null,
   accentHue: 145,
   setAccentHue: () => null,
+  density: 'comfortable',
+  setDensity: () => null,
 }
 
 export const ThemeProviderContext = createContext<ThemeProviderState>(initialState)

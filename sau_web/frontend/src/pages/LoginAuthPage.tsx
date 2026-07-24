@@ -13,7 +13,6 @@ import { useAuth } from '@/features/auth/useAuth'
 import { ROUTES } from '@/routes'
 import { Loader2, Mail, ShieldCheck, ArrowLeft, Globe, GitBranch, CheckCircle, ArrowUpRight, Copy, Lock } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
-import { authApi } from '@/features/auth/authApi'
 import { useToast } from '@/components/ui/toast'
 import { toneTextClass } from '@/lib/tone'
 import { cn } from '@/lib/utils'
@@ -377,26 +376,33 @@ export default function LoginAuthPage() {
               </ol>
             )}
 
-            {/* ── Social login buttons ── */}
+            {/* ── Social login: disabled until real OAuth is wired (stub returns 501) ── */}
             <div className="space-y-3 mb-5">
               <Button
                 variant="outline"
-                className="w-full h-11 text-sm font-medium"
-                onClick={() => authApi.googleLogin()}
+                className="w-full h-11 text-sm font-medium opacity-60 cursor-not-allowed"
                 type="button"
+                disabled
+                title="本地壳未启用 Google OAuth，请使用邮箱验证码或密码登录"
+                aria-disabled="true"
               >
                 <Globe className="mr-2 h-4 w-4" />
-                Google 登录
+                Google 登录（未启用）
               </Button>
               <Button
                 variant="outline"
-                className="w-full h-11 text-sm font-medium"
-                onClick={() => authApi.githubLogin()}
+                className="w-full h-11 text-sm font-medium opacity-60 cursor-not-allowed"
                 type="button"
+                disabled
+                title="本地壳未启用 GitHub OAuth，请使用邮箱验证码或密码登录"
+                aria-disabled="true"
               >
                 <GitBranch className="mr-2 h-4 w-4" />
-                GitHub 登录
+                GitHub 登录（未启用）
               </Button>
+              <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+                社交登录在本地壳为占位接口；请用下方邮箱验证码或密码登录。
+              </p>
             </div>
 
             <div className="relative mb-5">

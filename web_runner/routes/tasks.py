@@ -125,14 +125,19 @@ def add_task():
                 return jsonify({"success": False, "message": "images are required for upload-note"}), 400
             argv += ["--title", title, "--images", *images]
     task_id = _new_task_id(action)
+    scheduled_at = payload.get("scheduled_at") or payload.get("schedule")
+    title = payload.get("title")
     _db_insert_task(
         task_id=task_id, status="pending", platform=platform,
         action=action, account=account,
         created=datetime.now().isoformat(timespec="seconds"), argv=argv,
+        scheduled_at=scheduled_at, title=title,
     )
+    # Immediate run unless purely scheduled far-future only — still enqueue worker;
+    # CLI handles schedule flag when present in argv.
     task_executor.submit(_run_sau, task_id, argv)
     log(f"[{task_id}] manual task: sau {' '.join(argv)}")
-    return jsonify({"success": True, "data": {"task_id": task_id}})
+    return jsonify({"success": True, "data": {"task_id": task_id, "scheduled_at": scheduled_at}})
 
 
 @bp.get("/api/logs")
@@ -257,3 +262,39 @@ def get_error_events_route():
             action=action, exc_type=exc_type, limit=limit, offset=offset,
         ),
     })
+
+
+@bp.get("/api/publish/history")
+def publish_history():
+    """Recent successful/failed uploads for operator timeline."""
+    limit = request.args.get("limit", 20, type=int)
+    limit = max(1, min(limit, 100))
+    with get_connection() as conn:
+        conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
+        rows = conn.execute(
+            "SELECT task_id, platform, account, action, status, created, scheduled_at, title, error "
+            "FROM tasks WHERE action LIKE 'upload%' OR action LIKE '%upload%' "
+            "ORDER BY created DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        if not rows:
+            rows = conn.execute(
+                "SELECT task_id, platform, account, action, status, created, scheduled_at, title, error "
+                "FROM tasks ORDER BY created DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    items = []
+    for r in rows:
+        items.append({
+            "id": r["task_id"],
+            "task_id": r["task_id"],
+            "platform": r.get("platform"),
+            "account": r.get("account"),
+            "action": r.get("action"),
+            "status": r.get("status"),
+            "title": r.get("title") or r.get("action"),
+            "created_at": r.get("created"),
+            "scheduled_at": r.get("scheduled_at"),
+            "error": r.get("error"),
+        })
+    return jsonify({"success": True, "data": items})

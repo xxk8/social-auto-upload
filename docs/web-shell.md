@@ -42,11 +42,17 @@ Browser → Vite :5174 (dev) / Flask static (prod)
 | AI | `/api/ai/*` | OpenRouter 等 |
 | 日历 | `/api/calendar/tasks` | 任务按日聚合 |
 | 下载中心 | `/api/inbox/*` | yt-dlp 下载到 `videos/inbox` |
+| 热榜 | `/api/hotlist/*` | 公开页 `/hotlist`；代理各平台热搜，进程内缓存 5 分钟 |
 | 采集 | `/api/crawl/*` | 入队 + `crawler.run_crawl` 写 SQLite；浏览器真爬设 `SAU_CRAWLER_LIVE=1` |
-| 剧本工坊 | `/api/studio/*` | SQLite 项目 CRUD |
+| 剧本工坊 | `/api/studio/*` | 项目 CRUD；`POST .../generate` 生成起承转合四幕 SSE |
 | 分析 | `/api/analytics/*` | 任务统计 |
 | 模板 | `/api/templates*` | 发布模板 |
 | 许可证/配额 | `/api/license/*`、`/api/usage/quota` | 本地不限额 stub |
+| 热榜 | `/api/hotlist/*` | 抖音/B站等多源热搜代理 |
+| 管理后台 | `/api/admin/*` | 用户/审计/趋势（SQLite） |
+| 智能排期 | `/api/scheduling/*` | 按历史任务成功率推荐时段 |
+| 发布历史 | `/api/publish/history` | 时间线 |
+| OAuth | `/api/auth/google|github/*` | 未配置时明确 501/跳转说明 |
 
 启动：
 

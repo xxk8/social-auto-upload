@@ -46,7 +46,9 @@ export default function ProfilePage() {
         description="个人信息与账号管理"
         icon={<User className="h-5 w-5 text-muted-foreground" />}
       />
-      <AccountTab />
+      <div className="mx-auto max-w-2xl px-6 pb-8">
+        <AccountTab />
+      </div>
     </PageWrapper>
   )
 }

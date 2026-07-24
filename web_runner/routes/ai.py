@@ -10,6 +10,18 @@ from typing import Generator
 from flask import Blueprint, Response, jsonify, request
 import requests as http_requests
 
+from web_runner.ai_worker import (
+    AI_MODELS,
+    DEFAULT_SYSTEM_PROMPT,
+    PLATFORM_PROMPTS,
+    _ai_request_semaphore,
+    _build_media_content,
+    _get_all_keys,
+    _get_all_keys_cached,
+    _get_next_key,
+    _has_any_api_key,
+    _mark_rate_limited,
+)
 from web_runner.db import DB_PATH, db_lock, get_connection
 from web_runner.utils import log
 
@@ -18,83 +30,12 @@ bp = Blueprint("ai", __name__)
 OPENROUTE_BASE_URL = "https://openrouter.ai/api/v1"
 
 _ai_request_queue: _queue.Queue = _queue.Queue()
-_ai_request_semaphore = threading.Semaphore(2)
 _ai_queue_lock = threading.Lock()
 _ai_queue_worker_started = False
 
 # Hard cap on multi-turn messages array length — bounds LLM cost and
 # context-window abuse. See specs/ai-stream-multimessage.
 MAX_MESSAGES_PER_REQUEST = 30
-
-AI_MODELS = {
-    "google/gemma-4-26b-a4b-it:free": "Gemma 4 26B",
-    "deepseek/deepseek-chat-v3-0324:free": "DeepSeek V3",
-    "qwen/qwen3-235b-a22b:free": "Qwen3 235B",
-}
-
-DEFAULT_SYSTEM_PROMPT = """你是一个专业的社交媒体内容创作者。请根据用户的要求生成高质量的社交媒体内容。
-要求：
-- 内容要有吸引力和互动性
-- 适合中国社交媒体平台
-- 语言自然、亲切
-- 包含适当的emoji"""
-
-PLATFORM_PROMPTS = {
-    "douyin": "你是抖音内容创作专家。生成适合短视频平台的吸引人文案，要简洁有力，有hook。",
-    "xiaohongshu": "你是小红书内容创作专家。生成种草风格的笔记内容，要有真实感和分享感。",
-    "kuaishou": "你是快手内容创作专家。生成接地气、有温度的内容。",
-    "bilibili": "你是B站内容创作专家。生成适合年轻用户群体的创意内容。",
-}
-
-
-def _get_all_keys_cached() -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
-            rows = conn.execute("SELECT * FROM ai_api_keys ORDER BY id ASC").fetchall()
-            return [dict(r) for r in rows]
-
-
-# Alias used by unit tests / older patch targets (``web_runner._get_all_keys``).
-_get_all_keys = _get_all_keys_cached
-
-
-def _get_next_key() -> str:
-    keys = _get_all_keys_cached()
-    if not keys:
-        return os.environ.get("OPENROUTE_API_KEY", "")
-    for k in keys:
-        if not k.get("rate_limited_at"):
-            return k["api_key"]
-    return keys[0]["api_key"] if keys else ""
-
-
-def _mark_rate_limited(key: str) -> None:
-    from datetime import datetime
-    now = datetime.now().isoformat(timespec="seconds")
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute("UPDATE ai_api_keys SET rate_limited_at = ? WHERE api_key = ?", (now, key))
-            conn.commit()
-
-
-def _has_any_api_key() -> bool:
-    keys = _get_all_keys_cached()
-    if keys:
-        return True
-    return bool(os.environ.get("OPENROUTE_API_KEY", ""))
-
-
-def _build_media_content(images: list, prompt: str = "") -> list:
-    content = []
-    for img in images:
-        if img.startswith("data:image"):
-            content.append({"type": "image_url", "image_url": {"url": img}})
-        elif img.startswith("http"):
-            content.append({"type": "image_url", "image_url": {"url": img}})
-    if prompt:
-        content.append({"type": "text", "text": prompt})
-    return content
 
 
 def _ai_queue_worker():

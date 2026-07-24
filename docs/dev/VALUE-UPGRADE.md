@@ -106,11 +106,11 @@ npm add canvas-confetti
 
 | 优先级 | 项目 | 预估时间 | 理由 | 落地状态 |
 |--------|------|----------|------|----------|
-| 1 | confetti 庆祝动画 | 10 分钟 | 一行 import，感知价值极高 | ⏳ 未开始 |
+| 1 | confetti 庆祝动画 | 10 分钟 | 一行 import，感知价值极高 | ✅ `PublishSuccessBanner` + `canvas-confetti` |
 | 2 | 品牌色统一 | 5 分钟 | 四行 CSS，立竿见影 | ✅ `feat(ui): unify brand colors on --primary` |
 | 3 | 清理遗留入口 | 15 分钟 | 减少用户困惑 | ✅ `chore(cleanup): remove examples/ superseded by sau CLI + update docs` |
-| 4 | 内容预览面板 | 1 小时 | 核心体验提升 | ⏳ 未开始 |
-| 5 | 任务进度可视化 | 45 分钟 | 批量场景刚需 | ⏳ 未开始 |
+| 4 | 内容预览面板 | 1 小时 | 核心体验提升 | ✅ `PublishPreview` 接入 `PublishAiSidebar` 折叠区 |
+| 5 | 任务进度可视化 | 45 分钟 | 批量场景刚需 | ✅ `TaskProgressBar` on TasksPage |
 | 6 | 首次使用引导 | 1 小时 | 新用户体验质变 | ⚠️ `feat(onboarding): migrate to @reactour/tour spotlight + reset entry`（迁移到第三方控件，未走 3-step Dialog） |
 
 **总计**：约 3.5 小时，6 项改进，项目从"能用"变成"好用"。

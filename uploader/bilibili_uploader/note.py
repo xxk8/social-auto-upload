@@ -3,11 +3,10 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from patchright.async_api import Page, Playwright, async_playwright
-import patchright
+from patchright.async_api import Error as PlaywrightError
+from patchright.async_api import Page
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS
-from uploader.common import _msg
-from utils.base_social_media import set_init_script
+from uploader.common import _msg, managed_browser
 from utils.log import bilibili_logger
 BILIBILI_NOTE_PUBLISH_STRATEGY_IMMEDIATE = 'immediate'
 BILIBILI_NOTE_PUBLISH_STRATEGY_SCHEDULED = 'scheduled'
@@ -119,35 +118,36 @@ class BilibiliNote:
             await asyncio.sleep(3)
         bilibili_logger.success(_msg('🥳', 'Bilibili 图文发布成功'))
 
-    async def upload(self, playwright: Playwright) -> None:
+    async def upload(self) -> None:
         bilibili_logger.info(_msg('🧍', '正在检查 cookie、图片和发布时间'))
         await self.validate_upload_args()
         bilibili_logger.info(_msg('🥳', '图文上传前检查通过'))
         storage_state = _convert_biliup_cookies_to_storage_state(self.account_file)
-        browser = await playwright.chromium.launch(headless=self.headless)
-        context = await browser.new_context(storage_state=storage_state, permissions=['geolocation'])
-        context = await set_init_script(context)
-        upload_success = False
-        try:
-            page = await context.new_page()
-            await page.goto(BILIBILI_NOTE_UPLOAD_PAGE)
-            await page.wait_for_load_state('domcontentloaded')
-            await self.upload_note_content(page)
-            upload_success = True
-        finally:
-            if upload_success:
-                try:
-                    bilibili_logger.info(_msg('💾', '正在保存 cookie（保持 biliup 格式）'))
-                    state = await context.storage_state()
-                    biliup_cookies = _convert_storage_state_to_biliup_cookies(state)
-                    Path(self.account_file).write_text(json.dumps(biliup_cookies, ensure_ascii=False, indent=2), encoding='utf-8')
-                except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
-                    pass
-                bilibili_logger.success(_msg('🥳', 'cookie 更新完毕'))
-                await asyncio.sleep(2)
-            await context.close()
-            await browser.close()
+        async with managed_browser(
+            account_file=None,
+            headless=self.headless,
+            channel=None,
+            storage_state=storage_state,
+            permissions=['geolocation'],
+        ) as context:
+            upload_success = False
+            try:
+                page = await context.new_page()
+                await page.goto(BILIBILI_NOTE_UPLOAD_PAGE)
+                await page.wait_for_load_state('domcontentloaded')
+                await self.upload_note_content(page)
+                upload_success = True
+            finally:
+                if upload_success:
+                    try:
+                        bilibili_logger.info(_msg('💾', '正在保存 cookie（保持 biliup 格式）'))
+                        state = await context.storage_state()
+                        biliup_cookies = _convert_storage_state_to_biliup_cookies(state)
+                        Path(self.account_file).write_text(json.dumps(biliup_cookies, ensure_ascii=False, indent=2), encoding='utf-8')
+                    except (PlaywrightError, OSError, asyncio.TimeoutError):
+                        pass
+                    bilibili_logger.success(_msg('🥳', 'cookie 更新完毕'))
+                    await asyncio.sleep(2)
 
     async def main(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)
+        await self.upload()

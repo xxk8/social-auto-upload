@@ -10,6 +10,8 @@ import {
   Send,
   Loader2,
   Lock,
+  ChevronDown,
+  Eye,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,6 +36,13 @@ import { AiPaywallBanner } from './AiPaywallBanner'
 import { TierBlockGate } from './TierBlockGate'
 import { AiChatSkeleton } from './AiChatSkeleton'
 import type { AiQuotaResponse } from './TierBlockGate'
+import { PublishPreview } from '@/features/publish/PublishPreview'
+import type { FormPreviewData } from '@/features/publish/previewTypes'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 
 interface PublishAiSidebarProps {
   mode: 'video' | 'note'
@@ -41,6 +50,8 @@ interface PublishAiSidebarProps {
   formRef: RefObject<FormHandle | null>
   collapsed?: boolean
   onToggleCollapsed?: () => void
+  /** Live form snapshot for the collapsible content preview. */
+  previewData?: FormPreviewData
 }
 
 /**
@@ -72,9 +83,11 @@ export function PublishAiSidebar({
   formRef,
   collapsed = false,
   onToggleCollapsed,
+  previewData,
 }: PublishAiSidebarProps) {
   const selectedModel = useAiStore((s) => s.selectedModel)
   const { data: aiConfig, isLoading: configLoading } = useAiConfig()
+  const [previewOpen, setPreviewOpen] = useState(true)
 
   // round-AI-paywall-v1 (FIXED in v2): surface the paywall banner when
   // the user's tier is gated from the AI surface (`/api/usage/quota`
@@ -228,6 +241,30 @@ export function PublishAiSidebar({
           </TierBlockGate>
         </Suspense>
       </div>
+
+      {previewData != null && (
+        <div className="flex-shrink-0 border-t border-border/40 px-3 py-2 max-h-[42%] overflow-y-auto">
+          <Collapsible open={previewOpen} onOpenChange={setPreviewOpen}>
+            <CollapsibleTrigger
+              type="button"
+              className="flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+              data-testid="publish-preview-toggle"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              内容预览
+              <ChevronDown
+                className={cn(
+                  'ml-auto h-3.5 w-3.5 transition-transform',
+                  previewOpen && 'rotate-180',
+                )}
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-1">
+              <PublishPreview mode={mode} data={previewData} />
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      )}
     </div>
   )
 }

@@ -85,31 +85,36 @@ export function InfoRow({
   density = 'default',
 }: InfoRowProps) {
   const isCompact = density === 'compact'
-  const valueSizeClass = isCompact ? 'text-[13px]' : 'text-[15px]'
-  const padClass = isCompact ? 'py-2.5' : 'py-3.5'
+  const valueSizeClass = isCompact ? 'text-[13px]' : 'text-[14px]'
+  const padClass = isCompact ? 'py-2' : 'py-3'
   return (
     <div
-      className={cn('flex flex-col gap-1 border-b border-border/30 last:border-b-0 transition-colors', padClass)}
+      className={cn(
+        'flex flex-col gap-0.5 border-b border-border/25 last:border-b-0',
+        padClass,
+      )}
       data-testid={testId ?? `preferences-info-row-${label}`}
     >
-      <span className="text-[10.5px] font-mono font-medium uppercase tracking-[0.14em] text-muted-foreground/60">
+      <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/55">
         {label}
       </span>
       <span
         className={cn(
           valueSizeClass,
-          'text-foreground/95',
-          // mono only applies to plain-string values; ReactNode
-          // values are caller-styled (the inline-flex wrapper
-          // also handles truncate correctly for icons).
-          mono && typeof value === 'string' && 'font-mono tabular-nums',
+          'tracking-tight text-foreground',
+          mono && typeof value === 'string' && 'font-mono tabular-nums text-[13px]',
           (!mono || typeof value !== 'string') && 'truncate',
         )}
       >
         {value}
       </span>
       {hint && (
-        <span className={cn('mt-0.5 leading-snug text-muted-foreground/60', isCompact ? 'text-[11px]' : 'text-xs')}>
+        <span
+          className={cn(
+            'mt-0.5 leading-snug text-muted-foreground/55',
+            isCompact ? 'text-[11px]' : 'text-[12px]',
+          )}
+        >
           {hint}
         </span>
       )}

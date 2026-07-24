@@ -233,6 +233,19 @@
   code, kbd, pre, samp {
     font-family: var(--font-jetbrains-mono);
   }
+
+  /* UI density (set by ThemeProvider → documentElement.dataset.density) */
+  :root,
+  :root[data-density='comfortable'] {
+    --ui-row-py: 0.375rem;
+    --ui-card-gap: 0.875rem;
+    --ui-list-max-h: 21rem;
+  }
+  :root[data-density='compact'] {
+    --ui-row-py: 0.2rem;
+    --ui-card-gap: 0.625rem;
+    --ui-list-max-h: 17.5rem;
+  }
 }
 
 /* ===== Animations ===== */

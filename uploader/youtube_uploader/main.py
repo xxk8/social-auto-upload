@@ -14,18 +14,19 @@ the storage_state is saved. Reuse it afterwards for fully unattended uploads.
 import asyncio
 from pathlib import Path
 
-from patchright.async_api import Page, Playwright, async_playwright
+import patchright
+from patchright.async_api import Page
 
 from conf import DEBUG_MODE
 from uploader.base_video import BaseVideoUploader
-from utils.base_social_media import set_init_script
+from uploader.common import managed_browser, managed_browser_for_login
 from utils.log import youtube_logger
 
 try:
     # 国内直连 youtube.com 会超时，且 patchright 启的 chromium 不吃系统代理。
     # 在 conf.py 设 YT_PROXY = "http://127.0.0.1:7890"（本地代理端口）即可；不设则不走代理。
     from conf import YT_PROXY
-except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+except ImportError:
     YT_PROXY = None
 
 STUDIO_URL = "https://studio.youtube.com"
@@ -49,11 +50,13 @@ def _build_login_result(success, status, message, account_file, current_url=""):
 
 async def cookie_auth(account_file) -> bool:
     """登录态是否仍有效：带 cookie 打开 Studio，没被踢到 Google 登录页且进入了频道页即有效。"""
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True, channel="chrome")
-        try:
-            context = await browser.new_context(storage_state=account_file)
-            context = await set_init_script(context)
+    try:
+        async with managed_browser(
+            account_file,
+            headless=True,
+            channel="chrome",
+            proxy=YT_PROXY,
+        ) as context:
             page = await context.new_page()
             await page.goto(STUDIO_URL, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
@@ -61,19 +64,18 @@ async def cookie_auth(account_file) -> bool:
             if "accounts.google.com" in url or "/signin" in url.lower():
                 return False
             return "/channel/" in url
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
-            return False
-        finally:
-            await browser.close()
+    except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+        return False
 
 
 async def youtube_cookie_gen(account_file, headless: bool = False):
     """交互式登录：开浏览器让用户登录 Google/YouTube，进入频道页后保存 storage_state。"""
-    async with async_playwright() as playwright:
-        # 登录必须显形，让用户输账号密码/二步验证
-        browser = await playwright.chromium.launch(headless=False, channel="chrome")
-        context = await browser.new_context()
-        context = await set_init_script(context)
+    # 登录必须显形，让用户输账号密码/二步验证
+    async with managed_browser_for_login(
+        headless=False if not headless else headless,
+        channel="chrome",
+        proxy=YT_PROXY,
+    ) as (context, _browser):
         page = await context.new_page()
         await page.goto(STUDIO_URL, wait_until="domcontentloaded")
         youtube_logger.info(_msg("🔐", "请在弹出的浏览器里登录 Google / YouTube 账号，登录后会自动保存"))
@@ -89,9 +91,13 @@ async def youtube_cookie_gen(account_file, headless: bool = False):
             youtube_logger.success(_msg("✅", f"YouTube 登录态已保存: {account_file}"))
         else:
             youtube_logger.error(_msg("😵", "等待登录超时，未保存登录态"))
-        await browser.close()
-        return _build_login_result(ok, "logged_in" if ok else "timeout",
-                                   "登录成功" if ok else "登录超时", account_file, page.url)
+        return _build_login_result(
+            ok,
+            "logged_in" if ok else "timeout",
+            "登录成功" if ok else "登录超时",
+            account_file,
+            page.url,
+        )
 
 
 async def youtube_setup(account_file, handle: bool = False, return_detail: bool = False, headless: bool = False):
@@ -197,13 +203,16 @@ class YouTubeVideo(BaseVideoUploader):
         self.debug = debug
         self.headless = headless
 
-    async def upload(self, playwright: Playwright) -> None:
-        browser = await playwright.chromium.launch(
-            headless=self.headless, channel="chrome",
-            proxy={"server": YT_PROXY} if YT_PROXY else None,
-        )
-        context = await browser.new_context(storage_state=self.account_file)
-        context = await set_init_script(context)
+    async def upload(self) -> None:
+        async with managed_browser(
+            self.account_file,
+            headless=self.headless,
+            channel="chrome",
+            proxy=YT_PROXY,
+        ) as context:
+            await self._upload_with_context(context)
+
+    async def _upload_with_context(self, context) -> None:
         page = await context.new_page()
         page.set_default_timeout(60000)
 
@@ -211,7 +220,6 @@ class YouTubeVideo(BaseVideoUploader):
         await page.goto(UPLOAD_URL, wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
         if "accounts.google.com" in page.url or "signin" in page.url.lower():
-            await browser.close()
             raise RuntimeError("YouTube 登录态失效，请重新执行 login")
 
         # 1) 选择视频文件
@@ -326,8 +334,6 @@ class YouTubeVideo(BaseVideoUploader):
         except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
             pass
         await page.wait_for_timeout(2000)
-        await browser.close()
 
     async def main(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)
+        await self.upload()

@@ -88,14 +88,18 @@ def create_app() -> Flask:
 
     from web_runner.routes.account_groups import bp as account_groups_bp
     from web_runner.routes.accounts import bp as accounts_bp
+    from web_runner.routes.admin import bp as admin_bp
     from web_runner.routes.ai import bp as ai_bp
     from web_runner.routes.analytics import bp as analytics_bp
     from web_runner.routes.auth import bp as auth_bp
     from web_runner.routes.calendar import bp as calendar_bp
     from web_runner.routes.crawl import bp as crawl_bp
+    from web_runner.routes.hotlist import bp as hotlist_bp
     from web_runner.routes.inbox import bp as inbox_bp
     from web_runner.routes.license import bp as license_bp
     from web_runner.routes.notifications import bp as notifications_bp
+    from web_runner.routes.oauth import bp as oauth_bp
+    from web_runner.routes.scheduling import bp as scheduling_bp
     from web_runner.routes.studio import bp as studio_bp
     from web_runner.routes.tasks import bp as tasks_bp
     from web_runner.routes.templates import bp as templates_bp
@@ -104,6 +108,7 @@ def create_app() -> Flask:
 
     # Core shell (accounts / upload / tasks / AI / groups / auth)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(oauth_bp)
     app.register_blueprint(accounts_bp)
     app.register_blueprint(upload_bp)
     app.register_blueprint(tasks_bp)
@@ -113,12 +118,15 @@ def create_app() -> Flask:
     app.register_blueprint(calendar_bp)
     app.register_blueprint(inbox_bp)
     app.register_blueprint(crawl_bp)
+    app.register_blueprint(hotlist_bp)
     app.register_blueprint(studio_bp)
     app.register_blueprint(analytics_bp)
     app.register_blueprint(templates_bp)
     app.register_blueprint(license_bp)
     app.register_blueprint(usage_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(scheduling_bp)
 
     @app.get("/health")
     def health():
@@ -188,16 +196,28 @@ def __getattr__(name: str):
         "_get_next_key",
         "_mark_rate_limited",
         "http_requests",
+        "AI_MODELS",
+        "PLATFORM_PROMPTS",
+        "DEFAULT_SYSTEM_PROMPT",
+        "_build_media_content",
+        "_ai_request_semaphore",
     }:
-        from web_runner.routes import ai as _ai
+        if name == "http_requests" or name == "_stream_openrouter":
+            from web_runner.routes import ai as _ai
+
+            return getattr(_ai, name)
+        from web_runner import ai_worker as _aw
 
         mapping = {
-            "_stream_openrouter": _ai._stream_openrouter,
-            "_get_all_keys": getattr(_ai, "_get_all_keys", _ai._get_all_keys_cached),
-            "_get_all_keys_cached": _ai._get_all_keys_cached,
-            "_get_next_key": _ai._get_next_key,
-            "_mark_rate_limited": _ai._mark_rate_limited,
-            "http_requests": _ai.http_requests,
+            "_get_all_keys": _aw._get_all_keys,
+            "_get_all_keys_cached": _aw._get_all_keys_cached,
+            "_get_next_key": _aw._get_next_key,
+            "_mark_rate_limited": _aw._mark_rate_limited,
+            "AI_MODELS": _aw.AI_MODELS,
+            "PLATFORM_PROMPTS": _aw.PLATFORM_PROMPTS,
+            "DEFAULT_SYSTEM_PROMPT": _aw.DEFAULT_SYSTEM_PROMPT,
+            "_build_media_content": _aw._build_media_content,
+            "_ai_request_semaphore": _aw._ai_request_semaphore,
         }
         return mapping[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -468,11 +468,12 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     expect(banner).toHaveAttribute('data-tier', 'legacy')
   })
 
-  // (o) Round-OPT-3G+ — ArrowDown cycles forward through 5 tabs,
+  // (o) Round-OPT-3G+ — ArrowRight cycles forward through 5 tabs
+  //     (horizontal tablist; was ArrowDown when layout was vertical),
   // with circular wrap from `about` → `overview` so the user is
   // never stuck on one end. TABS array order is the source of
   // truth: `[overview, account, settings, personalization, about]`.
-  // WAI-ARIA APG: vertical tablists bind ArrowDown/ArrowUp ONLY
+  // WAI-ARIA APG: horizontal tablists bind ArrowLeft/ArrowRight
   // (Left/Right is reserved for cross-tablist nav on the page).
   // Locks both directions so a future regression that drops Radix
   // Tabs or rebinds Left/Right to a non-APG action trips red.
@@ -481,38 +482,38 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     mountDialogUnderTest()
     await user.click(screen.getByTestId('test-open-trigger'))
     // Click the active tab to nest focus inside the tablist —
-    // ArrowDown then navigates between Tabs.Triggers, NOT
+    // ArrowRight then navigates between Tabs.Triggers, NOT
     // some other focused element outside the dialog.
     await user.click(screen.getByTestId('preferences-tab-account'))
 
-    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowRight}')
     expect(
       screen.getByTestId('preferences-tab-settings'),
     ).toHaveAttribute('aria-selected', 'true')
 
-    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowRight}')
     expect(
       screen.getByTestId('preferences-tab-personalization'),
     ).toHaveAttribute('aria-selected', 'true')
 
-    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowRight}')
     expect(
       screen.getByTestId('preferences-tab-about'),
     ).toHaveAttribute('aria-selected', 'true')
 
     // Wrap: about ↓ → overview (the first tab in nav order).
-    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowRight}')
     expect(
       screen.getByTestId('preferences-tab-overview'),
     ).toHaveAttribute('aria-selected', 'true')
 
-    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowRight}')
     expect(
       screen.getByTestId('preferences-tab-account'),
     ).toHaveAttribute('aria-selected', 'true')
   })
 
-  // (p) ArrowUp cycles backward through 5 tabs with wrap.
+  // (p) ArrowLeft cycles backward through 5 tabs with wrap.
   // Mirrors (o); locks both directions on the roving tabindex
   // axis. Without this, a future commit that flips the wrap
   // direction (e.g. caps at index 0 instead of wrapping) would
@@ -525,28 +526,28 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
     await user.click(screen.getByTestId('preferences-tab-account'))
 
     // account(idx 1) ↑ → overview(idx 0): direct previous, NOT a wrap.
-    await user.keyboard('{ArrowUp}')
+    await user.keyboard('{ArrowLeft}')
     expect(
       screen.getByTestId('preferences-tab-overview'),
     ).toHaveAttribute('aria-selected', 'true')
 
     // overview(idx 0) ↑ → about(idx 4): wrap to last.
-    await user.keyboard('{ArrowUp}')
+    await user.keyboard('{ArrowLeft}')
     expect(
       screen.getByTestId('preferences-tab-about'),
     ).toHaveAttribute('aria-selected', 'true')
 
-    await user.keyboard('{ArrowUp}')
+    await user.keyboard('{ArrowLeft}')
     expect(
       screen.getByTestId('preferences-tab-personalization'),
     ).toHaveAttribute('aria-selected', 'true')
 
-    await user.keyboard('{ArrowUp}')
+    await user.keyboard('{ArrowLeft}')
     expect(
       screen.getByTestId('preferences-tab-settings'),
     ).toHaveAttribute('aria-selected', 'true')
 
-    await user.keyboard('{ArrowUp}')
+    await user.keyboard('{ArrowLeft}')
     expect(
       screen.getByTestId('preferences-tab-account'),
     ).toHaveAttribute('aria-selected', 'true')
@@ -554,7 +555,7 @@ describe('PreferencesDialog · round-OPT-prefs-dialog', () => {
 
   // (q) Round-OPT-3G+ — Home / End jump to first / last tab. APG
   // tabs pattern — keyboard users have a one-key escape hatch
-  // from "where am I" without having to count ArrowDowns. The
+  // from "where am I" without having to count ArrowRights. The
   // first tab is now `overview`, the last is still `about`.
   it('Home and End jump to first (overview) and last (about) tab', async () => {
     const user = userEvent.setup()

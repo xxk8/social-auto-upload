@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
+
 import douyinSvg from '@/assets/brands/douyin-dark.svg'
 import kuaishouSvg from '@/assets/brands/kuaishou-dark.svg'
 import xiaohongshuSvg from '@/assets/brands/xiaohongshu-dark.svg'
@@ -27,6 +30,7 @@ interface PlatformIconProps {
   variant?: 'dark' | 'light'
 }
 
+/** Bundled SVG brand marks (upload platforms). */
 const ICON_MAP_SRC: Record<string, string> = {
   douyin: douyinSvg,
   kuaishou: kuaishouSvg,
@@ -43,16 +47,6 @@ const ICON_MAP_SRC: Record<string, string> = {
   dailymotion: dailymotionSvg,
   rumble: rumbleSvg,
   vk: vkSvg,
-  // PNG logos (public/logo/)
-  weibo: '/logo/weibo.png',
-  zhihu: '/logo/zhihu.png',
-  baidu: '/logo/baidu.png',
-  toutiao: '/logo/toutiao.png',
-  'douban-movie': '/logo/douban-movie.png',
-  '36kr': '/logo/36kr.png',
-  sspai: '/logo/sspai.png',
-  ithome: '/logo/ithome.png',
-  'qq-news': '/logo/qq-news.png',
 }
 
 const ICON_MAP_SRC_LIGHT: Record<string, string> = {
@@ -71,6 +65,13 @@ const ICON_MAP_SRC_LIGHT: Record<string, string> = {
   rumble: rumbleSvg,
   vk: vkSvg,
   baijiahao: baijiahaoDarkSvg,
+}
+
+/**
+ * Hotlist / crawl platforms without SVG in assets/brands — served from
+ * `public/logo/*.png` (Vite static). Keep keys in sync with HotListPage SOURCES.
+ */
+const PUBLIC_LOGO: Record<string, string> = {
   weibo: '/logo/weibo.png',
   zhihu: '/logo/zhihu.png',
   baidu: '/logo/baidu.png',
@@ -80,14 +81,68 @@ const ICON_MAP_SRC_LIGHT: Record<string, string> = {
   sspai: '/logo/sspai.png',
   ithome: '/logo/ithome.png',
   'qq-news': '/logo/qq-news.png',
+  // also allow png fallbacks for main brands if svg fails
+  douyin: '/logo/douyin.png',
+  kuaishou: '/logo/kuaishou.png',
+  bilibili: '/logo/bilibili.png',
+}
+
+/** Short label for glyph fallback when no asset loads. */
+const FALLBACK_GLYPH: Record<string, string> = {
+  douyin: '抖',
+  kuaishou: '快',
+  bilibili: 'B',
+  weibo: '微',
+  zhihu: '知',
+  baidu: '百',
+  toutiao: '头',
+  'douban-movie': '豆',
+  '36kr': '氪',
+  sspai: '少',
+  ithome: 'IT',
+  'qq-news': '腾',
+  xiaohongshu: '红',
+  tencent: '视',
+  baijiahao: '百',
+}
+
+function resolveSrc(platform: string, variant: 'dark' | 'light'): string | undefined {
+  const map = variant === 'light' ? ICON_MAP_SRC_LIGHT : ICON_MAP_SRC
+  return map[platform] ?? PUBLIC_LOGO[platform]
+}
+
+function GlyphFallback({ platform, className }: { platform: string; className?: string }) {
+  const glyph = FALLBACK_GLYPH[platform] ?? (platform.slice(0, 1).toUpperCase() || '?')
+  return (
+    <span
+      role="img"
+      aria-label={platform}
+      className={cn(
+        'inline-flex items-center justify-center rounded-[3px] bg-muted text-[9px] font-bold leading-none text-muted-foreground',
+        className,
+      )}
+    >
+      {glyph}
+    </span>
+  )
 }
 
 export function PlatformIcon({ platform, className = 'h-5 w-5', variant = 'dark' }: PlatformIconProps) {
-  const map = variant === 'light' ? ICON_MAP_SRC_LIGHT : ICON_MAP_SRC
-  const src = map[platform]
-  if (!src) return null
+  const [failed, setFailed] = useState(false)
+  const src = resolveSrc(platform, variant)
+
+  if (!src || failed) {
+    return <GlyphFallback platform={platform} className={className} />
+  }
 
   return (
-    <img src={src} alt={platform} className={className} />
+    <img
+      src={src}
+      alt=""
+      aria-hidden
+      draggable={false}
+      className={cn('object-contain', className)}
+      onError={() => setFailed(true)}
+    />
   )
 }

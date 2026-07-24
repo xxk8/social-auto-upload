@@ -4,23 +4,26 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-import os
-import queue as _queue
 import re
 import sqlite3
 import sys
 import threading
 import time
-import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Generator
 
 from utils.log import logger as _task_logger
 
 from web_runner.db import DB_PATH, BASE_DIR, db_lock, get_connection
+from web_runner.error_events import _db_get_error_events, _log_error_event
+from web_runner.scheduler import (
+    _normalise_schedule,
+    _schedule_task,
+    _scheduled_timers,
+    _timer_lock,
+)
 
 COOKIES_DIR = BASE_DIR / "cookies"
 COOKIES_DIR.mkdir(exist_ok=True)
@@ -33,8 +36,6 @@ INBOX_DIR = BASE_DIR / "videos" / "inbox"
 INBOX_DIR.mkdir(parents=True, exist_ok=True)
 
 task_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sau-task")
-_scheduled_timers: dict[str, threading.Timer] = {}
-_timer_lock = threading.Lock()
 _progress_subscribers: dict[str, list] = {}
 _progress_sub_lock = threading.Lock()
 _MAX_SSE_CONNECTIONS = 5
@@ -44,7 +45,6 @@ sys.path.insert(0, str(BASE_DIR))
 
 LOG_MAX_ROWS = 10_000
 _log_trim_counter = 0
-_error_event_trim_counter = 0
 MIN_UPLOAD_BYTES = 10240
 
 
@@ -119,12 +119,26 @@ def _db_insert_task(
     account: str,
     created: str,
     argv: list[str] | None = None,
+    scheduled_at: str | None = None,
+    title: str | None = None,
 ) -> None:
     with db_lock:
         with get_connection() as conn:
             conn.execute(
-                "INSERT INTO tasks (task_id, status, platform, action, account, created, argv) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (task_id, status, platform, action, account, created, json.dumps(argv) if argv else None),
+                "INSERT INTO tasks "
+                "(task_id, status, platform, action, account, created, argv, scheduled_at, title) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task_id,
+                    status,
+                    platform,
+                    action,
+                    account,
+                    created,
+                    json.dumps(argv) if argv else None,
+                    scheduled_at,
+                    title,
+                ),
             )
             conn.commit()
 
@@ -202,113 +216,6 @@ def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: in
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
             query += " ORDER BY ts ASC"
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
-
-
-_MAX_TRACEBACK_CHARS = 8000
-
-
-def _log_error_event(
-    phase: str,
-    platform: str = "",
-    account: str = "",
-    action: str = "",
-    task_id: str | None = None,
-    exc: BaseException | None = None,
-    exc_type: str = "",
-    exc_message: str = "",
-    tb: str | None = None,
-    argv: list[str] | None = None,
-    attempt_no: int | None = None,
-    retry_count: int | None = None,
-    status_code: int | None = None,
-) -> None:
-    global _error_event_trim_counter
-    now = datetime.now().isoformat(timespec="seconds")
-    if exc is not None and not exc_type:
-        exc_type = type(exc).__name__
-    if exc is not None and not exc_message:
-        exc_message = str(exc)
-    # Synthetic NonZeroExit rows (CLI non-zero) prefix the message with the exit code.
-    if (
-        status_code is not None
-        and exc_type == "NonZeroExit"
-        and exc_message
-        and not exc_message.startswith(f"exit code {status_code}")
-    ):
-        exc_message = f"exit code {status_code} {exc_message}"
-    if tb is None and exc is not None:
-        tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    if tb is None:
-        tb = ""
-    if tb and len(tb) > _MAX_TRACEBACK_CHARS:
-        # Keep the head + a clear marker + the tail so the root raise is preserved.
-        head = tb[: _MAX_TRACEBACK_CHARS // 2]
-        tail = tb[-(_MAX_TRACEBACK_CHARS // 2) :]
-        tb = f"{head}\n... [truncated] ...\n{tail}"
-    with db_lock:
-        with get_connection() as conn:
-            conn.execute(
-                """INSERT INTO error_events
-                   (ts, task_id, level, phase, platform, account, action,
-                    exc_type, exc_message, traceback, argv, attempt_no, retry_count, status_code)
-                   VALUES (?, ?, 'error', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (now, task_id, phase, platform, account, action,
-                 exc_type, exc_message, tb,
-                 json.dumps(argv) if argv else None,
-                 attempt_no, retry_count, status_code),
-            )
-            conn.commit()
-            _error_event_trim_counter += 1
-            if _error_event_trim_counter >= 100:
-                _error_event_trim_counter = 0
-                conn.execute(
-                    "DELETE FROM error_events WHERE id NOT IN (SELECT id FROM error_events ORDER BY ts DESC LIMIT ?)",
-                    (LOG_MAX_ROWS,),
-                )
-                conn.commit()
-
-
-def _db_get_error_events(
-    after: str | None = None,
-    platform: str | None = None,
-    account: str | None = None,
-    action: str | None = None,
-    exc_type: str | None = None,
-    limit: int | None = None,
-    offset: int = 0,
-) -> list[dict]:
-    with db_lock:
-        with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            query = "SELECT * FROM error_events"
-            conditions: list[str] = []
-            params: list = []
-            if after:
-                conditions.append("ts > ?")
-                params.append(after)
-            if platform:
-                conditions.append("platform = ?")
-                params.append(platform)
-            if account:
-                conditions.append("account = ?")
-                params.append(account)
-            if action:
-                conditions.append("action = ?")
-                params.append(action)
-            if exc_type:
-                conditions.append("exc_type = ?")
-                params.append(exc_type)
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY ts DESC"
             if limit is not None:
                 query += " LIMIT ?"
                 params.append(limit)
@@ -484,28 +391,6 @@ def _run_sau(task_id: str, argv: list[str]) -> None:
         )
 
 
-def _schedule_task(task_id: str, argv: list[str], schedule_time: datetime) -> None:
-    delay = (schedule_time - datetime.now()).total_seconds()
-    if delay <= 0:
-        # Past (or now) schedule → run immediately; flip status back to pending
-        # so the task is treated as a normal runnable job (not left "scheduled").
-        _db_update_task(task_id, status="pending")
-        task_executor.submit(_run_sau, task_id, argv)
-        return
-    log(f"[{task_id}] scheduled for {schedule_time.isoformat()} (in {delay:.0f}s)")
-    timer = threading.Timer(delay, lambda: task_executor.submit(_run_sau, task_id, argv))
-    timer.daemon = True
-    with _timer_lock:
-        _scheduled_timers[task_id] = timer
-    timer.start()
-
-
-def _normalise_schedule(schedule: str | None) -> str | None:
-    if not schedule:
-        return None
-    return schedule.replace("T", " ").strip()
-
-
 def _headless_flag(headless: object) -> str | None:
     if headless is None:
         return None
@@ -543,7 +428,7 @@ def _cleanup_old_uploads() -> None:
             f.unlink(missing_ok=True)
             count += 1
     if count:
-        print(f"[startup] cleaned {count} old temp files from {UPLOADS_DIR}")
+        _task_logger.info(f"[startup] cleaned {count} old temp files from {UPLOADS_DIR}")
 
 
 PLATFORM_CONFIG: dict[str, dict] = {
@@ -561,3 +446,13 @@ THUMBNAIL_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent"}
 THUMBNAIL_DUAL_PLATFORMS = {"douyin", "tencent"}
 NOTE_PLATFORMS = {p for p, cfg in PLATFORM_CONFIG.items() if cfg.get("note")}
 _QR_LOGIN_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent", "bilibili", "tiktok", "baijiahao"}
+
+# Backward-compatible re-exports (implementations live in dedicated modules)
+__all_reexports__ = (
+    "_schedule_task",
+    "_scheduled_timers",
+    "_timer_lock",
+    "_normalise_schedule",
+    "_log_error_event",
+    "_db_get_error_events",
+)

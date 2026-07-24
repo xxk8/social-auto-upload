@@ -7,12 +7,13 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import Page
-from patchright.async_api import Playwright
 from patchright.async_api import async_playwright
 
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
+from uploader.common import managed_browser
 from utils.base_social_media import set_init_script
 from utils.login_qrcode import build_login_qrcode_path
 from utils.login_qrcode import decode_qrcode_from_path
@@ -150,7 +151,7 @@ async def _is_xhs_login_completed(page: Page) -> bool:
 
     try:
         return not await login_box.is_visible()
-    except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+    except (PlaywrightError, OSError, asyncio.TimeoutError):
         return True
 
 
@@ -184,12 +185,12 @@ async def cookie_auth(account_file):
                     if await login_box.is_visible():
                         xiaohongshu_logger.info(_msg("🥹", "页面仍然停留在登录二维码页，按 cookie 失效处理"))
                         return False
-                except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+                except (PlaywrightError, OSError, asyncio.TimeoutError):
                     return False
 
             xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
             return True
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
+        except (PlaywrightError, OSError, asyncio.TimeoutError) as exc:
             xiaohongshu_logger.warning(_msg("😵", f"cookie 校验时出错，按失效处理: {exc}"))
             return False
         finally:
@@ -274,7 +275,7 @@ async def xiaohongshu_cookie_gen(
                 qrcode_info,
                 page.url,
             )
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
+        except (PlaywrightError, OSError, asyncio.TimeoutError) as exc:
             result = _build_login_result(False, "failed", str(exc), account_file, current_url=page.url if "page" in locals() else "")
         finally:
             if remove_qrcode_file(qrcode_path):
@@ -342,7 +343,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         await page.wait_for_timeout(2000)
         try:
             await page.wait_for_selector(dropdown_selector, timeout=3000)
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+        except (PlaywrightError, OSError, asyncio.TimeoutError):
             xiaohongshu_logger.warning(_msg("😵", "位置下拉列表没按预期出现，小人继续按旧逻辑查找"))
         await page.wait_for_timeout(1000)
         flexible_xpath = (
@@ -371,7 +372,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             await location_option.click()
             xiaohongshu_logger.success(_msg("🥳", f"位置已经设置成 {location}"))
             return True
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
+        except (PlaywrightError, OSError, asyncio.TimeoutError) as e:
             xiaohongshu_logger.error(_msg("😢", f"设置位置失败: {e}"))
             try:
                 all_options = await page.query_selector_all(
@@ -384,7 +385,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 for i, option in enumerate(all_options[:3]):
                     option_text = await option.inner_text()
                     xiaohongshu_logger.debug(_msg("🧾", f"候选位置 {i + 1}: {option_text.strip()[:50]}"))
-            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as inner_e:
+            except (PlaywrightError, OSError, asyncio.TimeoutError) as inner_e:
                 xiaohongshu_logger.debug(_msg("😵", f"读取位置候选列表失败: {inner_e}"))
             return False
 
@@ -432,7 +433,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 first_item = page.locator('#creator-editor-topic-container .item').first
                 await first_item.wait_for(state="visible", timeout=4000)
                 await first_item.click()
-            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
+            except (PlaywrightError, OSError, asyncio.TimeoutError) as exc:
                 xiaohongshu_logger.warning(
                     _msg("🏷️", f"话题『{tag}』未出现候选，跳过该标签继续发布: {exc}")
                 )
@@ -464,7 +465,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 return
 
             xiaohongshu_logger.info(_msg("🧾", "未发现原创声明选项，跳过"))
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as exc:
+        except (PlaywrightError, OSError, asyncio.TimeoutError) as exc:
             xiaohongshu_logger.warning(_msg("⚠️", f"勾选原创声明时出错，跳过: {exc}"))
 
 
@@ -581,7 +582,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                         xiaohongshu_logger.success(_msg("🥳", "虽然没看到预览区，但标题框出来了，小人继续"))
                         break
                     xiaohongshu_logger.debug(_msg("🧍", "还没拿到预览区域，小人继续等一会"))
-            except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
+            except (PlaywrightError, OSError, asyncio.TimeoutError) as e:
                 xiaohongshu_logger.debug(_msg("😵", f"上传状态还没稳定下来，小人继续观察: {e}"))
             await asyncio.sleep(2)
 
@@ -609,35 +610,29 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                 )
                 xiaohongshu_logger.success(_msg("🥳", "视频发布成功，小人开心收工"))
                 break
-            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+            except (PlaywrightError, OSError, asyncio.TimeoutError):
                 xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布视频"))
                 if self.debug:
                     await page.screenshot(full_page=True)
                 await asyncio.sleep(0.5)
 
-    async def upload(self, playwright: Playwright) -> None:
+    async def upload(self) -> None:
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、视频文件、封面和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "上传前检查通过"))
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
+        async with managed_browser(
+            self.account_file,
+            headless=self.headless,
+            channel="chrome",
             permissions=["geolocation"],
-            storage_state=self.account_file,
-        )
-        context = await set_init_script(context)
-
-        try:
+        ) as context:
             page = await context.new_page()
             await self.upload_video_content(page)
             await context.storage_state(path=self.account_file)
             xiaohongshu_logger.success(_msg("🥳", "cookie 更新完毕"))
-        finally:
-            await context.close()
-            await browser.close()
 
     async def xiaohongshu_upload_video(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)
+        await self.upload()
 
     async def main(self):
         await self.xiaohongshu_upload_video()
@@ -708,7 +703,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
                 await title_container.wait_for(state="visible", timeout=3000)
                 xiaohongshu_logger.success(_msg("🥳", "图文素材已经传完，可以开始填写内容了"))
                 break
-            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+            except (PlaywrightError, OSError, asyncio.TimeoutError):
                 xiaohongshu_logger.debug(_msg("🧍", "图文素材还在上传，小人继续等一会"))
                 await asyncio.sleep(1)
 
@@ -732,35 +727,29 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
                 )
                 xiaohongshu_logger.success(_msg("🥳", "图文发布成功，小人开心收工"))
                 break
-            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+            except (PlaywrightError, OSError, asyncio.TimeoutError):
                 xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布图文"))
                 if self.debug:
                     await page.screenshot(full_page=True)
                 await asyncio.sleep(0.5)
 
-    async def upload(self, playwright: Playwright) -> None:
+    async def upload(self) -> None:
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、图片和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "图文上传前检查通过"))
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
+        async with managed_browser(
+            self.account_file,
+            headless=self.headless,
+            channel="chrome",
             permissions=["geolocation"],
-            storage_state=self.account_file,
-        )
-        context = await set_init_script(context)
-
-        try:
+        ) as context:
             page = await context.new_page()
             await self.upload_note_content(page)
             await context.storage_state(path=self.account_file)
             xiaohongshu_logger.success(_msg("🥳", "cookie 更新完毕"))
-        finally:
-            await context.close()
-            await browser.close()
 
     async def xiaohongshu_upload_note(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)
+        await self.upload()
 
     async def main(self):
         await self.xiaohongshu_upload_note()

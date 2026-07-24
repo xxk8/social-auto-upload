@@ -6,6 +6,10 @@ const baseURL =
   (import.meta.env.DEV ? '' : 'http://localhost:6001')
 
 export const inboxApi = {
+  inboxList() {
+    return request.get('/api/inbox/list').then((res) => res.data)
+  },
+
   inboxDownload(url: string) {
     return request.post('/api/inbox/download', { url }, { timeout: 300_000 }).then((res) => res.data)
   },

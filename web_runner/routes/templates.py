@@ -134,3 +134,74 @@ def export_templates():
         mimetype="application/json",
         headers={"Content-Disposition": "attachment; filename=templates.json"},
     )
+
+
+@bp.post("/api/templates/<int:template_id>/apply")
+def apply_template(template_id: int):
+    """Fill template prompt with variables; optional AI polish if keys exist."""
+    payload = request.get_json(silent=True) or {}
+    variables = payload.get("variables") or {}
+    platform = payload.get("platform") or ""
+    with get_connection() as conn:
+        conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
+        row = conn.execute("SELECT * FROM content_templates WHERE id = ?", (template_id,)).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "not found"}), 404
+        try:
+            snapshot = json.loads(row["snapshot"] or "{}")
+        except json.JSONDecodeError:
+            snapshot = {}
+
+    prompt = snapshot.get("prompt") or snapshot.get("template") or ""
+    if isinstance(prompt, dict):
+        prompt = prompt.get("prompt") or ""
+    text = str(prompt)
+    for k, v in variables.items():
+        text = text.replace("{" + str(k) + "}", str(v))
+        text = text.replace("{{" + str(k) + "}}", str(v))
+
+    title = snapshot.get("title") or row.get("name") or "未命名"
+    tags = snapshot.get("tags") or []
+    if isinstance(tags, str):
+        tags = [t for t in tags.replace("，", ",").split(",") if t.strip()]
+    description = text or snapshot.get("description") or snapshot.get("desc") or ""
+
+    # Optional AI rewrite
+    try:
+        from web_runner.routes.studio import _complete_openrouter
+
+        ai = _complete_openrouter(
+            [
+                {
+                    "role": "system",
+                    "content": "你是社交媒体文案助手。根据用户材料输出 JSON："
+                    '{"title":"...","description":"...","tags":["a","b"]} 不要其它文字。',
+                },
+                {
+                    "role": "user",
+                    "content": f"平台：{platform}\n模板名：{row.get('name')}\n素材：\n{text or description}",
+                },
+            ],
+            max_tokens=800,
+        )
+        if ai:
+            import re
+            m = re.search(r"\{[\s\S]*\}", ai)
+            if m:
+                data = json.loads(m.group(0))
+                title = data.get("title") or title
+                description = data.get("description") or description
+                if isinstance(data.get("tags"), list):
+                    tags = data["tags"]
+    except Exception:
+        pass
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "title": title,
+            "description": description,
+            "tags": tags,
+            "platform": platform,
+        },
+    })

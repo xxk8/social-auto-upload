@@ -1,13 +1,18 @@
 import re
 from datetime import datetime
 from pathlib import Path
-from patchright.async_api import Page, Playwright, async_playwright
+from patchright.async_api import Page
 import patchright
 import os
 import asyncio
 from uploader.tk_uploader.tk_config import Tk_Locator
-from uploader.common import _build_login_result, _emit_qrcode_callback, _msg
-from utils.base_social_media import set_init_script
+from uploader.common import (
+    _build_login_result,
+    _emit_qrcode_callback,
+    _msg,
+    managed_browser,
+    managed_browser_for_login,
+)
 from utils.files_times import get_absolute_path
 from utils.login_qrcode import build_login_qrcode_path
 from utils.login_qrcode import decode_qrcode_from_path
@@ -16,13 +21,18 @@ from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
 from utils.log import tiktok_logger
 from conf import LOCAL_CHROME_HEADLESS
+
 TIKTOK_LOGIN_QRCODE_URL = 'https://www.tiktok.com/login/qrcode'
+# TikTok Studio historically works more reliably under Firefox here.
+_TK_BROWSER = {'browser_engine': 'firefox', 'channel': None}
+
 
 async def cookie_auth(account_file):
-    async with async_playwright() as playwright:
-        browser = await playwright.firefox.launch(headless=LOCAL_CHROME_HEADLESS)
-        context = await browser.new_context(storage_state=account_file)
-        context = await set_init_script(context)
+    async with managed_browser(
+        account_file,
+        headless=LOCAL_CHROME_HEADLESS,
+        **_TK_BROWSER,
+    ) as context:
         page = await context.new_page()
         await page.goto('https://www.tiktok.com/tiktokstudio/upload?lang=en')
         await page.wait_for_load_state('networkidle')
@@ -105,12 +115,13 @@ async def tiktok_setup(account_file, handle=False, return_detail=False, qrcode_c
     return result if return_detail else True
 
 async def get_tiktok_cookie(account_file, qrcode_callback=None, headless: bool=LOCAL_CHROME_HEADLESS, poll_interval: int=3, max_checks: int=100):
-    async with async_playwright() as playwright:
-        browser = await playwright.firefox.launch(headless=headless, args=['--lang en-GB'])
-        context = await browser.new_context()
-        context = await set_init_script(context)
-        qrcode_path = None
-        result = _build_login_result(False, 'failed', 'TikTok登录失败', account_file)
+    qrcode_path = None
+    result = _build_login_result(False, 'failed', 'TikTok登录失败', account_file)
+    async with managed_browser_for_login(
+        headless=headless,
+        launch_args=['--lang en-GB'],
+        **_TK_BROWSER,
+    ) as (context, _browser):
         try:
             page = await context.new_page()
             await page.goto(TIKTOK_LOGIN_QRCODE_URL)
@@ -132,9 +143,7 @@ async def get_tiktok_cookie(account_file, qrcode_callback=None, headless: bool=L
                 tiktok_logger.info(_msg('🧹', f'临时二维码文件已清理: {qrcode_path}'))
             if not result['success']:
                 tiktok_logger.error(_msg('😢', f"登录失败: {result['message']}"))
-            await context.close()
-            await browser.close()
-        return result
+    return result
 
 class TiktokVideo(object):
 
@@ -190,36 +199,39 @@ class TiktokVideo(object):
         file_chooser = await fc_info.value
         await file_chooser.set_files(self.file_path)
 
-    async def upload(self, playwright: Playwright) -> None:
-        browser = await playwright.firefox.launch(headless=self.headless)
-        context = await browser.new_context(storage_state=f'{self.account_file}')
-        context = await set_init_script(context)
-        page = await context.new_page()
-        await page.goto('https://www.tiktok.com/creator-center/upload')
-        tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
-        await page.wait_for_url('https://www.tiktok.com/tiktokstudio/upload', timeout=10000)
-        try:
-            await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
-            tiktok_logger.info('Either iframe or div appeared.')
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError) as e:
-            tiktok_logger.error('Neither iframe nor div appeared within the timeout.')
-        await self.choose_base_locator(page)
-        upload_button = self.locator_base.locator('button:has-text("Select video"):visible')
-        await upload_button.wait_for(state='visible')
-        async with page.expect_file_chooser() as fc_info:
-            await upload_button.click()
-        file_chooser = await fc_info.value
-        await file_chooser.set_files(self.file_path)
-        await self.add_title_tags(page)
-        await self.detect_upload_status(page)
-        if self.publish_date != 0:
-            await self.set_schedule_time(page, self.publish_date)
-        await self.click_publish(page)
-        await context.storage_state(path=f'{self.account_file}')
-        tiktok_logger.info('  [-] update cookie！')
-        await asyncio.sleep(2)
-        await context.close()
-        await browser.close()
+    async def upload(self) -> None:
+        async with managed_browser(
+            str(self.account_file),
+            headless=self.headless,
+            **_TK_BROWSER,
+        ) as context:
+            page = await context.new_page()
+            await page.goto('https://www.tiktok.com/creator-center/upload')
+            tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
+            await page.wait_for_url('https://www.tiktok.com/tiktokstudio/upload', timeout=10000)
+            try:
+                await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
+                tiktok_logger.info('Either iframe or div appeared.')
+            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+                tiktok_logger.error('Neither iframe nor div appeared within the timeout.')
+            await self.choose_base_locator(page)
+            upload_button = self.locator_base.locator('button:has-text("Select video"):visible')
+            await upload_button.wait_for(state='visible')
+            async with page.expect_file_chooser() as fc_info:
+                await upload_button.click()
+            file_chooser = await fc_info.value
+            await file_chooser.set_files(self.file_path)
+            await self.add_title_tags(page)
+            await self.detect_upload_status(page)
+            if self.publish_date != 0:
+                await self.set_schedule_time(page, self.publish_date)
+            await self.click_publish(page)
+            await context.storage_state(path=f'{self.account_file}')
+            tiktok_logger.info('  [-] update cookie！')
+            await asyncio.sleep(2)
+
+    async def main(self):
+        await self.upload()
 
     async def add_title_tags(self, page):
         editor_locator = self.locator_base.locator('div.public-DraftEditor-content')
@@ -295,7 +307,3 @@ class TiktokVideo(object):
             self.locator_base = page.frame_locator(Tk_Locator.tk_iframe)
         else:
             self.locator_base = page.locator(Tk_Locator.default)
-
-    async def main(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)

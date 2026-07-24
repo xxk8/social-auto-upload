@@ -107,9 +107,14 @@ const THEME_LABEL: Record<string, string> = {
   system: '跟随系统',
 }
 
+const DENSITY_LABEL: Record<string, string> = {
+  comfortable: '舒适',
+  compact: '紧凑',
+}
+
 export function OverviewTab() {
   const { user: authUser } = useAuth()
-  const { theme, setTheme } = useTheme()
+  const { theme, setTheme, density } = useTheme()
   const { openPreferences } = usePreferencesDialog()
 
   // `as TierKey` — `authUser.tier` from useAuth widens to
@@ -128,20 +133,21 @@ export function OverviewTab() {
   const tierPrice = TIER_PRICE[tierKey] ?? TIER_PRICE.legacy
   const tierFeatureCount = (TIER_FEATURES[tierKey] ?? TIER_FEATURES.legacy).length
   const themeLabel = THEME_LABEL[theme] ?? theme
+  const densityLabel = DENSITY_LABEL[density] ?? density
 
   return (
     <div className="space-y-4">
       {/* ── Inline theme picker (canonical shared source) ─── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-[15px] flex items-center gap-2">
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-3">
+          <CardTitle className="flex items-center gap-2 text-[14px] font-semibold tracking-tight">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Sun className="h-4 w-4" />
+              <Sun className="h-3.5 w-3.5" />
             </span>
             主题外观
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <ThemeModesRadio
             theme={theme}
             setTheme={setTheme}
@@ -153,7 +159,7 @@ export function OverviewTab() {
       </Card>
 
       {/* ── Jump-off tiles (4 tiles, 2x2 grid) ─────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <JumpTile
           openPreferences={openPreferences}
           tab="account"
@@ -211,16 +217,12 @@ export function OverviewTab() {
           Icon={Sun}
           rows={[
             { rowKey: 'theme', label: '主题', value: themeLabel },
-            // Single trailing stub marker (round-OPT-3G+ v2.5).
-            // Replaces the prior two stub rows (密度/语言) that
-            // visually paralleled working rows. Honest
-            // placeholder + visually distinct (entire row is a
-            // muted hint line, no separate value).
+            { rowKey: 'density', label: '密度', value: densityLabel },
             {
-              rowKey: 'more',
-              label: '更多偏好',
-              value: '即将上线',
-              hint: '紧凑度 + 语言切换 planned',
+              rowKey: 'locale',
+              label: '语言',
+              value: '中文 / English',
+              hint: '在个性化中切换',
             },
           ]}
         />
@@ -279,22 +281,20 @@ function JumpTile({
   return (
     <Card
       data-testid={`preferences-overview-tile-${tab}`}
-      className="transition-all duration-200 hover:ring-foreground/20 hover:shadow-md"
+      className="group/tile overflow-hidden border-border/40 shadow-none ring-1 ring-border/40 transition-[border-color,box-shadow] duration-200 hover:border-border hover:shadow-sm hover:shadow-foreground/[0.03]"
     >
-      <CardHeader className="pb-2">
-        <CardTitle className="text-[14px] flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-            <Icon className="h-4 w-4" />
+      <CardHeader className="border-b border-border/25 bg-muted/10 pb-2.5 pt-4">
+        <CardTitle className="flex items-center gap-2 text-[13px] font-semibold tracking-tight">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-background text-muted-foreground ring-1 ring-border/40 transition-colors group-hover/tile:text-primary">
+            <Icon className="h-3.5 w-3.5" />
           </span>
           {label}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-3 pt-1">
         <div className="flex flex-col">
           {rows.map((row) => (
             <InfoRow
-              // Stable testId using rowKey (NOT label) so i18n
-              // doesn't blast the test surface.
               key={row.rowKey}
               testId={`preferences-overview-tile-${tab}-row-${row.rowKey}`}
               label={row.label}
@@ -307,11 +307,11 @@ function JumpTile({
         </div>
 
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => openPreferences(tab)}
           aria-label={`打开 ${label} 设置`}
-          className="w-full justify-between gap-1.5 group/cta"
+          className="group/cta h-8 w-full justify-between gap-1.5 text-[12px] text-muted-foreground hover:bg-muted/50 hover:text-foreground"
           data-testid={`preferences-overview-tile-${tab}-cta`}
         >
           <span>打开 {label}</span>

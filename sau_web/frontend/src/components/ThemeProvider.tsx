@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AccentHue, Theme } from './ThemeProvider.helpers'
+import type { AccentHue, Theme, UiDensity } from './ThemeProvider.helpers'
 import { ThemeProviderContext } from './ThemeProvider.helpers'
 export { useTheme } from './ThemeProvider.helpers'
 
@@ -9,6 +9,7 @@ type ThemeProviderProps = {
   defaultTheme?: Theme
   storageKey?: string
   accentStorageKey?: string
+  densityStorageKey?: string
 }
 
 // OPT-follow-up-3-sweep-2: `useTheme`, the `Theme` / `ThemeProviderState`
@@ -22,6 +23,7 @@ export function ThemeProvider({
   defaultTheme = 'system',
   storageKey = 'sau-ui-theme',
   accentStorageKey = 'sau-accent-hue',
+  densityStorageKey = 'sau-ui-density',
   ...props
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(
@@ -36,6 +38,13 @@ export function ThemeProvider({
       if ([15, 45, 145, 175, 240, 280].includes(n)) return n as AccentHue
     }
     return 145
+  })
+
+  const [density, setDensityState] = useState<UiDensity>(() => {
+    if (typeof window === 'undefined') return 'comfortable'
+    const stored = localStorage.getItem(densityStorageKey)
+    if (stored === 'compact' || stored === 'comfortable') return stored
+    return 'comfortable'
   })
 
   const [systemDark, setSystemDark] = useState(() => {
@@ -71,6 +80,14 @@ export function ThemeProvider({
     [accentStorageKey],
   )
 
+  const setDensity = useCallback(
+    (d: UiDensity) => {
+      localStorage.setItem(densityStorageKey, d)
+      setDensityState(d)
+    },
+    [densityStorageKey],
+  )
+
   useEffect(() => {
     const root = document.documentElement
     root.classList.remove('light', 'dark')
@@ -83,8 +100,16 @@ export function ThemeProvider({
     root.style.setProperty('--accent-hue', String(accentHue))
   }, [accentHue])
 
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.density = density
+  }, [density])
+
   return (
-    <ThemeProviderContext.Provider {...props} value={{ theme, resolved, setTheme, accentHue, setAccentHue }}>
+    <ThemeProviderContext.Provider
+      {...props}
+      value={{ theme, resolved, setTheme, accentHue, setAccentHue, density, setDensity }}
+    >
       {children}
     </ThemeProviderContext.Provider>
   )

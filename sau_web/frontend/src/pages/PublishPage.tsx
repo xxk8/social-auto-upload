@@ -41,7 +41,13 @@ export default function PublishPage() {
   const setSubmitSuccess = usePublishStore((s) => s.setSubmitSuccess)
 
   const [mode, setMode] = useState<'video' | 'note'>('video')
-  const [, setPreviewData] = useState<FormPreviewData>({ title: '', desc: '', tags: '', fileUrls: [], fileType: null })
+  const [previewData, setPreviewData] = useState<FormPreviewData>({
+    title: '',
+    desc: '',
+    tags: '',
+    fileUrls: [],
+    fileType: null,
+  })
   const [groupSelection, setGroupSelection] = useState<GroupSelection | null>(null)
 
   const videoFormRef = useRef<VideoFormHandle>(null)
@@ -236,6 +242,7 @@ export default function PublishPage() {
               mode={mode}
               platform={groupSelection?.platforms[0] ?? ''}
               formRef={mode === 'video' ? videoFormRef : noteFormRef}
+              previewData={previewData}
             />
           </div>
         </div>
@@ -259,6 +266,7 @@ export default function PublishPage() {
           mode={mode}
           platform={groupSelection?.platforms[0] ?? ''}
           formRef={mode === 'video' ? videoFormRef : noteFormRef}
+          previewData={previewData}
         />
       </MobileAiDrawer>
     </div>

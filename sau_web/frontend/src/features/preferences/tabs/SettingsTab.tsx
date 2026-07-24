@@ -92,27 +92,22 @@ export function SettingsTab() {
 
   return (
     <div className="space-y-4">
-      {/* Free→pro upgrade banner, gated on tier=free or tier=legacy
-          (pro already paying, no nag). data-testid="settings-upgrade-banner"
-          + data-tier={tierKey} locks e2e via a single selector. */}
       {(tierKey === 'free' || tierKey === 'legacy') && (
         <UpgradeBanner tierKey={tierKey} />
       )}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-[15px] flex items-center gap-2">
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-4">
+          <CardTitle className="flex items-center gap-2.5 text-[14px] font-semibold tracking-tight">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <CreditCard className="h-4 w-4" />
+              <CreditCard className="h-3.5 w-3.5" />
             </span>
             当前套餐
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {/* Plan identity row — bigger plan name + bigger price + 1-line
-              tagline so the reader sees a single coherent card. */}
+        <CardContent className="space-y-5 pt-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70">
+              <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/55">
                 套餐
               </span>
               <div className="mt-1 flex items-baseline gap-2">
@@ -123,19 +118,11 @@ export function SettingsTab() {
                   <Sparkles className="h-4 w-4 text-primary" aria-label="专业版标识" />
                 )}
               </div>
-              <p className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
                 {plan.tagline}
               </p>
             </div>
-            {/* CTA aligned to right edge so plan identity anchors left
-                + action anchors right — matches visitor-surface
-                PricingPage layout pattern. */}
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className="gap-1.5 flex-shrink-0"
-            >
+            <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
               <Link to={ROUTES.public.pricing}>
                 {tierKey === 'pro' ? '管理订阅' : '升级套餐'}
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -143,26 +130,23 @@ export function SettingsTab() {
             </Button>
           </div>
 
-          {/* Divider + price + features — separated so each fact
-              reads as its own row instead of all four competing on
-              one line. */}
-          <div className="border-t border-border/30 pt-4 space-y-4">
+          <div className="space-y-4 border-t border-border/30 pt-4">
             <div>
-              <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70">
+              <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/55">
                 价格
               </span>
               <p className="mt-1 text-sm text-foreground">{plan.price}</p>
             </div>
             <div>
-              <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70">
+              <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/55">
                 已包含
               </span>
-              <ul className="mt-2 space-y-1.5 text-sm text-foreground">
+              <ul className="mt-2 space-y-1.5 text-[13px] text-foreground">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2">
                     <span
                       aria-hidden
-                      className="mt-1.5 h-1 w-1 rounded-full bg-primary flex-shrink-0"
+                      className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary"
                     />
                     <span>{feature}</span>
                   </li>
@@ -173,57 +157,55 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-[15px] flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-              <Bell className="h-4 w-4" />
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-4">
+          <CardTitle className="flex items-center gap-2.5 text-[14px] font-semibold tracking-tight">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Bell className="h-3.5 w-3.5" />
             </span>
             健康告警通知
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-[13px] text-muted-foreground leading-relaxed">
-            当账号 cookie 从「健康」降级为「即将过期」或「已失效」时，系统会通过以下渠道通知你。
+        <CardContent className="space-y-3 pt-5">
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            账号 cookie 从「健康」降级为「即将过期」或「已失效」时，通过以下渠道通知你。
           </p>
-          <NotificationToggle
-            id="notify-health-email"
-            label="邮件通知"
-            description="向管理员邮箱发送 cookie 失效告警"
-            checked={authUser?.notify_health_email ?? true}
-            disabled={isUpdating}
-            onCheckedChange={(checked) =>
-              handleToggle('notify_health_email', checked)
-            }
-          />
-          <NotificationToggle
-            id="notify-health-webhook"
-            label="Webhook 通知"
-            description="向配置的 webhook 地址推送 cookie 失效事件"
-            checked={authUser?.notify_health_webhook ?? true}
-            disabled={isUpdating}
-            onCheckedChange={(checked) =>
-              handleToggle('notify_health_webhook', checked)
-            }
-          />
+          <div className="divide-y divide-border/30 overflow-hidden rounded-lg border border-border/40">
+            <NotificationToggle
+              id="notify-health-email"
+              label="邮件通知"
+              description="向管理员邮箱发送 cookie 失效告警"
+              checked={authUser?.notify_health_email ?? true}
+              disabled={isUpdating}
+              onCheckedChange={(checked) => handleToggle('notify_health_email', checked)}
+            />
+            <NotificationToggle
+              id="notify-health-webhook"
+              label="Webhook 通知"
+              description="向配置的 webhook 地址推送 cookie 失效事件"
+              checked={authUser?.notify_health_webhook ?? true}
+              disabled={isUpdating}
+              onCheckedChange={(checked) => handleToggle('notify_health_webhook', checked)}
+            />
+          </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-[15px] flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
-              <LayoutList className="h-4 w-4" />
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-4">
+          <CardTitle className="flex items-center gap-2.5 text-[14px] font-semibold tracking-tight">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <LayoutList className="h-3.5 w-3.5" />
             </span>
             相关页面
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="pt-3">
           <Button
             asChild
             variant="ghost"
             size="sm"
-            className="w-full justify-start gap-2"
+            className="h-9 w-full justify-start gap-2 text-[13px]"
           >
             <Link to={ROUTES.dashboard.logs}>
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -258,12 +240,12 @@ function NotificationToggle({
   onCheckedChange,
 }: NotificationToggleProps) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="space-y-0.5">
-        <Label htmlFor={id} className="text-sm font-medium text-foreground">
+    <div className="flex items-start justify-between gap-4 bg-card px-3.5 py-3">
+      <div className="min-w-0 space-y-0.5">
+        <Label htmlFor={id} className="text-[13px] font-medium text-foreground">
           {label}
         </Label>
-        <p className="text-[13px] text-muted-foreground leading-relaxed">{description}</p>
+        <p className="text-[12px] leading-relaxed text-muted-foreground">{description}</p>
       </div>
       <Switch
         id={id}
@@ -271,6 +253,7 @@ function NotificationToggle({
         onCheckedChange={onCheckedChange}
         disabled={disabled}
         aria-label={label}
+        className="mt-0.5 shrink-0"
       />
     </div>
   )
@@ -289,17 +272,17 @@ function UpgradeBanner({ tierKey }: { tierKey: TierKey }) {
     <div
       data-testid="settings-upgrade-banner"
       data-tier={tierKey}
-      className="relative flex flex-col gap-4 rounded-xl border border-primary/45 bg-card py-5 pl-6 pr-5 shadow-sm sm:flex-row sm:items-start"
+      className="relative flex flex-col gap-4 overflow-hidden rounded-xl border border-primary/30 bg-primary/[0.04] py-5 pl-6 pr-5 sm:flex-row sm:items-start"
     >
       <div
         aria-hidden
-        className="absolute left-0 top-3 bottom-3 w-[2px] rounded-r-full bg-primary"
+        className="absolute bottom-3 left-0 top-3 w-[2.5px] rounded-r-full bg-primary"
       />
       <div className="min-w-0 flex-1">
-        <span className="font-mono text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary/80">
           升级套餐
         </span>
-        <h3 className="mt-1.5 text-[15px] font-semibold tracking-tight text-foreground">
+        <h3 className="mt-1 text-[15px] font-semibold tracking-tight text-foreground">
           解锁专业版
         </h3>
         <ul className="mt-2.5 space-y-1.5 text-[13px] leading-relaxed text-muted-foreground">

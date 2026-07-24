@@ -207,6 +207,7 @@ def crawl_data():
             "author": r.get("author"),
             "url": r.get("url"),
             "created_at": r.get("created_at"),
+            "payload": r.get("payload"),
         })
     return jsonify({"success": True, "data": items})
 

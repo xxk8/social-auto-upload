@@ -148,47 +148,45 @@ export function AboutTab() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-[15px] flex items-center gap-2">
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-4">
+          <CardTitle className="flex items-center gap-2.5 text-[14px] font-semibold tracking-tight">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Info className="h-4 w-4" />
+              <Info className="h-3.5 w-3.5" />
             </span>
             关于此应用
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {/* App identity — enlarged brand mark (h-12 w-12) + bigger
-              name (text-base font-semibold) so the brand reads as
-              an establishment, not a footer-coda. Hairline
-              divider below separates brand from body. */}
-          <div className="flex items-center gap-4 pb-5 border-b border-border/30">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[4px] bg-foreground text-background flex-shrink-0">
+        <CardContent className="space-y-5 pt-5">
+          <div className="flex items-center gap-4 border-b border-border/30 pb-5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
               <Terminal className="h-5 w-5" strokeWidth={2.5} />
             </div>
-            <div className="flex flex-col min-w-0">
-              <span className="text-base font-semibold tracking-tight text-foreground">
+            <div className="flex min-w-0 flex-col">
+              <span className="text-[15px] font-semibold tracking-tight text-foreground">
                 {appName}
               </span>
-              <span className="mt-1 text-[12px] font-mono tabular-nums text-muted-foreground/80">
-                v{appVersion} · build {buildSha}
+              <span className="mt-1 font-mono text-[12px] tabular-nums text-muted-foreground">
+                v{appVersion}
+                <span className="mx-1.5 text-border">·</span>
+                build {buildSha}
               </span>
             </div>
           </div>
 
           <div>
-            <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground/70">
+            <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/55">
               项目简介
             </span>
-            <p className="mt-2 text-sm text-foreground leading-relaxed">
+            <p className="mt-2 text-[13px] leading-relaxed text-foreground">
               为视频创作者 / 矩阵运营 / MCN 设计的多平台自动发布工具。
             </p>
-            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
               本地优先 · 数据归属您 · 持续维护
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm" className="gap-1.5">
               <Link to={ROUTES.public.about}>
                 <Heart className="h-3.5 w-3.5" aria-hidden />
@@ -196,21 +194,15 @@ export function AboutTab() {
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
-
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Publish history timeline (API-driven) ───────────────────
-          Header gains a refresh icon button so the operator can
-          re-fetch without closing the dialog. While a refresh is
-          in flight, the icon rotates to mirror the existing Loader2
-          pattern used in publish wizard. */}
-      <Card>
-        <CardHeader className="pb-4">
+      <Card className="overflow-hidden border-border/40 shadow-none ring-1 ring-border/40">
+        <CardHeader className="border-b border-border/30 bg-muted/15 pb-3">
           <div className="flex items-center justify-between gap-2">
-            <CardTitle className="text-[15px] flex items-center gap-2">
-              <History className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="flex items-center gap-2 text-[14px] font-semibold tracking-tight">
+              <History className="h-3.5 w-3.5 text-muted-foreground" />
               发布历史
             </CardTitle>
             <Button
@@ -220,7 +212,7 @@ export function AboutTab() {
               onClick={() => void refresh()}
               disabled={loading}
               aria-label="刷新发布历史"
-              className="gap-1.5"
+              className="h-8 gap-1.5 text-[12px]"
             >
               <RefreshCw
                 className={loading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'}
@@ -230,7 +222,7 @@ export function AboutTab() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           {error ? (
             <Timeline.Empty message={`加载失败：${error}`} />
           ) : loading && history.length === 0 ? (

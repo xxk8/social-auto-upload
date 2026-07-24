@@ -90,14 +90,34 @@ const templatesApi = {
   list() {
     return request.get('/api/templates').then((res) => res.data)
   },
-  create(payload: { name: string; mode: string; snapshot: Record<string, unknown> }) {
-    return request.post('/api/templates', payload).then((res) => res.data)
+  create(payload: {
+    name: string
+    mode?: string
+    snapshot?: Record<string, unknown>
+    platform?: string
+    template?: Record<string, unknown>
+  }) {
+    const body = {
+      name: payload.name,
+      mode: payload.mode || 'video',
+      snapshot: payload.snapshot || payload.template || {},
+      platform: payload.platform,
+    }
+    return request.post('/api/templates', body).then((res) => res.data)
   },
   update(id: number, payload: { name?: string; snapshot?: Record<string, unknown> }) {
     return request.put(`/api/templates/${id}`, payload).then((res) => res.data)
   },
   delete(id: number) {
     return request.delete(`/api/templates/${id}`).then((res) => res.data)
+  },
+  remove(id: number) {
+    return request.delete(`/api/templates/${id}`).then((res) => res.data)
+  },
+  apply(id: number, payload?: { variables?: Record<string, unknown>; platform?: string }) {
+    return request
+      .post(`/api/templates/${id}/apply`, payload || {})
+      .then((res) => res.data)
   },
   import(templates: Array<{ name: string; mode: string; snapshot: Record<string, unknown> }>) {
     return request.post('/api/templates/import', templates).then((res) => res.data)
@@ -106,6 +126,7 @@ const templatesApi = {
     return request.get('/api/templates/export', { responseType: 'blob' }).then((res) => res.data)
   },
 }
+
 
 const usageApi = {
   quota() {
@@ -191,6 +212,7 @@ export const api = {
 
   // ── Inbox ──
   inboxDownload: inboxApi.inboxDownload,
+  inboxList: inboxApi.inboxList,
   inboxReveal: inboxApi.inboxReveal,
   inboxTranscribeStream: inboxApi.inboxTranscribeStream,
   inboxFetchFile: inboxApi.inboxFetchFile,
@@ -202,28 +224,39 @@ export const api = {
   // ``api.crawl.status(task_id)`` for polling.
   crawl: crawlApi,
 
-  // ── Analytics, License, Templates, Usage (内联 namespace) ──
+  // ── Analytics, License, Templates, Usage ──
   analytics: analyticsApi,
   license: licenseApi,
   templates: templatesApi,
   usage: usageApi,
-  contentTemplates: {
-    list: async () => ({ success: true as const, data: [] as any[] }),
-    create: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    update: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    remove: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    delete: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    apply: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-  },
+
+  // ── Content templates (alias) ──
+  contentTemplates: templatesApi,
+
+  // ── Smart scheduling ──
   scheduling: {
-    list: async () => ({ success: true as const, data: [] as any[] }),
-    create: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    update: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    remove: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    setSchedule: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-    insights: async (..._a: any[]) => ({ success: true as const, data: { insights: [] as any[], ready: false } }),
-    autoAssign: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
+    insights: (payload?: { platform?: string; account?: string }) =>
+      request
+        .get('/api/scheduling/insights', { params: payload })
+        .then((res) => res.data),
+    autoAssign: (
+      payload?:
+        | { platform?: string; account?: string }
+        | Array<{ platform?: string; account?: string }>,
+    ) =>
+      request
+        .post('/api/scheduling/auto-assign', payload || {})
+        .then((res) => res.data),
+    setSchedule: async (scheduled_at: string) =>
+      request
+        .post('/api/tasks/reschedule', { task_id: '', new_scheduled_at: scheduled_at })
+        .then((res) => res.data),
   },
-  batchImport: async (..._a: any[]) => ({ success: false as const, data: null as any, message: 'unavailable' }),
-  downloadBatchTemplate: async () => new Blob(),
+
+  batchImport: async (..._a: any[]) => ({
+    success: false as const,
+    data: null as any,
+    message: 'batch import not implemented in local shell',
+  }),
+  downloadBatchTemplate: async () => new Blob(['platform,account,title\n'], { type: 'text/csv' }),
 }

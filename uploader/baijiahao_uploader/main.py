@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from patchright.async_api import Playwright, async_playwright, Page
+from patchright.async_api import Page
 import patchright
 import os
 import time
@@ -12,8 +12,9 @@ from uploader.common import (
     _check_login_markers,
     _emit_qrcode_callback,
     _msg,
+    managed_browser,
+    managed_browser_for_login,
 )
-from utils.base_social_media import set_init_script
 from utils.login_qrcode import build_login_qrcode_path
 from utils.login_qrcode import decode_qrcode_from_path
 from utils.login_qrcode import print_terminal_qrcode
@@ -21,8 +22,13 @@ from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
 from utils.log import baijiahao_logger
 from utils.network import async_retry
+
 BAIJIAHAO_LOGIN_URL = 'https://baijiahao.baidu.com/builder/theme/bjh/login'
 BAIJIAHAO_HOME_URL = 'https://baijiahao.baidu.com/builder/rc/home'
+BAIJIAHAO_USER_AGENT = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/127.0.4324.150 Safari/537.36'
+)
 
 async def _extract_baijiahao_qrcode_src(page: Page) -> str:
     qrcode_img = page.locator('div[class*="qrcode"] img, div[class*="qr"] img, .qr-code-img').first
@@ -86,12 +92,13 @@ async def _wait_for_baijiahao_login(page: Page, account_file: str, qrcode_info: 
     return _build_login_result(False, 'timeout', '等待百家号扫码登录超时', account_file, qrcode_info, page.url)
 
 async def baijiahao_cookie_gen(account_file, qrcode_callback=None, headless: bool=LOCAL_CHROME_HEADLESS, poll_interval: int=3, max_checks: int=100):
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=headless, args=['--lang en-GB'])
-        context = await browser.new_context()
-        context = await set_init_script(context)
-        qrcode_path = None
-        result = _build_login_result(False, 'failed', '百家号登录失败', account_file)
+    qrcode_path = None
+    result = _build_login_result(False, 'failed', '百家号登录失败', account_file)
+    async with managed_browser_for_login(
+        headless=headless,
+        channel=None,
+        launch_args=['--lang en-GB'],
+    ) as (context, _browser):
         try:
             page = await context.new_page()
             await page.goto(BAIJIAHAO_LOGIN_URL)
@@ -114,24 +121,22 @@ async def baijiahao_cookie_gen(account_file, qrcode_callback=None, headless: boo
                 baijiahao_logger.info(_msg('🧹', f'临时二维码文件已清理: {qrcode_path}'))
             if not result['success']:
                 baijiahao_logger.error(_msg('😢', f"登录失败: {result['message']}"))
-            await context.close()
-            await browser.close()
-        return result
+    return result
 
 async def cookie_auth(account_file):
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=LOCAL_CHROME_HEADLESS)
-        context = await browser.new_context(storage_state=account_file)
-        context = await set_init_script(context)
+    async with managed_browser(
+        account_file,
+        headless=LOCAL_CHROME_HEADLESS,
+        channel=None,
+    ) as context:
         page = await context.new_page()
         await page.goto('https://baijiahao.baidu.com/builder/rc/home')
         await page.wait_for_timeout(timeout=5000)
         if await _check_login_markers(page, ['注册/登录百家号']):
             baijiahao_logger.error('等待5秒 cookie 失效')
             return False
-        else:
-            baijiahao_logger.success('[+] cookie 有效')
-            return True
+        baijiahao_logger.success('[+] cookie 有效')
+        return True
 
 async def baijiahao_setup(account_file, handle=False, return_detail=False, qrcode_callback=None, headless: bool=LOCAL_CHROME_HEADLESS):
     if not os.path.exists(account_file) or not await cookie_auth(account_file):
@@ -194,50 +199,57 @@ class BaiJiaHaoVideo(object):
         baijiahao_logger.error('视频出错了，重新上传中')
         await page.locator("div[class^='video-main-container'] input").set_input_files(self.file_path)
 
-    async def upload(self, playwright: Playwright) -> None:
-        browser = await playwright.chromium.launch(headless=self.headless, executable_path=self.local_executable_path, proxy=self.proxy_setting)
-        context = await browser.new_context(storage_state=f'{self.account_file}', user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.4324.150 Safari/537.36')
-        await context.grant_permissions(['geolocation'])
-        page = await context.new_page()
-        await page.goto('https://baijiahao.baidu.com/builder/rc/edit?type=videoV2', timeout=60000)
-        baijiahao_logger.info(f'正在上传-------{self.title}.mp4')
-        baijiahao_logger.info('正在打开主页...')
-        await page.wait_for_url('https://baijiahao.baidu.com/builder/rc/edit?type=videoV2', timeout=60000)
-        await page.locator("div[class^='video-main-container'] input").set_input_files(self.file_path)
-        while True:
-            try:
-                await page.wait_for_selector('div#formMain:visible')
-                break
-            except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
-                baijiahao_logger.info('正在等待进入视频发布页面...')
-                await asyncio.sleep(0.1)
-        await asyncio.sleep(1)
-        baijiahao_logger.info('正在填充标题和话题...')
-        await self.add_title_tags(page)
-        upload_status = await self.uploading_video(page)
-        if not upload_status:
-            baijiahao_logger.error(f'发现上传出错了... 文件:{self.file_path}')
-            raise
-        while True:
-            baijiahao_logger.info('正在确认封面完成, 准备去点击定时/发布...')
-            if await page.locator('div.cheetah-spin-container img').count():
-                baijiahao_logger.info('封面已完成，点击定时/发布...')
-                break
-            else:
+    async def upload(self) -> None:
+        launch_kwargs: dict = {
+            'headless': self.headless,
+            'channel': None,
+            'user_agent': BAIJIAHAO_USER_AGENT,
+            'permissions': ['geolocation'],
+            'proxy': self.proxy_setting,
+        }
+        if self.local_executable_path:
+            launch_kwargs['executable_path'] = self.local_executable_path
+        async with managed_browser(str(self.account_file), **launch_kwargs) as context:
+            page = await context.new_page()
+            await page.goto('https://baijiahao.baidu.com/builder/rc/edit?type=videoV2', timeout=60000)
+            baijiahao_logger.info(f'正在上传-------{self.title}.mp4')
+            baijiahao_logger.info('正在打开主页...')
+            await page.wait_for_url('https://baijiahao.baidu.com/builder/rc/edit?type=videoV2', timeout=60000)
+            await page.locator("div[class^='video-main-container'] input").set_input_files(self.file_path)
+            while True:
+                try:
+                    await page.wait_for_selector('div#formMain:visible')
+                    break
+                except (patchright.async_api.Error, OSError, asyncio.TimeoutError):
+                    baijiahao_logger.info('正在等待进入视频发布页面...')
+                    await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
+            baijiahao_logger.info('正在填充标题和话题...')
+            await self.add_title_tags(page)
+            upload_status = await self.uploading_video(page)
+            if not upload_status:
+                baijiahao_logger.error(f'发现上传出错了... 文件:{self.file_path}')
+                raise RuntimeError(f'百家号视频上传失败: {self.file_path}')
+            while True:
+                baijiahao_logger.info('正在确认封面完成, 准备去点击定时/发布...')
+                if await page.locator('div.cheetah-spin-container img').count():
+                    baijiahao_logger.info('封面已完成，点击定时/发布...')
+                    break
                 baijiahao_logger.info('等待封面生成...')
                 await asyncio.sleep(3)
-        await self.publish_video(page, self.publish_date)
-        await page.wait_for_timeout(2000)
-        if await page.locator('div.passMod_dialog-container >> text=百度安全验证:visible').count():
-            baijiahao_logger.error('出现验证，退出')
-            raise Exception('出现验证，退出')
-        await page.wait_for_url('https://baijiahao.baidu.com/builder/rc/clue**', timeout=5000)
-        baijiahao_logger.success('视频发布成功')
-        await context.storage_state(path=self.account_file)
-        baijiahao_logger.info('cookie更新完毕！')
-        await asyncio.sleep(2)
-        await context.close()
-        await browser.close()
+            await self.publish_video(page, self.publish_date)
+            await page.wait_for_timeout(2000)
+            if await page.locator('div.passMod_dialog-container >> text=百度安全验证:visible').count():
+                baijiahao_logger.error('出现验证，退出')
+                raise Exception('出现验证，退出')
+            await page.wait_for_url('https://baijiahao.baidu.com/builder/rc/clue**', timeout=5000)
+            baijiahao_logger.success('视频发布成功')
+            await context.storage_state(path=self.account_file)
+            baijiahao_logger.info('cookie更新完毕！')
+            await asyncio.sleep(2)
+
+    async def main(self):
+        await self.upload()
 
     @async_retry(timeout=300)
     async def uploading_video(self, page):
@@ -291,18 +303,25 @@ class BaiJiaHaoVideo(object):
             self.title += ' 你不知道的'
         await title_container.fill(self.title[:30])
 
-    async def main(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)
+    async def ai2video(self) -> None:
+        launch_kwargs: dict = {
+            'headless': self.headless,
+            'channel': None,
+            'user_agent': BAIJIAHAO_USER_AGENT,
+            'viewport': {'width': 1600, 'height': 900},
+            'permissions': ['geolocation'],
+            'proxy': self.proxy_setting,
+        }
+        if self.local_executable_path:
+            launch_kwargs['executable_path'] = self.local_executable_path
+        async with managed_browser(str(self.account_file), **launch_kwargs) as context:
+            page = await context.new_page()
+            await page.goto('https://aigc.baidu.com/make', timeout=60000)
+            baijiahao_logger.info('正在打开主页...')
+            await page.wait_for_url('https://aigc.baidu.com/make', timeout=60000)
+            await self._ai2video_body(page, context)
 
-    async def ai2video(self, playwright: Playwright) -> None:
-        browser = await playwright.chromium.launch(headless=self.headless, executable_path=self.local_executable_path, proxy=self.proxy_setting)
-        context = await browser.new_context(viewport={'width': 1600, 'height': 900}, storage_state=f'{self.account_file}', user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.4324.150 Safari/537.36')
-        await context.grant_permissions(['geolocation'])
-        page = await context.new_page()
-        await page.goto('https://aigc.baidu.com/make', timeout=60000)
-        baijiahao_logger.info('正在打开主页...')
-        await page.wait_for_url('https://aigc.baidu.com/make', timeout=60000)
+    async def _ai2video_body(self, page: Page, context) -> None:
         await page.locator('div.rounded-lg.border:has-text("全网")').click()
         await asyncio.sleep(1)
         now = datetime.now()
@@ -408,13 +427,10 @@ class BaiJiaHaoVideo(object):
                 print(f'处理新闻时出错: {str(e)}')
                 continue
         print(f'[循环完成] 准备关闭浏览器')
-        await asyncio.sleep(1000)
+        await asyncio.sleep(2)
         await context.storage_state(path=self.account_file)
         baijiahao_logger.info('cookie更新完毕！')
         await asyncio.sleep(2)
-        await context.close()
-        await browser.close()
 
     async def mainAi(self):
-        async with async_playwright() as playwright:
-            await self.ai2video(playwright)
+        await self.ai2video()

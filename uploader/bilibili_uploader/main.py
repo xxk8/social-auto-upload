@@ -3,9 +3,8 @@ import json
 import os
 from pathlib import Path
 import requests
+from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import Page
-import patchright
-from patchright.async_api import async_playwright
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS
 from uploader.common import (
     _all_login_markers_hidden,
@@ -13,8 +12,9 @@ from uploader.common import (
     _check_login_markers,
     _emit_qrcode_callback,
     _msg,
+    managed_browser,
+    managed_browser_for_login,
 )
-from utils.base_social_media import set_init_script
 from utils.login_qrcode import build_login_qrcode_path
 from utils.login_qrcode import decode_qrcode_from_path
 from utils.login_qrcode import print_terminal_qrcode
@@ -85,14 +85,16 @@ async def bilibili_cookie_auth(account_file: str) -> bool:
         cookies = raw if isinstance(raw, list) else raw.get('cookies', [])
         if not cookies:
             return False
-    except (patchright.async_api.Error, OSError, asyncio.TimeoutError, RuntimeError):
+    except (PlaywrightError, OSError, asyncio.TimeoutError, RuntimeError):
         return False
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
-        try:
-            storage_state = _convert_biliup_cookies_to_storage_state(account_file)
-            context = await browser.new_context(storage_state=storage_state)
-            context = await set_init_script(context)
+    try:
+        storage_state = _convert_biliup_cookies_to_storage_state(account_file)
+        async with managed_browser(
+            account_file=None,
+            headless=True,
+            channel=None,
+            storage_state=storage_state,
+        ) as context:
             page = await context.new_page()
             await page.goto(BILIBILI_CREATOR_HOME)
             await page.wait_for_load_state('domcontentloaded')
@@ -100,10 +102,8 @@ async def bilibili_cookie_auth(account_file: str) -> bool:
             if await _check_login_markers(page, ['登录', '扫码登录']):
                 return False
             return True
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError, RuntimeError):
-            return False
-        finally:
-            await browser.close()
+    except (PlaywrightError, OSError, asyncio.TimeoutError, RuntimeError):
+        return False
 
 async def _extract_bilibili_qrcode_src(page: Page) -> str:
     qrcode_img = page.locator('img[class*="qr"], img[class*="qrcode"], div[class*="qr"] img').first
@@ -162,10 +162,7 @@ async def _wait_for_bilibili_login(page: Page, account_file: str, qrcode_info: d
     return _build_login_result(False, 'timeout', '等待B站扫码登录超时', account_file, qrcode_info, page.url)
 
 async def bilibili_cookie_gen(account_file: str, qrcode_callback=None, poll_interval: int=3, max_checks: int=100, headless: bool=LOCAL_CHROME_HEADLESS):
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=headless)
-        context = await browser.new_context()
-        context = await set_init_script(context)
+    async with managed_browser_for_login(headless=headless, channel=None) as (context, browser):
         qrcode_path = None
         result = _build_login_result(False, 'failed', 'B站登录失败', account_file)
         try:
@@ -188,15 +185,13 @@ async def bilibili_cookie_gen(account_file: str, qrcode_callback=None, poll_inte
                 else:
                     storage_state = await context.storage_state()
                     _save_bilibili_cookies_from_storage(storage_state, account_file)
-        except (patchright.async_api.Error, OSError, asyncio.TimeoutError, RuntimeError) as exc:
+        except (PlaywrightError, OSError, asyncio.TimeoutError, RuntimeError) as exc:
             result = _build_login_result(False, 'failed', str(exc), account_file, current_url=page.url if 'page' in locals() else '')
         finally:
             if remove_qrcode_file(qrcode_path):
                 bilibili_logger.info(_msg('🧹', f'临时二维码文件已清理: {qrcode_path}'))
             if not result['success']:
                 bilibili_logger.error(_msg('😢', f"登录失败: {result['message']}"))
-            await context.close()
-            await browser.close()
         return result
 
 def _save_bilibili_cookies_from_storage(storage_state: dict, account_file: str) -> None:
