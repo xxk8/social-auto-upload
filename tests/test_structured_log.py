@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -10,7 +9,7 @@ import pytest
 
 @pytest.fixture
 def client():
-    """Build a Flask test client with isolated cookies dir; uses the real DB.
+    """Build a Flask test client with isolated cookies dir; uses PostgreSQL.
 
     COOKIES_DIR override is applied BEFORE ``create_app()`` so cookie sync
     walks the empty tmp dir, not the real cookies/ tree.
@@ -29,9 +28,10 @@ def client():
 
 
 def _purge_error_events() -> None:
-    from web_runner.db import DB_PATH, db_lock
+    from web_runner.db import db_lock, get_connection
+
     with db_lock:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_connection() as conn:
             conn.execute("DELETE FROM error_events")
             conn.commit()
 

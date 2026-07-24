@@ -94,11 +94,9 @@ def _db_get_error_events(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[dict]:
-    import sqlite3
 
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
             query = "SELECT * FROM error_events"
             conditions: list[str] = []
             params: list = []

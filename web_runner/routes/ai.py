@@ -260,7 +260,7 @@ def ai_config_set():
                 conn.commit()
                 row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return jsonify({"success": True, "data": {"configured": True, "key_masked": masked, "key_id": row_id}})
-    except __import__("sqlite3").IntegrityError:
+    except Exception as _int_exc:  # unique violation
         return jsonify({"success": False, "message": "该 Key 已经添加过了。"}), 409
 
 
@@ -309,7 +309,7 @@ def ai_keys_batch():
                         (key, masked, now),
                     )
                     added += 1
-                except __import__("sqlite3").IntegrityError:
+                except Exception as _int_exc:  # unique violation
                     skipped += 1
             conn.commit()
     return jsonify({"success": True, "data": {"added": added, "skipped": skipped}})

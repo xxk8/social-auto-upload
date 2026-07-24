@@ -252,7 +252,7 @@ sau bilibili upload-video
 
 ## PostgreSQL（可选）
 
-默认 SQLite（`db/database.db`）。设置环境变量后自动切到 Postgres：
+**必须使用 PostgreSQL**（SQLite 已移除）。在 `.env` 或环境中设置：
 
 ```bash
 export DATABASE_URL=postgresql://user:pass@localhost:5432/sau

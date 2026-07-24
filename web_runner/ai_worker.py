@@ -40,9 +40,8 @@ PLATFORM_PROMPTS = {
 def _get_all_keys_cached() -> list[dict]:
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
             rows = conn.execute("SELECT * FROM ai_api_keys ORDER BY id ASC").fetchall()
-            return [dict(r) for r in rows]
+            return [dict(r) if not isinstance(r, dict) else r for r in rows]
 
 
 # Alias used by unit tests / older patch targets (``web_runner._get_all_keys``).

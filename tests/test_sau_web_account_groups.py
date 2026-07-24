@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -11,29 +10,17 @@ import pytest
 
 @pytest.fixture
 def app():
-    """Flask test client with isolated temporary cookies dir and DB."""
-    import web_runner.db as wr_db
+    """Flask test client with isolated temporary cookies dir; PostgreSQL shared schema."""
     import web_runner.utils as wr_utils
     from web_runner import create_app
+    from web_runner.db import init_db
 
+    init_db()
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
-
-        # Redirect COOKIES_DIR to temp BEFORE create_app (cookie sync)
         orig_cookies_dir = wr_utils.COOKIES_DIR
         wr_utils.COOKIES_DIR = tmp / "cookies"
         wr_utils.COOKIES_DIR.mkdir(exist_ok=True)
-
-        # Redirect DB to temp BEFORE create_app / get_connection
-        orig_db_path = wr_db.DB_PATH
-        db_path = tmp / "test.db"
-        wr_db.DB_PATH = db_path
-        # utils also imports DB_PATH at module load; keep them in sync
-        orig_utils_db = getattr(wr_utils, "DB_PATH", None)
-        wr_utils.DB_PATH = db_path
-
-        # Re-initialise DB tables in the temp DB
-        _init_temp_db(db_path)
 
         application = create_app()
         application.config["TESTING"] = True
@@ -42,71 +29,56 @@ def app():
             yield client
 
         wr_utils.COOKIES_DIR = orig_cookies_dir
-        wr_db.DB_PATH = orig_db_path
-        if orig_utils_db is not None:
-            wr_utils.DB_PATH = orig_utils_db
 
 
-def _init_temp_db(db_path: Path) -> None:
-    """Create all required tables in a temp DB (prevents watchdog noise on tasks/logs)."""
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS account_groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                created TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS account_authorizations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id INTEGER NOT NULL,
-                platform TEXT NOT NULL,
-                cookie_file TEXT NOT NULL,
-                created TEXT NOT NULL,
-                FOREIGN KEY (group_id) REFERENCES account_groups(id) ON DELETE CASCADE,
-                UNIQUE(group_id, platform)
-            )
-        """)
-        # Also create tasks/logs tables so the orphan watchdog daemon doesn't error
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                task_id TEXT PRIMARY KEY, status TEXT, platform TEXT,
-                action TEXT, account TEXT, created TEXT, code INTEGER,
-                error TEXT, argv TEXT, result TEXT, publish_detail TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS logs (
-                ts TEXT NOT NULL, message TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-
-
-def _create_group(db_path: Path, name: str) -> int:
-    """Insert a test group and return its ID."""
+def _create_group(_unused, name: str) -> int:
+    """Insert a test group and return its ID (PostgreSQL)."""
     from datetime import datetime
+    from web_runner.db import get_connection
 
-    with sqlite3.connect(db_path) as conn:
+    with get_connection() as conn:
+        # clean prior rows with same name so UNIQUE holds across runs
         conn.execute(
-            "INSERT INTO account_groups (name, created) VALUES (?, ?)",
+            "DELETE FROM account_authorizations WHERE group_id IN "
+            "(SELECT id FROM account_groups WHERE name = ?)",
+            (name,),
+        )
+        conn.execute("DELETE FROM account_groups WHERE name = ?", (name,))
+        cur = conn.execute(
+            "INSERT INTO account_groups (name, created) VALUES (?, ?) RETURNING id",
             (name, datetime.now().isoformat(timespec="seconds")),
         )
+        row = cur.fetchone()
         conn.commit()
-        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        if isinstance(row, dict) and "id" in row:
+            return int(row["id"])
+        if cur.lastrowid:
+            return int(cur.lastrowid)
+        row2 = conn.execute(
+            "SELECT id FROM account_groups WHERE name = ?", (name,)
+        ).fetchone()
+        return int(row2["id"] if isinstance(row2, dict) else row2[0])
 
 
-def _insert_authorization(db_path: Path, group_id: int, platform: str, cookie_file: str) -> None:
+def _insert_authorization(_unused, group_id: int, platform: str, cookie_file: str) -> None:
     """Insert an existing authorization for a group."""
     from datetime import datetime
+    from web_runner.db import get_connection
 
-    with sqlite3.connect(db_path) as conn:
+    with get_connection() as conn:
         conn.execute(
             "INSERT INTO account_authorizations (group_id, platform, cookie_file, created) VALUES (?, ?, ?, ?)",
             (group_id, platform, cookie_file, datetime.now().isoformat(timespec="seconds")),
         )
         conn.commit()
+
+
+def _row_val(row, key: str = "name"):
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row.get(key) if key in row else next(iter(row.values()))
+    return row[0]
 
 
 def _authorize(app, group_id: int, platform: str) -> tuple[int, dict]:
@@ -482,6 +454,17 @@ class TestAccountGroupFsSafety:
         import web_runner.utils as wr_utils
         import web_runner.db as wr_db
 
+        # ensure target name free
+        _create_group(wr_db.DB_PATH, "\u65b0\u540d")  # will delete+recreate then...
+        from web_runner.db import get_connection
+        with get_connection() as conn:
+            conn.execute(
+                "DELETE FROM account_authorizations WHERE group_id IN "
+                "(SELECT id FROM account_groups WHERE name = ?)",
+                ("\u65b0\u540d",),
+            )
+            conn.execute("DELETE FROM account_groups WHERE name = ?", ("\u65b0\u540d",))
+            conn.commit()
         group_id = _create_group(wr_db.DB_PATH, "\u65e7\u540d")
         _insert_authorization(
             wr_db.DB_PATH,
@@ -498,15 +481,18 @@ class TestAccountGroupFsSafety:
         assert body["data"]["name"] == "\u65b0\u540d"
 
         # DB row updated + cookie_file column points to new path
-        with sqlite3.connect(wr_db.DB_PATH) as conn:
-            assert conn.execute(
+        with __import__("web_runner.db", fromlist=["get_connection"]).get_connection() as conn:
+            name_row = conn.execute(
                 "SELECT name FROM account_groups WHERE id = ?", (group_id,)
-            ).fetchone()[0] == "\u65b0\u540d"
+            ).fetchone()
+            assert _row_val(name_row, "name") == "\u65b0\u540d"
             cookie_row = conn.execute(
                 "SELECT cookie_file FROM account_authorizations WHERE group_id = ?",
                 (group_id,),
             ).fetchone()
-            assert cookie_row[0] == str(wr_utils.COOKIES_DIR / "douyin_\u65b0\u540d.json")
+            assert _row_val(cookie_row, "cookie_file") == str(
+                wr_utils.COOKIES_DIR / "douyin_\u65b0\u540d.json"
+            )
 
         # Disk file renamed (old gone, new exists, content preserved)
         assert not (wr_utils.COOKIES_DIR / "douyin_\u65e7\u540d.json").exists()
@@ -558,7 +544,16 @@ class TestAccountGroupFsSafety:
     def test_rename_with_no_authorizations_succeeds(self, app):
         import web_runner.utils as wr_utils
         import web_runner.db as wr_db
+        from web_runner.db import get_connection
 
+        with get_connection() as conn:
+            conn.execute(
+                "DELETE FROM account_authorizations WHERE group_id IN "
+                "(SELECT id FROM account_groups WHERE name = ?)",
+                ("renamed",),
+            )
+            conn.execute("DELETE FROM account_groups WHERE name = ?", ("renamed",))
+            conn.commit()
         group_id = _create_group(wr_db.DB_PATH, "empty")
         status, body = self._post_rename(app, group_id, "renamed")
         assert status == 200
@@ -602,11 +597,11 @@ class TestAccountGroupFsSafety:
         assert status == 409
 
         # DB row untouched
-        with sqlite3.connect(wr_db.DB_PATH) as conn:
+        with __import__("web_runner.db", fromlist=["get_connection"]).get_connection() as conn:
             assert (
-                conn.execute(
+                _row_val(conn.execute(
                     "SELECT name FROM account_groups WHERE id = ?", (group_id,)
-                ).fetchone()[0]
+                ).fetchone(), "name")
                 == "\u539f\u59cb"
             )
 

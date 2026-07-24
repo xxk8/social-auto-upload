@@ -32,11 +32,11 @@ web = [
   "flask-cors==6.0.0",
   "websocket-client>=1.8.0",
   "Authlib>=1.3.0",
+  "psycopg[binary]>=3.2,<3.4",
+  "psycopg-pool>=3.2,<3.4",
 ]
 web-pg = [
   "social-auto-upload[web]",
-  "psycopg[binary]>=3.2,<3.4",
-  "psycopg-pool>=3.2,<3.4",
 ]
 media = [
   "moviepy>=2.0.0",

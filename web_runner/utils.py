@@ -5,7 +5,6 @@ import base64
 import binascii
 import json
 import re
-import sqlite3
 import sys
 import threading
 import time
@@ -16,7 +15,7 @@ from pathlib import Path
 
 from utils.log import logger as _task_logger
 
-from web_runner.db import DB_PATH, BASE_DIR, db_lock, get_connection
+from web_runner.db import BASE_DIR, db_lock, get_connection
 from web_runner.error_events import _db_get_error_events, _log_error_event
 from web_runner.scheduler import (
     _normalise_schedule,
@@ -146,7 +145,6 @@ def _db_insert_task(
 def _db_get_task(task_id: str) -> dict | None:
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
             row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
             return dict(row) if row else None
 
@@ -165,7 +163,6 @@ def _db_update_task(task_id: str, **kwargs: str | int | None) -> None:
 def _db_get_all_tasks(limit: int | None = None, offset: int = 0) -> list[dict]:
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
             query = "SELECT * FROM tasks ORDER BY created DESC"
             params: list = []
             if limit is not None:
@@ -178,10 +175,11 @@ def _db_get_all_tasks(limit: int | None = None, offset: int = 0) -> list[dict]:
             return [dict(r) for r in rows]
 
 
-def _new_task_id(prefix: str) -> str:
-    ts = datetime.now().strftime("%H%M%S")
-    short_uuid = uuid.uuid4().hex[:6]
-    return f"{prefix}-{ts}-{short_uuid}"
+def _new_task_id(prefix: str = "task") -> str:
+    """Return a UUID string (required when ``tasks.task_id`` is UUID on Postgres)."""
+    # prefix retained for call-site readability only; not embedded in the id.
+    _ = prefix
+    return str(uuid.uuid4())
 
 
 def _db_insert_log(ts: str, message: str) -> None:
@@ -203,7 +201,6 @@ def _db_insert_log(ts: str, message: str) -> None:
 def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0) -> list[dict]:
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = sqlite3.Row
             query = "SELECT ts, message FROM logs"
             conditions: list[str] = []
             params: list = []
@@ -248,7 +245,7 @@ def _start_orphan_watchdog(interval_seconds: int = 120) -> None:
             time.sleep(interval_seconds)
             try:
                 _recover_orphaned_tasks()
-            except (sqlite3.Error, OSError) as exc:
+            except (OSError, Exception) as exc:
                 log(f"[watchdog] error: {exc}")
 
     t = threading.Thread(target=_watchdog, daemon=True, name="orphan-watchdog")

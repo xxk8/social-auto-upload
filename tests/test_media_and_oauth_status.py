@@ -10,14 +10,10 @@ os.environ.setdefault("SAU_AUTH_ENABLED", "false")
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
+def client(monkeypatch):
     monkeypatch.setenv("SAU_AUTH_ENABLED", "false")
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.delenv("SAU_DATABASE_URL", raising=False)
     from web_runner import create_app
-    from web_runner import db as dbmod
 
-    dbmod.DB_PATH = tmp_path / "t.db"
     app = create_app()
     app.config["TESTING"] = True
     with app.test_client() as c:
@@ -49,10 +45,11 @@ def test_health_reports_db_backend(client):
     assert res.status_code == 200
     data = res.get_json()
     assert data["ok"] is True
-    assert data.get("db") in ("sqlite", "postgres")
+    assert data.get("db") == "postgres"
 
 
-def test_db_backend_name_sqlite_default():
-    from web_runner.db import backend_name
+def test_db_backend_is_postgres_only():
+    from web_runner.db import backend_name, require_database_url
 
-    assert backend_name() in ("sqlite", "postgres")
+    assert backend_name() == "postgres"
+    assert require_database_url().startswith("postgresql://")

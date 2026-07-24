@@ -2,11 +2,15 @@
 
 Thin wrapper around the web_runner package's create_app() factory.
 Run with: python run.py
+
+Requires PostgreSQL: set DATABASE_URL (see .env / docs/install.md).
 """
 from __future__ import annotations
 
 import atexit
 
+# Ensure web_runner.db loads .env before create_app
+import web_runner.db  # noqa: F401
 from web_runner import create_app
 from web_runner.utils import task_executor
 

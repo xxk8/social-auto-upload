@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import re
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
@@ -25,7 +24,6 @@ bp = Blueprint("account_groups", __name__)
 @bp.get("/api/account-groups")
 def list_account_groups():
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         groups = conn.execute("SELECT * FROM account_groups ORDER BY sort_order ASC, created DESC").fetchall()
         result = []
         for group in groups:
@@ -54,11 +52,18 @@ def create_account_group():
     name = cleaned_or_msg
     with get_connection() as conn:
         try:
-            conn.execute("INSERT INTO account_groups (name, created) VALUES (?, ?)", (name, datetime.now().isoformat(timespec="seconds")))
+            cur = conn.execute(
+                "INSERT INTO account_groups (name, created) VALUES (?, ?) RETURNING id",
+                (name, datetime.now().isoformat(timespec="seconds")),
+            )
+            row = cur.fetchone()
+            group_id = int(row["id"] if isinstance(row, dict) else row[0])
             conn.commit()
-            group_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        except sqlite3.IntegrityError:
-            return jsonify({"success": False, "message": "分组名已存在"}), 409
+        except Exception as _int_exc:  # unique violation (PG UniqueViolation)
+            msg = str(_int_exc).lower()
+            if "unique" in msg or "duplicate" in msg:
+                return jsonify({"success": False, "message": "分组名已存在"}), 409
+            raise
     log(f"[account-groups] created: {name}")
     return jsonify({"success": True, "data": {"id": group_id, "name": name}})
 
@@ -66,7 +71,6 @@ def create_account_group():
 @bp.delete("/api/account-groups/<int:group_id>")
 def delete_account_group(group_id: int):
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         group = conn.execute("SELECT * FROM account_groups WHERE id = ?", (group_id,)).fetchone()
         if not group:
             return jsonify({"success": False, "message": "Group not found"}), 404
@@ -90,13 +94,18 @@ def rename_account_group(group_id: int):
         return jsonify({"success": False, "message": cleaned_or_msg}), 400
     new_name = cleaned_or_msg
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         group = conn.execute("SELECT id, name FROM account_groups WHERE id = ?", (group_id,)).fetchone()
         if not group:
             return jsonify({"success": False, "message": "分组不存在"}), 404
         old_name = group["name"]
         if old_name == new_name:
             return jsonify({"success": True, "data": {"id": group_id, "name": new_name}})
+        clash = conn.execute(
+            "SELECT id FROM account_groups WHERE name = ? AND id <> ?",
+            (new_name, group_id),
+        ).fetchone()
+        if clash:
+            return jsonify({"success": False, "message": "分组名已存在"}), 409
         auth_rows = conn.execute("SELECT id, platform, cookie_file FROM account_authorizations WHERE group_id = ?", (group_id,)).fetchall()
         rename_plan: list[tuple[Path, Path]] = []
         for auth in auth_rows:
@@ -123,7 +132,7 @@ def rename_account_group(group_id: int):
                 new_path = wr_utils.COOKIES_DIR / f"{auth['platform']}_{new_name}.json"
                 conn.execute("UPDATE account_authorizations SET cookie_file = ? WHERE id = ?", (str(new_path), auth["id"]))
             conn.commit()
-        except sqlite3.IntegrityError:
+        except Exception as _int_exc:  # unique violation (PG UniqueViolation)
             for op, np in reversed(renamed_so_far):
                 try:
                     os.rename(np, op)
@@ -141,7 +150,6 @@ def authorize_account_group(group_id: int):
     if not platform:
         return jsonify({"success": False, "message": "platform is required"}), 400
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         group = conn.execute("SELECT * FROM account_groups WHERE id = ?", (group_id,)).fetchone()
         if not group:
             return jsonify({"success": False, "message": "Group not found"}), 404
@@ -159,7 +167,6 @@ def confirm_authorize_account_group(group_id: int):
     if not platform:
         return jsonify({"success": False, "message": "platform is required"}), 400
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         group = conn.execute("SELECT * FROM account_groups WHERE id = ?", (group_id,)).fetchone()
         if not group:
             return jsonify({"success": False, "message": "Group not found"}), 404
@@ -179,7 +186,7 @@ def confirm_authorize_account_group(group_id: int):
                 (group_id, platform, str(cookie_file), datetime.now().isoformat(timespec="seconds"))
             )
             conn.commit()
-        except sqlite3.IntegrityError:
+        except Exception as _int_exc:  # unique violation (PG UniqueViolation)
             conn.execute(
                 "UPDATE account_authorizations SET cookie_file = ?, created = ? WHERE group_id = ? AND platform = ?",
                 (str(cookie_file), datetime.now().isoformat(timespec="seconds"), group_id, platform)
@@ -192,7 +199,6 @@ def confirm_authorize_account_group(group_id: int):
 @bp.delete("/api/account-groups/<int:group_id>/authorize/<platform>")
 def remove_authorization(group_id: int, platform: str):
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         group = conn.execute("SELECT * FROM account_groups WHERE id = ?", (group_id,)).fetchone()
         if not group:
             return jsonify({"success": False, "message": "Group not found"}), 404

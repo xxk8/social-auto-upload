@@ -47,30 +47,27 @@ def _data_uri_png() -> str:
 
 def _read_task_argv(task_id: str) -> list[str]:
     """Read the stored argv for a task from the DB."""
-    import sqlite3
-    from web_runner.db import DB_PATH
+    from web_runner.db import get_connection
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
+    with get_connection() as conn:
         row = conn.execute(
             "SELECT argv FROM tasks WHERE task_id = ?", (task_id,)
         ).fetchone()
     assert row is not None, f"task not found: {task_id}"
-    return json.loads(row["argv"])
+    argv = row["argv"] if isinstance(row, dict) else row[0]
+    return json.loads(argv)
 
 
 def _read_task_status(task_id: str) -> str:
     """Read the stored status for a task from the DB."""
-    import sqlite3
-    from web_runner.db import DB_PATH
+    from web_runner.db import get_connection
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
+    with get_connection() as conn:
         row = conn.execute(
             "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
         ).fetchone()
     assert row is not None, f"task not found: {task_id}"
-    return row["status"]
+    return row["status"] if isinstance(row, dict) else row[0]
 
 
 # ---------------------------------------------------------------------------

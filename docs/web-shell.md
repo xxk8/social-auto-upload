@@ -163,3 +163,8 @@ cd sau_web/frontend && npm run build
 - 日志存储于 SQLite 数据库，重启后端不丢失（自动清理超过 2000 条的旧日志）
 - 需先登录账号（通过 CLI 或 Web Shell 的登录表单）才能发布
 - 所有平台、特性已统一收敛到 `PLATFORM_CONFIG` 字典管理，不再依赖硬编码集合
+
+
+## Database
+
+Web Shell requires **PostgreSQL**. Set `DATABASE_URL` (loaded from `.env`). SQLite is not supported.

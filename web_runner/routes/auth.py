@@ -108,7 +108,6 @@ def login_required(fn):
 def _fetch_user(user_id: int) -> dict | None:
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
             row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
             return dict(row) if row else None
 
@@ -116,7 +115,6 @@ def _fetch_user(user_id: int) -> dict | None:
 def _fetch_user_by_email(email: str) -> dict | None:
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
             row = conn.execute(
                 "SELECT * FROM users WHERE email = ?", (email.lower().strip(),)
             ).fetchone()
@@ -241,7 +239,6 @@ def login():
 
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
             row = conn.execute(
                 "SELECT * FROM verification_codes WHERE email = ? ORDER BY id DESC LIMIT 1",
                 (email,),
@@ -368,7 +365,6 @@ def reset_password():
         return jsonify({"success": False, "message": "新密码至少 8 位"}), 400
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
             row = conn.execute(
                 "SELECT * FROM verification_codes WHERE email = ? ORDER BY id DESC LIMIT 1",
                 (email,),
@@ -408,7 +404,6 @@ def list_users():
         return jsonify({"success": True, "data": [_serialize_user(_synthetic_user())]})
     with db_lock:
         with get_connection() as conn:
-            conn.row_factory = __import__("sqlite3").Row
             rows = conn.execute("SELECT * FROM users ORDER BY id ASC").fetchall()
             data = [_serialize_user(dict(r)) for r in rows]
     return jsonify({"success": True, "data": data})

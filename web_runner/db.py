@@ -1,37 +1,85 @@
-"""Database initialization and connection management.
+"""PostgreSQL-only database initialization and connection management.
 
-Default backend is SQLite (local shell). When ``DATABASE_URL`` or
-``SAU_DATABASE_URL`` is set to a ``postgresql://…`` DSN, connections
-use PostgreSQL via psycopg with a thin sqlite3-compatible wrapper so
-existing ``?`` placeholders and ``conn.execute(...).fetchall()`` call
-sites keep working.
+Requires ``DATABASE_URL`` or ``SAU_DATABASE_URL`` (e.g. from ``.env``):
+
+    DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/sau
+
+Call sites keep using SQLite-style ``?`` placeholders; this module rewrites
+them to ``%s`` for psycopg. ``conn.execute(...).fetchall()`` and optional
+``conn.row_factory`` remain supported for back-compat with existing routes.
 """
 from __future__ import annotations
 
 import os
 import re
-import sqlite3
 import threading
 from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).parent.parent.resolve()
+# Kept for path-based assets (cookies, uploads); not used as a DB file.
 DB_DIR = BASE_DIR / "db"
 DB_DIR.mkdir(exist_ok=True)
+# Deprecated alias — do not open as SQLite. Tests may still import the name.
 DB_PATH = DB_DIR / "database.db"
 
 db_lock = threading.Lock()
 
-_DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("SAU_DATABASE_URL") or "").strip()
 _PLACEHOLDER_RE = re.compile(r"'[^']*'|\?")
+_DATABASE_URL: str = ""
+
+
+def _load_dotenv() -> None:
+    """Best-effort load of repo-root ``.env`` into ``os.environ`` (no override)."""
+    env_path = BASE_DIR / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip("'").strip('"')
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except OSError:
+        pass
+
+
+def _refresh_url() -> str:
+    global _DATABASE_URL
+    _load_dotenv()
+    url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("SAU_DATABASE_URL")
+        or ""
+    ).strip()
+    # normalize postgres:// → postgresql:// for psycopg
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    _DATABASE_URL = url
+    return _DATABASE_URL
+
+
+def require_database_url() -> str:
+    url = _refresh_url()
+    if not url:
+        raise RuntimeError(
+            "PostgreSQL is required. Set DATABASE_URL or SAU_DATABASE_URL "
+            "(e.g. postgresql://user:pass@127.0.0.1:5432/sau). "
+            "SQLite is no longer supported."
+        )
+    return url
 
 
 def backend_name() -> str:
-    return "postgres" if _DATABASE_URL else "sqlite"
+    return "postgres"
 
 
 def using_postgres() -> bool:
-    return bool(_DATABASE_URL)
+    return True
 
 
 def _translate_placeholders(sql: str) -> str:
@@ -61,26 +109,37 @@ class _PgCursor:
     def execute(self, sql: str, params: tuple | list | None = None):
         params = tuple(params or ())
         sql_pg = _translate_placeholders(sql)
-        if using_postgres() and sql.strip().upper().startswith("CREATE"):
+        stripped = sql.strip().upper()
+        if stripped.startswith("CREATE") or stripped.startswith("ALTER"):
             sql_pg = _sqlite_ddl_to_pg(sql_pg)
         cur = self._conn._raw.cursor()
-        cur.execute(sql_pg, params)
-        self._description = cur.description
         try:
-            self._rows = cur.fetchall()
-        except Exception:
-            self._rows = []
-        # best-effort lastrowid for SERIAL inserts
-        try:
-            if cur.description is None and sql.strip().upper().startswith("INSERT"):
-                id_cur = self._conn._raw.cursor()
-                id_cur.execute("SELECT lastval()")
-                row = id_cur.fetchone()
-                self.lastrowid = row[0] if row else None
-                id_cur.close()
-        except Exception:
+            cur.execute(sql_pg, params)
+            self._description = cur.description
+            try:
+                self._rows = list(cur.fetchall() or [])
+            except Exception:
+                self._rows = []
+            # Do NOT call lastval() here: inserts with explicit UUID PKs have
+            # no sequence, and a failed lastval() aborts the whole PG transaction.
             self.lastrowid = None
-        cur.close()
+            if stripped.startswith("INSERT") and "RETURNING" in stripped:
+                # RETURNING rows already in self._rows
+                if self._rows:
+                    first = self._rows[0]
+                    if isinstance(first, dict):
+                        self.lastrowid = first.get("id") or next(iter(first.values()), None)
+                    elif first:
+                        self.lastrowid = first[0]
+        except Exception:
+            # PG aborts the whole txn on error; clear so later statements can run.
+            try:
+                self._conn._raw.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            cur.close()
         return self
 
     def fetchone(self):
@@ -96,11 +155,17 @@ class _PgCursor:
 
 
 class _PostgresCompat:
-    """Minimal sqlite3.Connection-shaped wrapper over psycopg Connection."""
+    """sqlite3.Connection-shaped wrapper over a psycopg connection."""
 
     def __init__(self, dsn: str):
-        import psycopg
-        from psycopg.rows import dict_row
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError(
+                "psycopg is required for PostgreSQL. Install with: "
+                "uv pip install -e '.[web-pg]'  or  pip install 'psycopg[binary]'"
+            ) from exc
 
         self._raw = psycopg.connect(dsn, row_factory=dict_row)
         self.row_factory = None
@@ -108,9 +173,8 @@ class _PostgresCompat:
     def _map_row(self, row, description):
         if row is None:
             return None
-        # dict_row already returns mappings; honour sqlite-style factories
-        # when callers set row_factory for column rename / filtering.
-        if isinstance(row, dict) and self.row_factory is None:
+        # dict_row already returns mappings — enough for almost all call sites.
+        if isinstance(row, dict):
             return row
         if self.row_factory is None:
             return row
@@ -154,30 +218,21 @@ class _PostgresCompat:
         return False
 
 
-def get_connection():
-    """Return a DB connection (SQLite by default, Postgres when DATABASE_URL set).
-
-    Reads module-level ``DB_PATH`` / ``_DATABASE_URL`` at call time so tests
-    can rebind them.
-    """
-    url = (os.environ.get("DATABASE_URL") or os.environ.get("SAU_DATABASE_URL") or _DATABASE_URL or "").strip()
-    if url:
-        return _PostgresCompat(url)
-    return sqlite3.connect(DB_PATH)
+def get_connection() -> _PostgresCompat:
+    """Return a new PostgreSQL connection (required)."""
+    return _PostgresCompat(require_database_url())
 
 
 def init_db() -> None:
-    """Create all tables and indexes if they don't exist."""
-    # Refresh URL each boot so env changes apply without import reload.
-    global _DATABASE_URL
-    _DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("SAU_DATABASE_URL") or "").strip()
+    """Create all tables and indexes if they don't exist (PostgreSQL)."""
+    require_database_url()
 
     def _ignore_dup(exc: BaseException) -> bool:
         msg = str(exc).lower()
         return (
-            isinstance(exc, sqlite3.OperationalError)
-            or "already exists" in msg
+            "already exists" in msg
             or "duplicate column" in msg
+            or "duplicate_column" in msg
         )
 
     with get_connection() as conn:
@@ -203,7 +258,7 @@ def init_db() -> None:
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS account_groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 created TEXT NOT NULL,
                 sort_order INTEGER NOT NULL DEFAULT 0
@@ -211,7 +266,7 @@ def init_db() -> None:
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS account_authorizations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 group_id INTEGER NOT NULL,
                 platform TEXT NOT NULL,
                 cookie_file TEXT NOT NULL,
@@ -222,22 +277,27 @@ def init_db() -> None:
             )
         """)
         conn.commit()
-        for col in ("argv", "result", "publish_detail"):
+
+        def _try_alter(sql: str) -> None:
             try:
-                conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
+                conn.execute(sql)
+                conn.commit()
             except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 if not _ignore_dup(exc):
                     raise
-        try:
-            conn.execute("ALTER TABLE account_groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
-        except Exception as exc:
-            if not _ignore_dup(exc):
-                raise
-        try:
-            conn.execute("ALTER TABLE account_authorizations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
-        except Exception as exc:
-            if not _ignore_dup(exc):
-                raise
+
+        for col in ("argv", "result", "publish_detail"):
+            _try_alter(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
+        _try_alter(
+            "ALTER TABLE account_groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
+        )
+        _try_alter(
+            "ALTER TABLE account_authorizations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_message ON logs (message)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks (created)")
@@ -250,7 +310,7 @@ def init_db() -> None:
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ai_api_keys (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 api_key TEXT NOT NULL UNIQUE,
                 masked TEXT NOT NULL,
                 created TEXT NOT NULL,
@@ -259,7 +319,7 @@ def init_db() -> None:
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS error_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 ts TEXT NOT NULL,
                 task_id TEXT,
                 level TEXT NOT NULL DEFAULT 'error',
@@ -277,13 +337,18 @@ def init_db() -> None:
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_error_events_ts ON error_events (ts)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_error_events_platform ON error_events (platform)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_error_events_account ON error_events (account)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_error_events_exc_type ON error_events (exc_type)")
-        # Auth tables (minimal session login for the SPA AuthGuard).
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_error_events_platform ON error_events (platform)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_error_events_account ON error_events (account)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_error_events_exc_type ON error_events (exc_type)"
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 email TEXT NOT NULL UNIQUE,
                 role TEXT NOT NULL DEFAULT 'user',
                 name TEXT,
@@ -299,7 +364,7 @@ def init_db() -> None:
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS verification_codes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 email TEXT NOT NULL,
                 code TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
@@ -320,26 +385,16 @@ def init_db() -> None:
             ("notify_health_webhook", "INTEGER NOT NULL DEFAULT 0"),
             ("last_login", "TEXT"),
         ):
-            try:
-                conn.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
-            except Exception as exc:
-                if not _ignore_dup(exc):
-                    raise
-        # Task schedule column for calendar / reschedule / copy.
+            _try_alter(f"ALTER TABLE users ADD COLUMN {col} {decl}")
         for col, decl in (
             ("scheduled_at", "TEXT"),
             ("title", "TEXT"),
         ):
-            try:
-                conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
-            except Exception as exc:
-                if not _ignore_dup(exc):
-                    raise
-        # Content templates (publish templates store).
+            _try_alter(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS content_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 mode TEXT NOT NULL DEFAULT 'video',
                 snapshot TEXT NOT NULL DEFAULT '{}',
@@ -348,11 +403,10 @@ def init_db() -> None:
             )
             """
         )
-        # Studio (script studio) minimal tables — SQLite local shell.
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS studio_projects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 owner_user_id INTEGER NOT NULL DEFAULT 0,
                 title TEXT NOT NULL,
                 synopsis TEXT NOT NULL DEFAULT '',
@@ -366,7 +420,7 @@ def init_db() -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS studio_episodes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 project_id INTEGER NOT NULL,
                 episode_no INTEGER NOT NULL,
                 act TEXT,
@@ -378,11 +432,10 @@ def init_db() -> None:
             )
             """
         )
-        # Crawl results (local cache; crawler worker optional).
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS crawled_content (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 platform TEXT,
                 post_id TEXT,
                 title TEXT,
@@ -396,7 +449,7 @@ def init_db() -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS crawled_comments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 platform TEXT,
                 post_id TEXT,
                 comment_id TEXT,
@@ -422,3 +475,7 @@ def init_db() -> None:
             """
         )
         conn.commit()
+
+
+# Load .env as soon as this module is imported so create_app()/tests see DATABASE_URL.
+_refresh_url()
