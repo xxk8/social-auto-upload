@@ -8,8 +8,13 @@ from patchright.async_api import Page
 from patchright.async_api import async_playwright
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
-from uploader.common import _build_login_result, _emit_qrcode_callback, _msg, managed_browser
-from utils.base_social_media import set_init_script
+from uploader.common import (
+    _build_login_result,
+    _emit_qrcode_callback,
+    _msg,
+    managed_browser,
+    managed_browser_for_login,
+)
 from utils.files_times import get_absolute_path
 from utils.login_qrcode import build_login_qrcode_path
 from utils.login_qrcode import decode_qrcode_from_path
@@ -97,15 +102,15 @@ async def _is_ks_login_page_gone(page: Page) -> bool:
     except (PlaywrightError, OSError, asyncio.TimeoutError):
         return True
 
+def _ks_browser_kwargs(headless: bool) -> dict:
+    if LOCAL_CHROME_PATH:
+        return {'headless': headless, 'executable_path': LOCAL_CHROME_PATH, 'channel': None}
+    return {'headless': headless, 'channel': None}
+
+
 async def cookie_auth(account_file):
-    async with async_playwright() as playwright:
-        if LOCAL_CHROME_PATH:
-            browser = await playwright.chromium.launch(headless=True, executable_path=LOCAL_CHROME_PATH)
-        else:
-            browser = await playwright.chromium.launch(headless=True)
-        try:
-            context = await browser.new_context(storage_state=account_file)
-            context = await set_init_script(context)
+    try:
+        async with managed_browser(account_file, **_ks_browser_kwargs(True)) as context:
             page = await context.new_page()
             await page.goto(KUAISHOU_UPLOAD_URL)
             if await _is_ks_cookie_invalid(page):
@@ -113,11 +118,9 @@ async def cookie_auth(account_file):
                 return False
             kuaishou_logger.success(_msg('🥳', 'cookie 有效'))
             return True
-        except (PlaywrightError, OSError, asyncio.TimeoutError, RuntimeError) as exc:
-            kuaishou_logger.warning(_msg('😵', f'cookie 校验时出错，按失效处理: {exc}'))
-            return False
-        finally:
-            await browser.close()
+    except (PlaywrightError, OSError, asyncio.TimeoutError, RuntimeError) as exc:
+        kuaishou_logger.warning(_msg('😵', f'cookie 校验时出错，按失效处理: {exc}'))
+        return False
 
 async def ks_setup(account_file, handle=False, return_detail=False, qrcode_callback=None, headless: bool=LOCAL_CHROME_HEADLESS):
     account_file = get_absolute_path(account_file, 'ks_uploader')
@@ -134,16 +137,10 @@ async def ks_setup(account_file, handle=False, return_detail=False, qrcode_callb
 async def get_ks_cookie(account_file, qrcode_callback=None, headless: bool=LOCAL_CHROME_HEADLESS, poll_interval: int=3, max_checks: int=100):
     if headless:
         kuaishou_logger.info(_msg('🖼️', '快手登录将以无头模式运行，小人会输出终端二维码并保存本地二维码图片'))
-    async with async_playwright() as playwright:
-        if LOCAL_CHROME_PATH:
-            browser = await playwright.chromium.launch(headless=headless, executable_path=LOCAL_CHROME_PATH)
-        else:
-            browser = await playwright.chromium.launch(headless=headless)
-        context = await browser.new_context()
-        context = await set_init_script(context)
-        qrcode_path = None
-        qrcode_info = None
-        result = _build_login_result(False, 'failed', '快手登录失败', account_file)
+    qrcode_path = None
+    qrcode_info = None
+    result = _build_login_result(False, 'failed', '快手登录失败', account_file)
+    async with managed_browser_for_login(**_ks_browser_kwargs(headless)) as (context, _browser):
         try:
             page = await context.new_page()
             await page.goto(KUAISHOU_LOGIN_URL)
@@ -177,8 +174,6 @@ async def get_ks_cookie(account_file, qrcode_callback=None, headless: bool=LOCAL
                 kuaishou_logger.info(_msg('🧹', f'临时二维码文件已清理: {qrcode_path}'))
             if not result['success']:
                 kuaishou_logger.error(_msg('😢', f"登录失败: {result['message']}"))
-            await context.close()
-            await browser.close()
     return result
 
 class KSBaseUploader(BaseVideoUploader):

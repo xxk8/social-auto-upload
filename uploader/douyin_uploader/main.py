@@ -50,28 +50,31 @@ def _build_login_result(success: bool, status: str, message: str, account_file: 
 
 
 async def cookie_auth(account_file):
-    async with async_playwright() as playwright:
-        # 抖音无头会撞反爬墙→content/upload 跳登录→误判 cookie 失效（间歇性）。校验必须有头。
-        browser = await playwright.chromium.launch(
-            headless=False, channel="chrome",
-            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+    # 抖音无头会撞反爬墙→content/upload 跳登录→误判 cookie 失效（间歇性）。校验必须有头。
+    async with managed_browser(
+        account_file,
+        headless=False,
+        channel="chrome",
+        launch_args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+    ) as context:
+        page = await context.new_page()
+        await page.goto(
+            "https://creator.douyin.com/creator-micro/content/upload",
+            wait_until="domcontentloaded",
+            timeout=90000,
         )
         try:
-            context = await browser.new_context(storage_state=account_file)
-            context = await set_init_script(context)
-            page = await context.new_page()
-            await page.goto("https://creator.douyin.com/creator-micro/content/upload", wait_until="domcontentloaded", timeout=90000)
-            try:
-                await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload", timeout=5000)
-            except (PlaywrightError, OSError, asyncio.TimeoutError):
-                return False
+            await page.wait_for_url(
+                "https://creator.douyin.com/creator-micro/content/upload",
+                timeout=5000,
+            )
+        except (PlaywrightError, OSError, asyncio.TimeoutError):
+            return False
 
-            if await page.get_by_text("手机号登录").count() or await page.get_by_text("扫码登录").count():
-                return False
+        if await page.get_by_text("手机号登录").count() or await page.get_by_text("扫码登录").count():
+            return False
 
-            return True
-        finally:
-            await browser.close()
+        return True
 
 
 async def douyin_setup(account_file, handle=False, return_detail=False, qrcode_callback=None, headless: bool = LOCAL_CHROME_HEADLESS):

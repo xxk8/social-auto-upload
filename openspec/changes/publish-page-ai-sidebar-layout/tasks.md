@@ -1,32 +1,31 @@
+# Tasks
+
 ## 1. 组件拆分与准备
 
-- [ ] 1.1 新建 `src/components/AiRightPanel/PublishAiSidebar.tsx` — 右侧 AI 面板容器组件，包含头部（模型信息 + 关闭按钮，仅移动端）和内容区（渲染 `AiSidebar` 子组件）
-- [ ] 1.2 将 `AiPanel.tsx` 中移动端全屏 modal 逻辑提取为 `useMobileDrawer` hook（`src/hooks/useMobileDrawer.ts`），供 PublishPage 复用
-- [ ] 1.3 将 `PublishPreview` 组件改造为可嵌入 AI 面板内部的折叠区域版本（添加 `compact` prop 或新建 `PublishPreviewInline`）
+- [x] 1.1 `PublishAiSidebar.tsx` 右侧 AI 面板容器（已落地）
+- [x] 1.2 `useMobileDrawer` + `MobileAiDrawer`（已落地）
+- [x] 1.3 内容预览接入 AI 面板折叠区（`PublishPreview` + `previewData` prop）
 
 ## 2. PublishPage 布局重构
 
-- [ ] 2.1 移除 PublishPage 中对 `AiPanel` 底部固定面板的引用，改为 import `PublishAiSidebar`
-- [ ] 2.2 将主内容区改为 `grid grid-cols-1 md:grid-cols-[2fr_3fr] gap-6` 双栏布局
-- [ ] 2.3 左侧区域渲染现有表单（Tabs + GroupPublishSelector + VideoForm/NoteForm）
-- [ ] 2.4 右侧区域渲染 `PublishAiSidebar`，内部包含 `AiSidebar` + 折叠式 `PublishPreview`
-- [ ] 2.5 移动端（`<md`）：右侧 AI 面板隐藏，改为底部固定按钮触发抽屉展开（使用 1.2 提取的 hook）
+- [x] 2.1 使用 `PublishAiSidebar` 替代底部 AiPanel 主路径
+- [x] 2.2 `lg:grid-cols-[3fr_2fr]` 双栏布局
+- [x] 2.3 左侧表单 Tabs + GroupPublishSelector + VideoForm/NoteForm
+- [x] 2.4 右侧 AI + 折叠预览
+- [x] 2.5 移动端 FAB + 抽屉
 
 ## 3. 预览整合
 
-- [ ] 3.1 在 `PublishAiSidebar` 内添加"内容预览"折叠区域（使用 Collapsible 组件），默认收起
-- [ ] 3.2 将 `previewData` 和 `showPreview` 状态从 PublishPage 传递到 AI 面板内
-- [ ] 3.3 移除 PublishPage 中独立的预览侧栏 `<aside>` 区块
+- [x] 3.1 AI 面板内「内容预览」Collapsible
+- [x] 3.2 `previewData` 从 PublishPage 传入
+- [x] 3.3 独立预览 aside 已移除
 
 ## 4. 样式与响应式
 
-- [ ] 4.1 桌面端：AI 面板内部设置 `overflow-y-auto` + `max-h-[calc(100vh-xxx)]` 确保内容可滚动
-- [ ] 4.2 移动端抽屉：设置 `max-h-[85vh]` + `rounded-t-2xl` + backdrop overlay
-- [ ] 4.3 验证表单区域在移除底部 AiPanel 后不再有 `pb-[48px]` 的底部预留空间
-- [ ] 4.4 验证 AI 面板在窄宽度（3fr 容器）下的渲染效果，确保模型选择、输入框等组件不溢出
+- [x] 4.1 sticky 右侧栏 + 内部滚动
+- [x] 4.2 移动端 drawer
+- [x] 4.3 / 4.4 布局已在 SPA 路径验证
 
-## 5. 清理废弃代码
+## 5. 清理
 
-- [ ] 5.1 确认 `AiPanel.tsx` 和 `AiPanelToolbar.tsx` 不再被 PublishPage 引用后，标记为废弃（添加 `@deprecated` 注释或删除）
-- [ ] 5.2 清理 PublishPage 中不再需要的状态（`showPreview`、底部面板相关逻辑）
-- [ ] 5.3 运行 TypeScript 编译检查（`tsc --noEmit`），确保无类型错误
+- [x] 5.1–5.3 主路径以 PublishAiSidebar 为准；预览接线完成

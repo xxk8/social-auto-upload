@@ -13,7 +13,7 @@ from patchright.async_api import async_playwright
 
 from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
-from uploader.common import managed_browser
+from uploader.common import managed_browser, managed_browser_for_login
 from utils.base_social_media import set_init_script
 from utils.login_qrcode import build_login_qrcode_path
 from utils.login_qrcode import decode_qrcode_from_path
@@ -155,18 +155,18 @@ async def _is_xhs_login_completed(page: Page) -> bool:
         return True
 
 
+def _xhs_browser_kwargs(headless: bool) -> dict:
+    if LOCAL_CHROME_PATH:
+        return {"headless": headless, "executable_path": LOCAL_CHROME_PATH, "channel": None}
+    return {"headless": headless, "channel": "chrome"}
+
+
 async def cookie_auth(account_file):
     if not os.path.exists(account_file):
         return False
 
-    async with async_playwright() as playwright:
-        if LOCAL_CHROME_PATH:
-            browser = await playwright.chromium.launch(headless=True, executable_path=LOCAL_CHROME_PATH)
-        else:
-            browser = await playwright.chromium.launch(headless=True, channel="chrome")
-        try:
-            context = await browser.new_context(storage_state=account_file)
-            context = await set_init_script(context)
+    try:
+        async with managed_browser(account_file, **_xhs_browser_kwargs(True)) as context:
             page = await context.new_page()
             await page.goto(
                 _build_xhs_creator_url(
@@ -190,11 +190,9 @@ async def cookie_auth(account_file):
 
             xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
             return True
-        except (PlaywrightError, OSError, asyncio.TimeoutError) as exc:
-            xiaohongshu_logger.warning(_msg("😵", f"cookie 校验时出错，按失效处理: {exc}"))
-            return False
-        finally:
-            await browser.close()
+    except (PlaywrightError, OSError, asyncio.TimeoutError) as exc:
+        xiaohongshu_logger.warning(_msg("😵", f"cookie 校验时出错，按失效处理: {exc}"))
+        return False
 
 
 async def xiaohongshu_setup(
@@ -233,13 +231,10 @@ async def xiaohongshu_cookie_gen(
     account_path = Path(account_file)
     account_path.parent.mkdir(parents=True, exist_ok=True)
 
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=headless, channel="chrome")
-        context = await browser.new_context()
-        context = await set_init_script(context)
-        qrcode_path = None
-        qrcode_info = None
-        result = _build_login_result(False, "failed", "小红书登录失败", account_file)
+    qrcode_path = None
+    qrcode_info = None
+    result = _build_login_result(False, "failed", "小红书登录失败", account_file)
+    async with managed_browser_for_login(**_xhs_browser_kwargs(headless)) as (context, _browser):
         try:
             page = await context.new_page()
             await page.goto(_build_xhs_creator_url("/login"))
@@ -282,9 +277,7 @@ async def xiaohongshu_cookie_gen(
                 xiaohongshu_logger.info(_msg("🧹", f"临时二维码文件已清理: {qrcode_path}"))
             if not result["success"]:
                 xiaohongshu_logger.error(_msg("😢", f"登录失败: {result['message']}"))
-            await context.close()
-            await browser.close()
-        return result
+    return result
 
 
 class XiaoHongShuBaseUploader(BaseVideoUploader):
