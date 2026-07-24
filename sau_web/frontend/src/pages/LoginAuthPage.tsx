@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { motion, AnimatePresence } from 'motion/react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,7 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/components/ui/toast'
 import { toneTextClass } from '@/lib/tone'
 import { cn } from '@/lib/utils'
+import { baseURL, request } from '@/api/request'
 
 // ── Brand block: project URL pill (round-design-polish) ──────────────────
 //
@@ -376,34 +378,8 @@ export default function LoginAuthPage() {
               </ol>
             )}
 
-            {/* ── Social login: disabled until real OAuth is wired (stub returns 501) ── */}
-            <div className="space-y-3 mb-5">
-              <Button
-                variant="outline"
-                className="w-full h-11 text-sm font-medium opacity-60 cursor-not-allowed"
-                type="button"
-                disabled
-                title="本地壳未启用 Google OAuth，请使用邮箱验证码或密码登录"
-                aria-disabled="true"
-              >
-                <Globe className="mr-2 h-4 w-4" />
-                Google 登录（未启用）
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full h-11 text-sm font-medium opacity-60 cursor-not-allowed"
-                type="button"
-                disabled
-                title="本地壳未启用 GitHub OAuth，请使用邮箱验证码或密码登录"
-                aria-disabled="true"
-              >
-                <GitBranch className="mr-2 h-4 w-4" />
-                GitHub 登录（未启用）
-              </Button>
-              <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-                社交登录在本地壳为占位接口；请用下方邮箱验证码或密码登录。
-              </p>
-            </div>
+            {/* ── Social login (enabled when backend reports OAuth configured) ── */}
+            <SocialLoginButtons />
 
             <div className="relative mb-5">
               <div className="absolute inset-0 flex items-center">
@@ -735,6 +711,63 @@ export default function LoginAuthPage() {
           登录即表示同意我们的服务条款和隐私政策
         </motion.p>
       </motion.div>
+    </div>
+  )
+}
+
+function SocialLoginButtons() {
+  const { data } = useQuery({
+    queryKey: ['oauth-status'],
+    queryFn: async () => {
+      const res = await request.get('/api/auth/oauth/status')
+      return (res.data?.data ?? res.data) as { google?: boolean; github?: boolean; message?: string }
+    },
+    staleTime: 60_000,
+    retry: 1,
+  })
+  const googleOn = Boolean(data?.google)
+  const githubOn = Boolean(data?.github)
+  const apiRoot = (baseURL || '').replace(/\/$/, '') || ''
+
+  return (
+    <div className="space-y-3 mb-5">
+      <Button
+        variant="outline"
+        className={cn(
+          'w-full h-11 text-sm font-medium',
+          !googleOn && 'opacity-60 cursor-not-allowed',
+        )}
+        type="button"
+        disabled={!googleOn}
+        title={googleOn ? '使用 Google 账号登录' : '未配置 GOOGLE_CLIENT_ID / SECRET'}
+        onClick={() => {
+          if (googleOn) window.location.href = `${apiRoot}/api/auth/google/login`
+        }}
+      >
+        <Globe className="mr-2 h-4 w-4" />
+        {googleOn ? 'Google 登录' : 'Google 登录（未配置）'}
+      </Button>
+      <Button
+        variant="outline"
+        className={cn(
+          'w-full h-11 text-sm font-medium',
+          !githubOn && 'opacity-60 cursor-not-allowed',
+        )}
+        type="button"
+        disabled={!githubOn}
+        title={githubOn ? '使用 GitHub 账号登录' : '未配置 GITHUB_CLIENT_ID / SECRET'}
+        onClick={() => {
+          if (githubOn) window.location.href = `${apiRoot}/api/auth/github/login`
+        }}
+      >
+        <GitBranch className="mr-2 h-4 w-4" />
+        {githubOn ? 'GitHub 登录' : 'GitHub 登录（未配置）'}
+      </Button>
+      {!googleOn && !githubOn && (
+        <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+          社交登录未配置。在后端设置 GOOGLE_CLIENT_* / GITHUB_CLIENT_* 后刷新本页即可启用；也可使用下方邮箱验证码或密码登录。
+        </p>
+      )}
     </div>
   )
 }

@@ -26,6 +26,14 @@ PLATFORM_PROMPTS = {
     "xiaohongshu": "你是小红书内容创作专家。生成种草风格的笔记内容，要有真实感和分享感。",
     "kuaishou": "你是快手内容创作专家。生成接地气、有温度的内容。",
     "bilibili": "你是B站内容创作专家。生成适合年轻用户群体的创意内容。",
+    "youtube": (
+        "You are a YouTube packaging expert. Write an English (or bilingual) title, "
+        "description, and tags optimized for search + retention: strong hook in the "
+        "first line, timestamps-friendly structure, 8–15 tags, CTA for like/subscribe."
+    ),
+    "tiktok": "You are a TikTok caption expert. Short, punchy, hashtag-heavy hooks.",
+    "tencent": "你是微信视频号内容专家。文案偏生活化、信任感强，适合私域触达。",
+    "baijiahao": "你是百家号内容专家。偏资讯/知识科普风格，标题清晰、信息密度适中。",
 }
 
 

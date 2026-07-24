@@ -1,9 +1,19 @@
-"""Database initialization and connection management."""
+"""Database initialization and connection management.
+
+Default backend is SQLite (local shell). When ``DATABASE_URL`` or
+``SAU_DATABASE_URL`` is set to a ``postgresql://…`` DSN, connections
+use PostgreSQL via psycopg with a thin sqlite3-compatible wrapper so
+existing ``?`` placeholders and ``conn.execute(...).fetchall()`` call
+sites keep working.
+"""
 from __future__ import annotations
 
+import os
+import re
 import sqlite3
 import threading
 from pathlib import Path
+from typing import Any
 
 BASE_DIR = Path(__file__).parent.parent.resolve()
 DB_DIR = BASE_DIR / "db"
@@ -12,18 +22,164 @@ DB_PATH = DB_DIR / "database.db"
 
 db_lock = threading.Lock()
 
+_DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("SAU_DATABASE_URL") or "").strip()
+_PLACEHOLDER_RE = re.compile(r"'[^']*'|\?")
 
-def get_connection() -> sqlite3.Connection:
-    """Return a new SQLite connection to the project database.
 
-    Reads module-level ``DB_PATH`` at call time so tests can rebind
-    ``web_runner.db.DB_PATH`` to a temporary file.
+def backend_name() -> str:
+    return "postgres" if _DATABASE_URL else "sqlite"
+
+
+def using_postgres() -> bool:
+    return bool(_DATABASE_URL)
+
+
+def _translate_placeholders(sql: str) -> str:
+    return _PLACEHOLDER_RE.sub(lambda m: "%s" if m.group(0) == "?" else m.group(0), sql)
+
+
+def _sqlite_ddl_to_pg(sql: str) -> str:
+    sql = re.sub(
+        r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT",
+        "SERIAL PRIMARY KEY",
+        sql,
+        flags=re.IGNORECASE,
+    )
+    sql = re.sub(r"\bAUTOINCREMENT\b", "", sql, flags=re.IGNORECASE)
+    return sql
+
+
+class _PgCursor:
+    def __init__(self, conn: "_PostgresCompat", sql: str | None = None, params: tuple = ()):
+        self._conn = conn
+        self._rows: list[Any] = []
+        self._description = None
+        self.lastrowid = None
+        if sql is not None:
+            self.execute(sql, params)
+
+    def execute(self, sql: str, params: tuple | list | None = None):
+        params = tuple(params or ())
+        sql_pg = _translate_placeholders(sql)
+        if using_postgres() and sql.strip().upper().startswith("CREATE"):
+            sql_pg = _sqlite_ddl_to_pg(sql_pg)
+        cur = self._conn._raw.cursor()
+        cur.execute(sql_pg, params)
+        self._description = cur.description
+        try:
+            self._rows = cur.fetchall()
+        except Exception:
+            self._rows = []
+        # best-effort lastrowid for SERIAL inserts
+        try:
+            if cur.description is None and sql.strip().upper().startswith("INSERT"):
+                id_cur = self._conn._raw.cursor()
+                id_cur.execute("SELECT lastval()")
+                row = id_cur.fetchone()
+                self.lastrowid = row[0] if row else None
+                id_cur.close()
+        except Exception:
+            self.lastrowid = None
+        cur.close()
+        return self
+
+    def fetchone(self):
+        if not self._rows:
+            return None
+        row = self._rows.pop(0)
+        return self._conn._map_row(row, self._description)
+
+    def fetchall(self):
+        rows = [self._conn._map_row(r, self._description) for r in self._rows]
+        self._rows = []
+        return rows
+
+
+class _PostgresCompat:
+    """Minimal sqlite3.Connection-shaped wrapper over psycopg Connection."""
+
+    def __init__(self, dsn: str):
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self._raw = psycopg.connect(dsn, row_factory=dict_row)
+        self.row_factory = None
+
+    def _map_row(self, row, description):
+        if row is None:
+            return None
+        # dict_row already returns mappings; honour sqlite-style factories
+        # when callers set row_factory for column rename / filtering.
+        if isinstance(row, dict) and self.row_factory is None:
+            return row
+        if self.row_factory is None:
+            return row
+
+        class _FakeCursor:
+            def __init__(self, desc):
+                self.description = desc
+
+        try:
+            return self.row_factory(_FakeCursor(description), row)  # type: ignore[misc]
+        except TypeError:
+            return self.row_factory(self, row)  # type: ignore[misc]
+
+    def execute(self, sql: str, params: tuple | list | None = None):
+        return _PgCursor(self, sql, tuple(params or ()))
+
+    def commit(self):
+        self._raw.commit()
+
+    def rollback(self):
+        self._raw.rollback()
+
+    def close(self):
+        self._raw.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            try:
+                self.commit()
+            except Exception:
+                self.rollback()
+        else:
+            try:
+                self.rollback()
+            except Exception:
+                pass
+        self.close()
+        return False
+
+
+def get_connection():
+    """Return a DB connection (SQLite by default, Postgres when DATABASE_URL set).
+
+    Reads module-level ``DB_PATH`` / ``_DATABASE_URL`` at call time so tests
+    can rebind them.
     """
+    url = (os.environ.get("DATABASE_URL") or os.environ.get("SAU_DATABASE_URL") or _DATABASE_URL or "").strip()
+    if url:
+        return _PostgresCompat(url)
     return sqlite3.connect(DB_PATH)
 
 
 def init_db() -> None:
     """Create all tables and indexes if they don't exist."""
+    # Refresh URL each boot so env changes apply without import reload.
+    global _DATABASE_URL
+    _DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("SAU_DATABASE_URL") or "").strip()
+
+    def _ignore_dup(exc: BaseException) -> bool:
+        msg = str(exc).lower()
+        return (
+            isinstance(exc, sqlite3.OperationalError)
+            or "already exists" in msg
+            or "duplicate column" in msg
+        )
+
     with get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
@@ -69,16 +225,19 @@ def init_db() -> None:
         for col in ("argv", "result", "publish_detail"):
             try:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
-            except sqlite3.OperationalError:
-                pass
+            except Exception as exc:
+                if not _ignore_dup(exc):
+                    raise
         try:
             conn.execute("ALTER TABLE account_groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+        except Exception as exc:
+            if not _ignore_dup(exc):
+                raise
         try:
             conn.execute("ALTER TABLE account_authorizations ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+        except Exception as exc:
+            if not _ignore_dup(exc):
+                raise
         conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_message ON logs (message)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks (created)")
@@ -163,8 +322,9 @@ def init_db() -> None:
         ):
             try:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
-            except sqlite3.OperationalError:
-                pass
+            except Exception as exc:
+                if not _ignore_dup(exc):
+                    raise
         # Task schedule column for calendar / reschedule / copy.
         for col, decl in (
             ("scheduled_at", "TEXT"),
@@ -172,8 +332,9 @@ def init_db() -> None:
         ):
             try:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
-            except sqlite3.OperationalError:
-                pass
+            except Exception as exc:
+                if not _ignore_dup(exc):
+                    raise
         # Content templates (publish templates store).
         conn.execute(
             """

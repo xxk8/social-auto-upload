@@ -60,6 +60,8 @@ def upload_video():
         thumbnail = data.get("thumbnail")
         thumbnail_landscape = data.get("thumbnail_landscape")
         thumbnail_portrait = data.get("thumbnail_portrait")
+        visibility = data.get("visibility", "public")
+        playlist = data.get("playlist", "")
     else:
         platform = request.form.get("platform")
         account = request.form.get("account")
@@ -79,6 +81,8 @@ def upload_video():
         thumbnail = request.form.get("thumbnail")
         thumbnail_landscape = request.form.get("thumbnail_landscape")
         thumbnail_portrait = request.form.get("thumbnail_portrait")
+        visibility = request.form.get("visibility", "public")
+        playlist = request.form.get("playlist", "")
 
     if not platform or not account or not title:
         return jsonify({"success": False, "message": "platform, account and title are required"}), 400
@@ -135,6 +139,13 @@ def upload_video():
                 argv += ["--category", category]
             if is_draft in ("true", "1"):
                 argv.append("--draft")
+    if platform == "youtube":
+        vis = (visibility or "public").strip().lower()
+        if vis not in ("public", "unlisted", "private"):
+            vis = "public"
+        argv += ["--visibility", vis]
+        if playlist:
+            argv += ["--playlist", playlist]
     if debug in ("true", "1"):
         argv.append("--debug")
 

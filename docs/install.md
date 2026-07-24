@@ -242,3 +242,29 @@ sau bilibili upload-video
 - `sau_cli.py` 是当前 CLI 主入口
 - `docs/legacy-web.md` 是历史 Web 版本说明，不保证当前可用
 - Bilibili 首次运行时可能自动下载 `biliup`
+
+
+## YouTube
+
+- 登录必须 **headed Chrome**（Google 账号密码 / 二步验证），不支持二维码。
+- 国内建议在 `conf.py` 设置 `YT_PROXY = "http://127.0.0.1:7890"`。
+- 示例：`sau youtube login --account me` → `sau youtube upload-video --account me --file demo.mp4 --title "Hi" --visibility unlisted`
+
+## PostgreSQL（可选）
+
+默认 SQLite（`db/database.db`）。设置环境变量后自动切到 Postgres：
+
+```bash
+export DATABASE_URL=postgresql://user:pass@localhost:5432/sau
+# 或 SAU_DATABASE_URL=...
+uv pip install -e '.[web-pg]'
+python -c "from web_runner.db import init_db, backend_name; init_db(); print(backend_name())"
+```
+
+## 媒体生产（Phase 2b，可选）
+
+```bash
+uv pip install -e '.[media]'
+# 切片 / 字幕 / 封面 API：
+# POST /api/video/clip  POST /api/subtitle/generate  POST /api/thumbnail/generate
+```

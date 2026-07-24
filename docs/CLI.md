@@ -2,6 +2,7 @@
 
 项目现在提供一个统一的 CLI 入口 `sau`，当前主线已经接入：
 
+- `youtube`
 - `douyin`
 - `kuaishou`
 - `xiaohongshu`

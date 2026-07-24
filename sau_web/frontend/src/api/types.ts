@@ -24,6 +24,7 @@ export const PLATFORMS: readonly PlatformOption[] = [
   { label: 'Bilibili', value: 'bilibili', color: 'blue' },
   { label: 'TikTok', value: 'tiktok', color: 'cyan' },
   { label: '百家号', value: 'baijiahao', color: 'gold' },
+  { label: 'YouTube', value: 'youtube', color: 'red' },
 ] as const
 
 export const PLATFORMS_WITH_ICONS = PLATFORMS

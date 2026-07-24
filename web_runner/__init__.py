@@ -64,6 +64,13 @@ def create_app() -> Flask:
     _setup_cors(app)
     init_db()
 
+    try:
+        from web_runner.oauth import init_oauth
+
+        init_oauth(app)
+    except Exception as exc:  # strict-exceptions: allow
+        _task_logger.warning(f"[startup] oauth init skipped: {type(exc).__name__}: {exc}")
+
     # Startup side-effects (best-effort; never block boot).
     try:
         from web_runner.utils import _sync_cookie_files_to_db
@@ -128,10 +135,23 @@ def create_app() -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(scheduling_bp)
 
+    try:
+        from web_runner.routes.video_clip import bp as video_clip_bp
+        from web_runner.routes.subtitle import bp as subtitle_bp
+        from web_runner.routes.thumbnail import bp as thumbnail_bp
+
+        app.register_blueprint(video_clip_bp)
+        app.register_blueprint(subtitle_bp)
+        app.register_blueprint(thumbnail_bp)
+    except Exception as exc:  # strict-exceptions: allow
+        _task_logger.warning(f"[startup] media production blueprints skipped: {exc}")
+
     @app.get("/health")
     def health():
         # Contract locked by tests/test_web_shell.py::TestHealth
-        return jsonify({"ok": True})
+        from web_runner.db import backend_name
+
+        return jsonify({"ok": True, "db": backend_name()})
 
     @app.get("/")
     def index():

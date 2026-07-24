@@ -137,3 +137,14 @@ class BaijiahaoVideoUploadRequest(BaseUploadRequest):
     video_file: Path
     title: str
     tags: list[str]
+
+
+@dataclass(slots=True, kw_only=True)
+class YoutubeVideoUploadRequest(BaseUploadRequest):
+    video_file: Path
+    title: str
+    description: str = ''
+    tags: list[str]
+    thumbnail_file: Path | None = None
+    playlist: str | None = None
+    visibility: str = 'public'

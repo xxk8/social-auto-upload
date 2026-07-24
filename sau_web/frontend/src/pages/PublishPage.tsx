@@ -14,6 +14,7 @@ import { VideoForm, type VideoFormHandle } from '../features/publish/VideoForm'
 import { NoteForm, type NoteFormHandle } from '../features/publish/NoteForm'
 import { PublishSuccessBanner } from '../features/publish/PublishSuccessBanner'
 import { GroupPublishSelector, type GroupSelection } from '../features/publish/GroupPublishSelector'
+import { MediaToolsPanel } from '../features/publish/MediaToolsPanel'
 import { PLATFORMS } from '../api/client'
 import { formatTaskId } from '../features/publish/shared'
 import type { FormPreviewData } from '../features/publish/PublishPreview'
@@ -211,6 +212,10 @@ export default function PublishPage() {
               value={groupSelection}
               onChange={setGroupSelection}
             />
+
+            <div className="mt-4">
+              <MediaToolsPanel />
+            </div>
 
             <div className="mt-4">
               <TabsContent value="video" className="mt-0 data-[state=inactive]:hidden">

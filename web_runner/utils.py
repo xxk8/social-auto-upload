@@ -439,10 +439,11 @@ PLATFORM_CONFIG: dict[str, dict] = {
     "tencent": {"video": True, "note": True, "thumbnail": True, "thumbnail_dual": True, "tencent_extra": True},
     "tiktok": {"video": True},
     "baijiahao": {"video": True},
+    "youtube": {"video": True, "thumbnail": True},
 }
 
-DESC_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent"}
-THUMBNAIL_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent"}
+DESC_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent", "youtube"}
+THUMBNAIL_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent", "youtube"}
 THUMBNAIL_DUAL_PLATFORMS = {"douyin", "tencent"}
 NOTE_PLATFORMS = {p for p, cfg in PLATFORM_CONFIG.items() if cfg.get("note")}
 _QR_LOGIN_PLATFORMS = {"douyin", "kuaishou", "xiaohongshu", "tencent", "bilibili", "tiktok", "baijiahao"}

@@ -222,6 +222,34 @@ def _add_tiktok_parser(platform_parsers) -> None:
     add_runtime_flags(tiktok_upload_video_parser)
 
 
+def _add_youtube_parser(platform_parsers) -> None:
+    """Add YouTube subcommands (login is interactive Google auth — headed Chrome)."""
+    youtube_parser = platform_parsers.add_parser('youtube', help='YouTube operations')
+    youtube_actions = youtube_parser.add_subparsers(dest='action', required=True)
+
+    for action_name in ('login', 'check'):
+        action_parser = youtube_actions.add_parser(action_name, help=f'YouTube {action_name}')
+        action_parser.add_argument('--account', required=True, help='YouTube user-defined account_name')
+        if action_name == 'login':
+            add_runtime_flags(action_parser)
+
+    yt_upload = youtube_actions.add_parser('upload-video', help='Upload one video to YouTube Studio')
+    yt_upload.add_argument('--account', required=True, help='YouTube user-defined account_name')
+    yt_upload.add_argument('--file', required=True, type=existing_file_path, help='Video file path')
+    yt_upload.add_argument('--title', required=True, help='Video title')
+    yt_upload.add_argument('--desc', default='', help='Video description')
+    yt_upload.add_argument('--tags', default='', help='Comma-separated tags')
+    yt_upload.add_argument('--thumbnail', type=existing_file_path, help='Optional cover image')
+    yt_upload.add_argument('--playlist', default='', help='Optional playlist name')
+    yt_upload.add_argument(
+        '--visibility',
+        default='public',
+        choices=('public', 'unlisted', 'private'),
+        help='Video visibility (default: public)',
+    )
+    add_runtime_flags(yt_upload)
+
+
 def _add_baijiahao_parser(platform_parsers) -> None:
     """Add Baijiahao subcommands."""
     baijiahao_parser = platform_parsers.add_parser('baijiahao', help='Baijiahao operations')
@@ -254,5 +282,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_tencent_parser(platform_parsers)
     _add_tiktok_parser(platform_parsers)
     _add_baijiahao_parser(platform_parsers)
+    _add_youtube_parser(platform_parsers)
 
     return parser

@@ -12,8 +12,9 @@ from cli.models import (
     DouyinNoteUploadRequest, DouyinVideoUploadRequest, KuaishouNoteUploadRequest,
     KuaishouVideoUploadRequest, TencentNoteUploadRequest, TencentVideoUploadRequest,
     TiktokVideoUploadRequest, XiaohongshuNoteUploadRequest, XiaohongshuVideoUploadRequest,
+    YoutubeVideoUploadRequest,
 )
-from cli.platforms import baijiahao, bilibili, douyin, kuaishou, tencent, tiktok, xiaohongshu
+from cli.platforms import baijiahao, bilibili, douyin, kuaishou, tencent, tiktok, xiaohongshu, youtube
 from cli.utils import parse_image_files, parse_tags
 from uploader.douyin_uploader.main import DOUYIN_PUBLISH_STRATEGY_IMMEDIATE, DOUYIN_PUBLISH_STRATEGY_SCHEDULED
 from uploader.ks_uploader.main import KUAISHOU_PUBLISH_STRATEGY_IMMEDIATE, KUAISHOU_PUBLISH_STRATEGY_SCHEDULED
@@ -57,6 +58,14 @@ def _tencent_video_extra(a: argparse.Namespace) -> dict[str, Any]:
         'thumbnail_file': a.thumbnail, 'thumbnail_landscape_file': a.thumbnail_landscape,
         'thumbnail_portrait_file': a.thumbnail_portrait,
         'short_title': a.short_title, 'category': a.category, 'is_draft': a.draft,
+    }
+
+
+def _youtube_video_extra(a: argparse.Namespace) -> dict[str, Any]:
+    return {
+        'thumbnail_file': getattr(a, 'thumbnail', None),
+        'playlist': getattr(a, 'playlist', None) or None,
+        'visibility': getattr(a, 'visibility', None) or 'public',
     }
 
 def _tencent_note_extra(a: argparse.Namespace) -> dict[str, Any]:
@@ -234,6 +243,17 @@ PLATFORM_HANDLERS: dict[str, PlatformHandler] = {
         video_request_cls=BaijiahaoVideoUploadRequest,
         video_has_description=False,
         video_has_publish_strategy=False,
+    ),
+    'youtube': PlatformHandler(
+        'YouTube',
+        _bind(youtube, 'login'),
+        _bind(youtube, 'check'),
+        _bind(youtube, 'upload_video'),
+        video_request_cls=YoutubeVideoUploadRequest,
+        video_has_description=True,
+        video_has_thumbnail=True,
+        video_has_publish_strategy=False,
+        video_extra_builder=_youtube_video_extra,
     ),
 }
 
