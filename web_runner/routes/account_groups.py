@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from web_runner.db import DB_PATH, get_connection
+from web_runner.db import get_connection
 from web_runner.utils import (
     _QR_LOGIN_PLATFORMS,
     _quick_check_cookie,

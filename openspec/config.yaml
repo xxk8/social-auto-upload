@@ -2,7 +2,7 @@ schema: spec-driven
 
 context: |
   Tech stack:
-    - Backend: Python 3.10+, Flask, SQLite
+    - Backend: Python 3.10+, Flask, PostgreSQL
     - CLI: Python, argparse, asyncio (sau_cli.py)
     - Frontend: React 18, TypeScript, Vite, Ant Design 5, Zustand, TanStack Query
     - Structure: sau_cli.py + uploader/ (Python CLI), web_runner.py (Flask), sau_web/frontend/ (React)
@@ -39,7 +39,7 @@ context: |
     - Schedule format: "YYYY-MM-DD HH:MM" (space separator)
     - Account cookie files: cookies/{platform}_{account_name}.json
     - Temp upload files: .sau_uploads/
-    - DB: db/database.db (SQLite)
+    - DB: PostgreSQL via DATABASE_URL
     - Platform capabilities defined in PLATFORM_CONFIG dict in web_runner.py
 
 rules:

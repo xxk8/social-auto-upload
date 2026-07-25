@@ -1,4 +1,4 @@
-"""Admin API — SQLite-backed for local Web Shell.
+"""Admin API — Postgres-backed for local Web Shell.
 
 Front-end: ``sau_web/frontend/src/features/admin/adminApi.ts``
 """

@@ -26,7 +26,7 @@ The project also provides a command-line interface (CLI) for users who prefer to
 
 ### Backend
 
-> 当前主线使用 `uv` + `pyproject.toml` 管理依赖，使用 `patchright` 驱动浏览器，数据库初始化已在 `web_runner/db.py` 中集成（首次启动 `web_runner.py` 时自动建表）。**`requirements.txt` 和 `db/createTable.py` 仅作历史兼容用途，新用户请直接按下方命令走。**
+> 当前主线使用 `uv` + `pyproject.toml` 管理依赖，使用 `patchright` 驱动浏览器，数据库初始化已在 `web_runner/db.py` 中集成（首次启动 `web_runner.py` 时自动建表）。**数据库为 PostgreSQL（需配置 `DATABASE_URL`）。** `requirements.txt` 仅作历史兼容。
 
 1.  **Install dependencies (推荐 `uv`，回退 `pip` 时使用 `-e` 安装 `pyproject.toml`):**
     ```bash
@@ -112,7 +112,7 @@ sau skill install
 *   Current mainline code is in `sau_cli.py` / `cli/`, `uploader/`, `skills/`, and `docs/CLI.md`.
 *   The optional React frontend is located in `sau_web/frontend`.
 *   The historical Vue frontend `sau_frontend/` has been removed.
-*   The project uses a SQLite database for data storage. The database file is located at `db/database.db`.
+*   The project uses **PostgreSQL** (set `DATABASE_URL` / `SAU_DATABASE_URL` in `.env`).
 *   The `conf.example.py` file should be copied to `conf.py` and configured with the appropriate settings.
 *   The `requirements.txt` file lists the Python dependencies.
 *   The `sau_web/frontend/package.json` file lists the React frontend dependencies.

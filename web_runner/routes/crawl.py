@@ -1,4 +1,4 @@
-"""Crawl API — local SQLite task queue + optional crawler package.
+"""Crawl API — PostgreSQL task queue + optional crawler package.
 
 Front-end: ``sau_web/frontend/src/api/crawl.ts``
 
@@ -276,7 +276,7 @@ def crawl_health():
         from crawler import run_crawl  # noqa: F401
 
         available = True
-        message = "run_crawl ready (sqlite record; set SAU_CRAWLER_LIVE=1 for browser crawlers)"
+        message = "run_crawl ready (pg record; set SAU_CRAWLER_LIVE=1 for browser crawlers)"
     except ImportError:
         available = False
         message = "crawler.run_crawl missing; tasks still queued"
@@ -285,6 +285,6 @@ def crawl_health():
         "data": {
             "available": available,
             "message": message,
-            "queue": "sqlite:crawl_tasks",
+            "queue": "postgres:crawl_tasks",
         },
     })

@@ -4,9 +4,8 @@ Requires ``DATABASE_URL`` or ``SAU_DATABASE_URL`` (e.g. from ``.env``):
 
     DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/sau
 
-Call sites keep using SQLite-style ``?`` placeholders; this module rewrites
-them to ``%s`` for psycopg. ``conn.execute(...).fetchall()`` and optional
-``conn.row_factory`` remain supported for back-compat with existing routes.
+Call sites may use ``?`` placeholders; this module rewrites them to ``%s``
+for psycopg. ``conn.execute(...).fetchall()`` remains supported.
 """
 from __future__ import annotations
 
@@ -17,11 +16,6 @@ from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).parent.parent.resolve()
-# Kept for path-based assets (cookies, uploads); not used as a DB file.
-DB_DIR = BASE_DIR / "db"
-DB_DIR.mkdir(exist_ok=True)
-# Deprecated alias — do not open as SQLite. Tests may still import the name.
-DB_PATH = DB_DIR / "database.db"
 
 db_lock = threading.Lock()
 

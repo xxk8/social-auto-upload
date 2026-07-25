@@ -1,4 +1,4 @@
-"""Studio (script studio) — SQLite project CRUD for local shell.
+"""Studio (script studio) — Postgres project CRUD for local shell.
 
 Front-end: ``sau_web/frontend/src/api/studio.ts``
 """

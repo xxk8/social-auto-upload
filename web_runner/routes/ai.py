@@ -22,7 +22,7 @@ from web_runner.ai_worker import (
     _has_any_api_key,
     _mark_rate_limited,
 )
-from web_runner.db import DB_PATH, db_lock, get_connection
+from web_runner.db import db_lock, get_connection
 from web_runner.utils import log
 
 bp = Blueprint("ai", __name__)

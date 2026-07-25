@@ -13,7 +13,7 @@ from flask import Flask, Response, jsonify
 from flask_cors import CORS
 
 from utils.log import logger as _task_logger
-from web_runner.db import BASE_DIR, DB_PATH, db_lock, init_db
+from web_runner.db import BASE_DIR, db_lock, init_db
 
 # Re-exports for tests / legacy ``import web_runner as wr`` call sites.
 # Prefer importing from ``web_runner.utils`` / ``web_runner.db`` / ``web_runner.routes.ai``
@@ -121,7 +121,7 @@ def create_app() -> Flask:
     app.register_blueprint(tasks_bp)
     app.register_blueprint(ai_bp)
     app.register_blueprint(account_groups_bp)
-    # Restored SPA surfaces — SQLite-backed, aligned with frontend api/*
+    # Restored SPA surfaces — Postgres-backed, aligned with frontend api/*
     app.register_blueprint(calendar_bp)
     app.register_blueprint(inbox_bp)
     app.register_blueprint(crawl_bp)
@@ -246,7 +246,6 @@ def __getattr__(name: str):
 __all__ = [
     "BASE_DIR",
     "COOKIES_DIR",
-    "DB_PATH",
     "DESC_PLATFORMS",
     "MIN_UPLOAD_BYTES",
     "NOTE_PLATFORMS",

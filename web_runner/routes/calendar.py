@@ -1,4 +1,4 @@
-"""Calendar tasks — maps SQLite ``tasks`` onto a month-view contract.
+"""Calendar tasks — maps PostgreSQL ``tasks`` onto a month-view contract.
 
 Front-end: ``sau_web/frontend/src/api/calendar.ts``
   GET /api/calendar/tasks?start=YYYY-MM-DD&end=YYYY-MM-DD[&platform=][&account=]
@@ -63,7 +63,7 @@ def calendar_tasks():
     platforms = _csv(request.args.get("platform", ""))
     accounts = _csv(request.args.get("account", ""))
 
-    # SQLite: compare date prefix of COALESCE(scheduled_at, created).
+    # Postgres: compare date prefix of COALESCE(scheduled_at, created).
     sql = (
         "SELECT task_id, platform, account, action, status, "
         "scheduled_at, created, argv, title "

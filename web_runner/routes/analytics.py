@@ -1,4 +1,4 @@
-"""Analytics — aggregates from local SQLite ``tasks`` table.
+"""Analytics — aggregates from PostgreSQL ``tasks`` table.
 
 Front-end contract (``useAnalytics`` / charts):
 

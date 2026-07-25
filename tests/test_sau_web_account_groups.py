@@ -31,7 +31,7 @@ def app():
         wr_utils.COOKIES_DIR = orig_cookies_dir
 
 
-def _create_group(_unused, name: str) -> int:
+def _create_group(name: str) -> int:
     """Insert a test group and return its ID (PostgreSQL)."""
     from datetime import datetime
     from web_runner.db import get_connection
@@ -60,7 +60,7 @@ def _create_group(_unused, name: str) -> int:
         return int(row2["id"] if isinstance(row2, dict) else row2[0])
 
 
-def _insert_authorization(_unused, group_id: int, platform: str, cookie_file: str) -> None:
+def _insert_authorization(group_id: int, platform: str, cookie_file: str) -> None:
     """Insert an existing authorization for a group."""
     from datetime import datetime
     from web_runner.db import get_connection
@@ -103,10 +103,9 @@ class TestAuthorizeQrPlatforms:
 
     def test_all_qr_platforms_return_200(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
         for platform in self.QR_PLATFORMS:
-            group_id = _create_group(wr_db.DB_PATH, f"test-{platform[:4]}")
+            group_id = _create_group(f"test-{platform[:4]}")
 
             status, data = _authorize(app, group_id, platform)
             assert status == 200, f"{platform}: expected 200, got {status}"
@@ -126,9 +125,8 @@ class TestAuthorizeQrPlatforms:
 
     def test_douyin_authorize_returns_correct_cookie_path(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "创作组")
+        group_id = _create_group("创作组")
         _, data = _authorize(app, group_id, "douyin")
 
         expected = str(wr_utils.COOKIES_DIR / "douyin_创作组.json")
@@ -140,9 +138,8 @@ class TestAuthorizeQrPlatforms:
 
     def test_bilibili_authorize_returns_correct_cookie_path(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "B站组")
+        group_id = _create_group("B站组")
         _, data = _authorize(app, group_id, "bilibili")
 
         expected = str(wr_utils.COOKIES_DIR / "bilibili_B站组.json")
@@ -152,9 +149,8 @@ class TestAuthorizeQrPlatforms:
 
     def test_tencent_authorize_returns_correct_cookie_path(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "视频号组")
+        group_id = _create_group("视频号组")
         _, data = _authorize(app, group_id, "tencent")
 
         expected = str(wr_utils.COOKIES_DIR / "tencent_视频号组.json")
@@ -173,10 +169,9 @@ class TestAuthorizeNonQrPlatforms:
 
     def test_all_non_qr_platforms_return_200(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
         for platform in self.NON_QR_PLATFORMS:
-            group_id = _create_group(wr_db.DB_PATH, f"test-{platform[:4]}")
+            group_id = _create_group(f"test-{platform[:4]}")
 
             status, data = _authorize(app, group_id, platform)
             assert status == 200, f"{platform}: expected 200, got {status}"
@@ -188,9 +183,8 @@ class TestAuthorizeNonQrPlatforms:
 
     def test_tiktok_authorize_returns_correct_cookie_path(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "海外组")
+        group_id = _create_group("海外组")
         _, data = _authorize(app, group_id, "tiktok")
 
         expected = str(wr_utils.COOKIES_DIR / "tiktok_海外组.json")
@@ -198,9 +192,8 @@ class TestAuthorizeNonQrPlatforms:
 
     def test_baijiahao_authorize_returns_correct_cookie_path(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "自媒体组")
+        group_id = _create_group("自媒体组")
         _, data = _authorize(app, group_id, "baijiahao")
 
         expected = str(wr_utils.COOKIES_DIR / "baijiahao_自媒体组.json")
@@ -209,9 +202,8 @@ class TestAuthorizeNonQrPlatforms:
     def test_non_qr_branch_does_not_trigger_background_task(self, app):
         """Non-QR authorize must NOT spawn a background task (no _run_sau call)."""
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "manual-test")
+        group_id = _create_group("manual-test")
 
         # authorize is sync (no background task); patch utils so a regression
         # that starts calling _run_sau is still caught.
@@ -250,10 +242,9 @@ class TestAuthorizeErrors:
 
     def test_already_authorized_returns_409(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "dup-test")
-        _insert_authorization(wr_db.DB_PATH, group_id, "douyin", "/fake/path.json")
+        group_id = _create_group("dup-test")
+        _insert_authorization(group_id, "douyin", "/fake/path.json")
 
         status, data = _authorize(app, group_id, "douyin")
 
@@ -264,10 +255,9 @@ class TestAuthorizeErrors:
     def test_already_authorized_returns_409_for_non_qr_too(self, app):
         """Duplicate check applies to non-QR platforms as well."""
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "dup-nonqr")
-        _insert_authorization(wr_db.DB_PATH, group_id, "tiktok", "/fake/tiktok.json")
+        group_id = _create_group("dup-nonqr")
+        _insert_authorization(group_id, "tiktok", "/fake/tiktok.json")
 
         status, data = _authorize(app, group_id, "tiktok")
 
@@ -278,9 +268,8 @@ class TestAuthorizeErrors:
     def test_group_still_accepts_different_platforms(self, app):
         """Authorizing one platform does not block another platform on the same group."""
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "multi-platform")
+        group_id = _create_group("multi-platform")
 
         # Authorize douyin (endpoint returns 200 but does NOT insert into DB)
         status1, data1 = _authorize(app, group_id, "douyin")
@@ -291,7 +280,7 @@ class TestAuthorizeErrors:
         assert status2 == 200
 
         # Manually persist the douyin authorization to simulate confirm-authorize
-        _insert_authorization(wr_db.DB_PATH, group_id, "douyin", "/fake/douyin.json")
+        _insert_authorization(group_id, "douyin", "/fake/douyin.json")
 
         # Now douyin again is 409 (duplicate check works once persisted)
         status3, _ = _authorize(app, group_id, "douyin")
@@ -308,9 +297,8 @@ class TestAuthorizeEdgeCases:
 
     def test_group_name_with_spaces(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "My Test Group")
+        group_id = _create_group("My Test Group")
         _, data = _authorize(app, group_id, "douyin")
 
         expected = str(wr_utils.COOKIES_DIR / "douyin_My Test Group.json")
@@ -320,9 +308,8 @@ class TestAuthorizeEdgeCases:
     def test_group_name_with_special_chars(self, app):
         """Group names with underscores and hyphens are valid."""
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "test_user-01")
+        group_id = _create_group("test_user-01")
         _, data = _authorize(app, group_id, "xiaohongshu")
 
         expected = str(wr_utils.COOKIES_DIR / "xiaohongshu_test_user-01.json")
@@ -331,9 +318,8 @@ class TestAuthorizeEdgeCases:
     def test_multiple_qr_platforms_on_same_group(self, app):
         """A single group can have multiple QR platform authorizations."""
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "全能组")
+        group_id = _create_group("全能组")
         platforms = ["douyin", "kuaishou", "xiaohongshu", "bilibili", "tencent"]
 
         for platform in platforms:
@@ -344,9 +330,8 @@ class TestAuthorizeEdgeCases:
     def test_unlisted_platform_treated_as_non_qr(self, app):
         """A platform not in _QR_LOGIN_PLATFORMS falls through to the non-QR branch (200)."""
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "unlisted-plat")
+        group_id = _create_group("unlisted-plat")
         status, data = _authorize(app, group_id, "weibo")
 
         # weibo is not in _QR_LOGIN_PLATFORMS, so it hits the non-QR branch
@@ -452,10 +437,9 @@ class TestAccountGroupFsSafety:
 
     def test_rename_happy_path_updates_db_and_disk(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
         # ensure target name free
-        _create_group(wr_db.DB_PATH, "\u65b0\u540d")  # will delete+recreate then...
+        _create_group("\u65b0\u540d")  # will delete+recreate then...
         from web_runner.db import get_connection
         with get_connection() as conn:
             conn.execute(
@@ -465,9 +449,8 @@ class TestAccountGroupFsSafety:
             )
             conn.execute("DELETE FROM account_groups WHERE name = ?", ("\u65b0\u540d",))
             conn.commit()
-        group_id = _create_group(wr_db.DB_PATH, "\u65e7\u540d")
+        group_id = _create_group("\u65e7\u540d")
         _insert_authorization(
-            wr_db.DB_PATH,
             group_id,
             "douyin",
             str(wr_utils.COOKIES_DIR / "douyin_\u65e7\u540d.json"),
@@ -503,17 +486,15 @@ class TestAccountGroupFsSafety:
 
     def test_rename_rejects_empty_name(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "stable")
+        group_id = _create_group("stable")
         status, _ = self._post_rename(app, group_id, "   ")
         assert status == 400
 
     def test_rename_rejects_illegal_chars(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "stable")
+        group_id = _create_group("stable")
         status, body = self._post_rename(app, group_id, "bad/name")
         assert status == 400
         assert "\u4e0d\u5141\u8bb8" in body["message"]
@@ -525,25 +506,22 @@ class TestAccountGroupFsSafety:
 
     def test_rename_dup_name_returns_409(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        _create_group(wr_db.DB_PATH, "alpha")
-        b = _create_group(wr_db.DB_PATH, "beta")
+        _create_group("alpha")
+        b = _create_group("beta")
         status, _ = self._post_rename(app, b, "alpha")
         assert status == 409
 
     def test_rename_idempotent_when_name_unchanged(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "stable")
+        group_id = _create_group("stable")
         status, body = self._post_rename(app, group_id, "stable")
         assert status == 200
         assert body["data"]["name"] == "stable"
 
     def test_rename_with_no_authorizations_succeeds(self, app):
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
         from web_runner.db import get_connection
 
         with get_connection() as conn:
@@ -554,7 +532,7 @@ class TestAccountGroupFsSafety:
             )
             conn.execute("DELETE FROM account_groups WHERE name = ?", ("renamed",))
             conn.commit()
-        group_id = _create_group(wr_db.DB_PATH, "empty")
+        group_id = _create_group("empty")
         status, body = self._post_rename(app, group_id, "renamed")
         assert status == 200
         assert body["data"]["name"] == "renamed"
@@ -564,17 +542,14 @@ class TestAccountGroupFsSafety:
         Verify rollback restored the first file and DB row unchanged.
         """
         import web_runner.utils as wr_utils
-        import web_runner.db as wr_db
 
-        group_id = _create_group(wr_db.DB_PATH, "\u539f\u59cb")
+        group_id = _create_group("\u539f\u59cb")
         _insert_authorization(
-            wr_db.DB_PATH,
             group_id,
             "douyin",
             str(wr_utils.COOKIES_DIR / "douyin_\u539f\u59cb.json"),
         )
         _insert_authorization(
-            wr_db.DB_PATH,
             group_id,
             "kuaishou",
             str(wr_utils.COOKIES_DIR / "kuaishou_\u539f\u59cb.json"),

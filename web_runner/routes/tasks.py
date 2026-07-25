@@ -6,7 +6,7 @@ from datetime import datetime
 
 from flask import Blueprint, Response, jsonify, request
 
-from web_runner.db import DB_PATH, db_lock, get_connection
+from web_runner.db import db_lock, get_connection
 from web_runner.utils import (
     _db_get_all_tasks,
     _db_get_error_events,

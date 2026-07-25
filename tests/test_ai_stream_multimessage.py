@@ -23,7 +23,7 @@ def app():
 
     web_runner does not expose a module-level `app` (only `create_app()`),
     so each test instantiates its own. The factory also calls init_db(),
-    which is safe under the conftest.py sqlite3.connect patch.
+    which is safe under the conftest.py PostgreSQL setup.
     """
     import web_runner as wr
 

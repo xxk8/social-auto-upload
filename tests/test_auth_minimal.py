@@ -1,4 +1,4 @@
-"""Minimal auth route smoke tests (SQLite modular backend)."""
+"""Minimal auth route smoke tests (PostgreSQL modular backend)."""
 from __future__ import annotations
 
 import os

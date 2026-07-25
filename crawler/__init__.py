@@ -1,7 +1,7 @@
 """Multi-platform crawler package surface for the local Web Shell.
 
 Platform workers live under ``crawler/platforms/`` (optional / heavy).
-Local Flask uses SQLite; public helpers enqueue + record without Postgres.
+Local Flask uses PostgreSQL; public helpers enqueue + record without Postgres.
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def run_crawl(
     items: list[dict[str, Any]] = []
     comments: list[dict[str, Any]] = []
     message = "recorded"
-    engine = "sqlite-record"
+    engine = "pg-record"
 
     import os
 

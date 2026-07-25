@@ -6,7 +6,7 @@ Supports two modes (env ``SAU_AUTH_ENABLED``):
   check is bypassed and ``GET /api/auth/me`` returns a synthetic local
   admin so the React ``AuthGuard`` can pass without SMTP / user tables.
 * ``true`` — session-based email verification-code login against the
-  SQLite ``users`` / ``verification_codes`` tables created by ``init_db``.
+  PostgreSQL ``users`` / ``verification_codes`` tables created by ``init_db``.
 
 This is intentionally smaller than the freebuff/product auth surface
 (OAuth, founder transfer, license). Those land when the full product

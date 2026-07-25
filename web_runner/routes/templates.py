@@ -1,4 +1,4 @@
-"""Content templates — SQLite-backed publish templates.
+"""Content templates — Postgres-backed publish templates.
 
 Front-end: ``api.templates.*`` / ``useTemplatesStore``.
 """
