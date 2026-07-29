@@ -221,8 +221,21 @@ output/
 # 视频缩略图（自动生成）
 media/thumbs/
 
-# 渲染产物
+# 渲染产物 + Studio 角色素材
 media/studio/*.zip
+media/studio/**/*.png
+
+# 媒体目录下的旧截图 / Cookie 截图 / 二维码
+media/2023*.png
+media/tk_login.png
+media/get_bili_cookie.png
+media/xhs_error_cookie.png
+media/QR.png
+media/group-qr.png
+media/edan-qrcode.png
+
+# 旧版演示截图
+videos/demo*.png
 
 # 测试媒体上传
 media/uploads/
