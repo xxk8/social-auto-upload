@@ -206,3 +206,58 @@ console.publish.log
 .sau-logs/
 .sau-logs/*.log
 node_modules/.vite/
+
+# ── 不应提交的追踪文件 ──────────────────────────────────────────────
+# UI 开发截图
+*.png
+*.jpg
+*.jpeg
+!docs/dev/*.png
+!docs/dev/*.jpg
+!media/QR.png
+!media/group-qr.png
+!media/edan-qrcode.png
+!media/get_bili_cookie.png
+!media/tk_login.png
+!media/xhs_error_cookie.png
+!media/mp.jpg
+!media/show/*.gif
+
+# API 本地快照
+.sau/
+
+# Playwright 测试截图
+output/
+
+# 视频缩略图（自动生成）
+media/thumbs/
+
+# 渲染产物
+media/studio/*.zip
+
+# 测试媒体上传
+media/uploads/
+
+# 示例视频
+videos/*.mp4
+
+# 密钥文件
+.sau_secret_key
+
+# 本地开发脚本
+_run_verify_task.sh
+_verify_models_task1.py
+dev-web.sh
+start-win.bat
+
+# AI Agent 运行锁
+.mimocode/
+
+# 重复的 package.json（项目根目录不应有）
+/package.json
+
+# .freebuff 残留
+.freebuff/
+
+# remotion studio 根目录残留
+/remotion_studio/

@@ -1,8 +1,0 @@
-{
-  "data": {
-    "available": false,
-    "engine": null,
-    "message": "edge-tts optional; not required for local shell"
-  },
-  "success": true
-}

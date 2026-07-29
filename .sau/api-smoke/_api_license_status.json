@@ -1,9 +1,0 @@
-{
-  "data": {
-    "active": true,
-    "message": "\u672c\u5730 Web Shell \u65e0\u8bb8\u53ef\u8bc1\u9650\u5236",
-    "source": "local-shell",
-    "tier": "legacy"
-  },
-  "success": true
-}
