@@ -13,7 +13,7 @@ dependencies = [
   "loguru==0.7.3",
   "opencv-python>=4.13.0.92,<5",
   "patchright==1.61.2",
-  "Pillow>=10.2.0,<14",
+  "Pillow>=10.2.0",
   "PyYAML>=6.0.2",
   "qrcode==8.2",
   "requests==2.34.2",
