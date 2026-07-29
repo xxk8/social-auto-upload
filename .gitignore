@@ -208,20 +208,9 @@ console.publish.log
 node_modules/.vite/
 
 # ── 不应提交的追踪文件 ──────────────────────────────────────────────
-# UI 开发截图
-*.png
-*.jpg
-*.jpeg
-!docs/dev/*.png
-!docs/dev/*.jpg
-!media/QR.png
-!media/group-qr.png
-!media/edan-qrcode.png
-!media/get_bili_cookie.png
-!media/tk_login.png
-!media/xhs_error_cookie.png
-!media/mp.jpg
-!media/show/*.gif
+# UI 开发截图（根目录）
+dashboard-*.png
+publish-ai-before.png
 
 # API 本地快照
 .sau/
@@ -253,7 +242,7 @@ start-win.bat
 # AI Agent 运行锁
 .mimocode/
 
-# 重复的 package.json（项目根目录不应有）
+# 根目录不应该有 package.json（真正的在 sau_web/frontend/）
 /package.json
 
 # .freebuff 残留
@@ -261,3 +250,7 @@ start-win.bat
 
 # remotion studio 根目录残留
 /remotion_studio/
+
+# Node.js 模版 setup（仅有 ./package.json 时创建）
+/pnpm-lock.yaml
+/pnpm-workspace.yaml
