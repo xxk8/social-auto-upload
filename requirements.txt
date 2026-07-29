@@ -12,7 +12,7 @@ opencv-python>=4.13.0.92
 Pillow>=10.2.0
 
 # Browser automation
-patchright==1.58.2
+patchright==1.61.2
 
 # Configuration
 PyYAML>=6.0.2
