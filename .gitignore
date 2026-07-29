@@ -267,3 +267,8 @@ start-win.bat
 # Node.js 模版 setup（仅有 ./package.json 时创建）
 /pnpm-lock.yaml
 /pnpm-workspace.yaml
+
+# ── 编辑器临时文件 ──────────────────────────────────────────────────
+*.pyc
+*.swp
+*.swo
