@@ -3,3 +3,17 @@
 .idea
 cookies
 conf.py
+
+# Reduce build context size — these are not needed in Docker
+node_modules/
+.sau/
+output/
+media/
+videos/
+sau_web/frontend/node_modules/
+__pycache__/
+*.pyc
+*.pyo
+docs/dev/*.png
+*.md
+.DS_Store
