@@ -38,8 +38,8 @@ import { EpisodeAppendDialog } from '@/components/Studio/EpisodeAppendDialog'
 import { StudioRenderQuotaPill } from '@/components/Studio/StudioRenderQuotaPill'
 import { StudioUpsellModal } from '@/components/Studio/StudioUpsellModal'
 import { ROUTES } from '@/routes'
-import { PRESETS, getPresetById } from '../../remotion_studio/presets'
-import type { VisualPreset } from '../../remotion_studio/presets'
+import { PRESETS, getPresetById } from '../../../remotion_studio/presets'
+import type { VisualPreset } from '../../../remotion_studio/presets'
 
 const STATUS_LABEL: Record<StudioProject['status'], string> = {
   draft: '草稿',
