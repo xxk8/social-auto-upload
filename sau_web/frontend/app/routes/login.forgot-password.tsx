@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
+import { lazyPage } from '@/lib/lazy-page'
 
 export const Route = createFileRoute('/login/forgot-password')({
-  component: ForgotPasswordPage,
+  component: lazyPage(() => import('@/pages/ForgotPasswordPage')),
 })

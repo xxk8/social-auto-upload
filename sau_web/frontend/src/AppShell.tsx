@@ -1,11 +1,11 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Outlet, Link, useNavigate, useRouterState } from '@tanstack/react-router'
 
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { CommandPalette } from '@/components/CommandPalette'
 import {
   BarChart3,
   Calendar,
@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Inbox,
   LineChart,
+  Loader2,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -24,17 +25,55 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ROUTES } from '@/routes'
+import { useInboxStore } from '@/stores/inboxStore'
+
+const InboxJobQueue = lazy(() =>
+  import('@/components/InboxJobQueue').then((m) => ({ default: m.InboxJobQueue })),
+)
+
+// Heavy dialog + task search — only download when the user hits ⌘K.
+const CommandPalette = lazy(() =>
+  import('@/components/CommandPalette').then((m) => ({ default: m.CommandPalette })),
+)
 
 function resetOnboardingTour() {
   import('@/components/OnboardingTour').then((m) => m.resetOnboardingTour())
 }
 
+/** Skeleton screen for lazy-loaded route pages (∞ Suspense fallback).
+ *  Mirrors the typical dashboard page layout: title bar, chip filters,
+ *  and content rows — gives the user a smooth "content is coming" cue
+ *  instead of a centered spinner. */
 function PageLoader() {
   return (
-    <div className="flex items-center justify-center h-64">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
-        <span className="text-sm text-muted-foreground">加载中...</span>
+    <div className="space-y-6 p-6">
+      {/* PageHeader skeleton */}
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-8 w-8 rounded-lg" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-3.5 w-52" />
+          </div>
+        </div>
+        <Skeleton className="h-9 w-28 rounded-lg" />
+      </div>
+
+      {/* Chip filter bar skeleton */}
+      <div className="flex gap-2">
+        <Skeleton className="h-8 w-16 rounded-full" />
+        <Skeleton className="h-8 w-20 rounded-full" />
+        <Skeleton className="h-8 w-14 rounded-full" />
+        <Skeleton className="h-8 w-24 rounded-full" />
+      </div>
+
+      {/* Content area skeleton — table / list rows */}
+      <div className="space-y-3">
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-12 w-3/4 rounded-lg" />
       </div>
     </div>
   )
@@ -100,6 +139,23 @@ export default function AppShell() {
   const sidebarRef = useRef<HTMLElement>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
+  // Inbox downloads/transcribes continue in the module-level store when the
+  // user leaves /dashboard/inbox — surface a live badge so background work
+  // is visible from any dashboard page.
+  const inboxInflight = useInboxStore((s) => s.inflightEntryIds.size)
+  const inboxDownloading = useInboxStore(
+    (s) =>
+      s.entries.filter(
+        (e) =>
+          e.status === 'downloading' ||
+          e.status === 'transcribing' ||
+          e.status === 'subtitling',
+      ).length,
+  )
+  const bgBusyCount = Math.max(inboxInflight, inboxDownloading)
+  const onInboxPage =
+    pathname === ROUTES.dashboard.inbox || pathname.startsWith(`${ROUTES.dashboard.inbox}/`)
+
   const prevAutoRef = useRef(shouldAutoCollapse)
   useEffect(() => {
     if (prevAutoRef.current !== shouldAutoCollapse) {
@@ -153,11 +209,24 @@ export default function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Mobile layout
+  // Lock document scroll while dashboard shell is mounted so only the
+  // right-hand main pane scrolls (sidebar / top bar stay fixed).
+  useEffect(() => {
+    const prevHtml = document.documentElement.style.overflow
+    const prevBody = document.body.style.overflow
+    document.documentElement.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.documentElement.style.overflow = prevHtml
+      document.body.style.overflow = prevBody
+    }
+  }, [])
+
+  // Mobile layout — only the content pane scrolls (header + bottom nav fixed).
   if (isMobile) {
     return (
-      <div className="flex flex-col min-h-screen bg-background">
-        <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur-xl px-4">
+      <div className="flex h-dvh flex-col overflow-hidden bg-background">
+        <header className="z-50 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground">
               <Zap className="h-3.5 w-3.5 text-background" />
@@ -166,13 +235,17 @@ export default function AppShell() {
           <ThemeToggle />
         </header>
 
-        <main className="flex-1 p-4 pb-20">
+        <main className="dashboard-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain p-4 pb-24">
           <Suspense fallback={<PageLoader />}>
             <Outlet />
           </Suspense>
         </main>
 
-        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        {paletteOpen ? (
+          <Suspense fallback={null}>
+            <CommandPalette open onOpenChange={setPaletteOpen} />
+          </Suspense>
+        ) : null}
 
         <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/30 bg-background/80 backdrop-blur-xl">
           <div className="flex items-center justify-around py-2 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
@@ -208,12 +281,14 @@ export default function AppShell() {
     )
   }
 
-  // Desktop layout
+  // Desktop layout — shell fills the viewport; ONLY the right main pane scrolls.
+  // Sidebar / top bar stay fixed. `min-h-0` on flex children is required so
+  // overflow-y-auto actually activates instead of growing the page.
   const isCollapsed = sidebarCollapsed
   const isTabletMode = shouldAutoCollapse
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-dvh overflow-hidden bg-background">
       {isTabletMode && !isCollapsed && (
         <div
           className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm transition-all"
@@ -224,7 +299,7 @@ export default function AppShell() {
       <aside
         ref={sidebarRef}
         className={cn(
-          "flex flex-col border-r border-border/40 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] bg-sidebar",
+          "flex h-full shrink-0 flex-col border-r border-border/40 bg-sidebar transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
           isCollapsed ? "w-[60px]" : "w-[220px]",
           isTabletMode && !isCollapsed && "fixed inset-y-0 left-0 z-50 shadow-2xl"
         )}
@@ -245,7 +320,7 @@ export default function AppShell() {
           )}
           {!isCollapsed && (
             <button
-              className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
+              className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all duration-150"
               onClick={toggleSidebar}
               aria-label="Collapse sidebar"
             >
@@ -258,7 +333,7 @@ export default function AppShell() {
         {isCollapsed && (
           <div className="flex justify-center py-3">
             <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
+              className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all duration-150"
               onClick={toggleSidebar}
               aria-label="Expand sidebar"
             >
@@ -267,8 +342,8 @@ export default function AppShell() {
           </div>
         )}
 
-        {/* Navigation */}
-        <ScrollArea className="flex-1 py-3">
+        {/* Navigation — scrolls inside sidebar if nav is long */}
+        <ScrollArea className="min-h-0 flex-1 py-3">
           <nav className={cn("flex flex-col", isCollapsed ? "px-2" : "px-3")}>
             {!isCollapsed && (
               <div className="px-2 mb-1.5">
@@ -281,6 +356,8 @@ export default function AppShell() {
               {navItems.map((item) => {
                 const active = pathname === item.path
                 const Icon = item.icon
+                const showInboxBadge =
+                  item.path === ROUTES.dashboard.inbox && bgBusyCount > 0
                 return (
                   <Link
                     key={item.path}
@@ -298,21 +375,38 @@ export default function AppShell() {
                     {active && (
                       <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-foreground" />
                     )}
-                    <Icon className={cn(
-                      "h-4 w-4 shrink-0 transition-colors duration-150",
-                      active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-                    )} />
+                    <span className="relative flex-shrink-0">
+                      <Icon
+                        className={cn(
+                          'h-4 w-4 shrink-0 transition-all duration-150',
+                          active
+                            ? 'text-foreground'
+                            : 'text-muted-foreground group-hover:text-foreground',
+                        )}
+                      />
+                      {showInboxBadge && (
+                        <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-semibold text-primary-foreground">
+                          {bgBusyCount > 9 ? '9+' : bgBusyCount}
+                        </span>
+                      )}
+                    </span>
                     {!isCollapsed && (
-                      <span className={cn(
-                        "truncate transition-colors duration-150",
-                        active && "font-medium"
-                      )}>
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate transition-all duration-150',
+                          active && 'font-medium',
+                        )}
+                      >
                         {item.label}
                       </span>
+                    )}
+                    {!isCollapsed && showInboxBadge && (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                     )}
                     {isCollapsed && (
                       <div className="absolute left-full ml-3 px-2.5 py-1.5 rounded-lg bg-foreground text-background text-xs font-medium opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-150 whitespace-nowrap z-50 shadow-lg scale-95 group-hover:scale-100">
                         {item.label}
+                        {showInboxBadge ? ` · ${bgBusyCount} 进行中` : ''}
                         <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-foreground rotate-45" />
                       </div>
                     )}
@@ -336,7 +430,7 @@ export default function AppShell() {
               <ThemeToggle />
               <button
                 onClick={resetOnboardingTour}
-                className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all duration-150"
                 aria-label="重新引导"
                 title="重新引导"
               >
@@ -354,7 +448,7 @@ export default function AppShell() {
               </div>
               <button
                 onClick={resetOnboardingTour}
-                className="h-7 px-2 flex items-center gap-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors text-xs"
+                className="h-7 px-2 flex items-center gap-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-all duration-150 text-xs"
                 aria-label="重新引导"
                 title="重新触发新手引导"
               >
@@ -367,9 +461,9 @@ export default function AppShell() {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex flex-1 flex-col min-w-0">
-        <header className="flex h-14 items-center justify-end gap-2 border-b border-border/50 bg-background/80 backdrop-blur-xl px-6">
+      {/* Main Content — header fixed, only this column's main scrolls */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-14 shrink-0 items-center justify-end gap-2 border-b border-border/50 bg-background/80 px-6 backdrop-blur-xl">
           {isTabletMode && (
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleSidebar} aria-label="Toggle sidebar">
               <Menu className="h-4 w-4" />
@@ -379,7 +473,7 @@ export default function AppShell() {
             variant="ghost"
             size="sm"
             onClick={() => setPaletteOpen(true)}
-            className="gap-2 text-muted-foreground hover:text-foreground btn-elegant"
+            className="gap-2 text-muted-foreground hover:text-foreground"
           >
             <Search className="h-3.5 w-3.5" />
             <span>搜索</span>
@@ -389,13 +483,27 @@ export default function AppShell() {
           </Button>
         </header>
 
-        <main className="flex-1 overflow-auto">
+        {/* flex col + min-h-0 so pages can opt into full-height nested scroll
+            (e.g. /dashboard accounts: sticky chrome + scrollable body). */}
+        <main className="dashboard-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           <Suspense fallback={<PageLoader />}>
             <Outlet />
           </Suspense>
         </main>
       </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+
+{/* Global mini job queue — pinned top-right on non-inbox pages */}
+       {!onInboxPage && bgBusyCount > 0 && (
+         <Suspense fallback={null}>
+           <InboxJobQueue pin="top" />
+         </Suspense>
+       )}
+
+      {paletteOpen ? (
+        <Suspense fallback={null}>
+          <CommandPalette open onOpenChange={setPaletteOpen} />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

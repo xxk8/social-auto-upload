@@ -1,23 +1,38 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageHeader } from '@/components/ui/page-header'
-import { Badge } from '@/components/ui/index'
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '@/components/ui/index'
 import { useAccounts } from '../hooks/useTasks'
 import { useAccountGroups } from '../hooks/useAccountGroups'
 import { usePublishStore } from '../stores/publishStore'
 import { PublishAiSidebar, MobileAiDrawer } from '@/components/AiRightPanel'
 import { useMobileDrawer } from '@/hooks/useMobileDrawer'
-import { Image as ImageIcon, Send, Video, Flag, RefreshCw, Users, Layers, Sparkles } from 'lucide-react'
+import {
+  Image as ImageIcon,
+  Send,
+  Video,
+  RefreshCw,
+  Sparkles,
+  CalendarClock,
+  X,
+} from 'lucide-react'
 import { VideoForm, type VideoFormHandle } from '../features/publish/VideoForm'
 import { NoteForm, type NoteFormHandle } from '../features/publish/NoteForm'
 import { PublishSuccessBanner } from '../features/publish/PublishSuccessBanner'
 import { GroupPublishSelector, type GroupSelection } from '../features/publish/GroupPublishSelector'
 import { MediaToolsPanel } from '../features/publish/MediaToolsPanel'
-import { PLATFORMS } from '../api/client'
-import { formatTaskId } from '../features/publish/shared'
 import type { FormPreviewData } from '../features/publish/PublishPreview'
+import { useSearchParams } from '@/lib/router/useSearchParams'
+import { ResizablePanel } from '@/components/ui/resizable-panel'
+import { parseScheduleParam } from '../features/publish/schedulePresets'
+import type { PublishAiActions } from '@/features/ai-assistant/publishActions'
+import type { FormHandle } from '@/lib/chat/chatFormBridge'
 
 /**
  * Two-column publish-center layout.
@@ -34,9 +49,9 @@ import type { FormPreviewData } from '../features/publish/PublishPreview'
  */
 export default function PublishPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: accountOptions = [], refetch: refetchAccounts } = useAccounts()
   const { data: groups = [] } = useAccountGroups()
-  const lastTaskIds = usePublishStore((s) => s.lastTaskIds)
   const submitSuccess = usePublishStore((s) => s.submitSuccess)
   const setLastTaskIds = usePublishStore((s) => s.setLastTaskIds)
   const setSubmitSuccess = usePublishStore((s) => s.setSubmitSuccess)
@@ -50,6 +65,25 @@ export default function PublishPage() {
     fileType: null,
   })
   const [groupSelection, setGroupSelection] = useState<GroupSelection | null>(null)
+  // Seed from URL immediately so VideoForm/NoteForm mount with the value
+  // (avoids a one-frame empty schedule before the effect runs).
+  const scheduleFromQuery = useMemo(
+    () => parseScheduleParam(searchParams.get('schedule')),
+    [searchParams],
+  )
+  const [calendarScheduleBanner, setCalendarScheduleBanner] = useState<string | null>(
+    () =>
+      parseScheduleParam(
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('schedule')
+          : null,
+      ),
+  )
+  // Open "高级选项" when calendar deep-links a schedule so the picker is visible.
+  const [videoAdvancedOpen, setVideoAdvancedOpen] = useState(
+    () => Boolean(calendarScheduleBanner),
+  )
+  const scheduleConsumedRef = useRef(false)
 
   const videoFormRef = useRef<VideoFormHandle>(null)
   const noteFormRef = useRef<NoteFormHandle>(null)
@@ -58,6 +92,23 @@ export default function PublishPage() {
   // Mobile bottom-drawer toggle. Above the md breakpoint the inline
   // PublishAiSidebar takes over and the hook auto-closes the drawer.
   const { isMobile, isOpen, open, close } = useMobileDrawer()
+
+  // Calendar → publish deep-link: keep banner, expand advanced, strip query
+  // so a refresh does not re-seed over a later user edit.
+  useEffect(() => {
+    if (scheduleConsumedRef.current) return
+    if (!scheduleFromQuery && !calendarScheduleBanner) return
+    const value = scheduleFromQuery ?? calendarScheduleBanner
+    if (!value) return
+    scheduleConsumedRef.current = true
+    setCalendarScheduleBanner(value)
+    setVideoAdvancedOpen(true)
+    if (searchParams.has('schedule')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('schedule')
+      setSearchParams(next, { replace: true })
+    }
+  }, [scheduleFromQuery, calendarScheduleBanner, searchParams, setSearchParams])
 
   // Clear pending auto-navigate on unmount.
   useEffect(() => {
@@ -117,141 +168,146 @@ export default function PublishPage() {
     setPreviewData(data)
   }, [])
 
+  const publishActions: PublishAiActions = useMemo(
+    () => ({
+      mode,
+      setMode,
+      groups,
+      selection: groupSelection,
+      setSelection: setGroupSelection,
+      formRef: (mode === 'video' ? videoFormRef : noteFormRef) as RefObject<FormHandle | null>,
+    }),
+    [mode, groups, groupSelection],
+  )
+
   return (
-    <div className="p-6">
-      <PageHeader
-        title="发布中心"
-        description="发布视频或图文到多个平台"
-        icon={<Send className="h-5 w-5 text-muted-foreground" />}
-      />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden p-4 sm:p-5">
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <PageHeader
+          title="发布中心"
+          description="左侧填表发布 · 右侧用自然语言让 AI 写文案"
+          icon={<Send className="h-5 w-5 text-muted-foreground" />}
+          className="mb-0"
+          actions={
+            <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+              <span className="hidden sm:inline tabular-nums">
+                {accountOptions.length} 账号
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => void refetchAccounts()}
+                aria-label="刷新账号列表"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          }
+        />
+      </div>
 
       <PublishSuccessBanner info={submitSuccess} onGoToTasks={handleGoToTasks} />
 
-      {/* ── Overview stats ──────────────────────────────────── */}
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="flex items-center gap-3 card-refined px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-            <Users className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <p className="text-lg font-bold leading-none">{accountOptions.length}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">可用账号</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 card-refined px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10">
-            <Layers className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div>
-            <p className="text-lg font-bold leading-none">{PLATFORMS.length}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">支持平台</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 card-refined px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10">
-            <Flag className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="text-lg font-bold leading-none">
-                {lastTaskIds.length > 0 ? lastTaskIds.length : '—'}
-              </p>
-              {lastTaskIds.length > 0 && (
-                <div className="flex items-center gap-1 min-w-0 overflow-hidden">
-                  {lastTaskIds.slice(0, 2).map((id) => (
-                    <Badge key={id} variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
-                      {formatTaskId(id)}
-                    </Badge>
-                  ))}
-                  {lastTaskIds.length > 2 && (
-                    <span className="text-[10px] text-muted-foreground shrink-0">+{lastTaskIds.length - 2}</span>
-                  )}
-                </div>
-              )}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">最近提交</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground shrink-0"
-            onClick={() => void refetchAccounts()}
-            aria-label="刷新账号列表"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      {calendarScheduleBanner ? (
+        <Alert variant="info" className="mt-3 shrink-0">
+          <CalendarClock className="size-4" />
+          <AlertTitle className="flex items-center justify-between gap-2 pr-0">
+            <span>已从内容日历填入定时发布</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              aria-label="关闭提示"
+              onClick={() => setCalendarScheduleBanner(null)}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </AlertTitle>
+          <AlertDescription>
+            排期时间已设为{' '}
+            <span className="font-mono font-medium tabular-nums text-foreground">
+              {calendarScheduleBanner.replace('T', ' ')}
+            </span>
+            。可在下方「高级选项 / 定时发布」中修改。
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-      {/* ── Main content: form + AI sidebar (60/40 split at lg+) ── */}
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[3fr_2fr]">
-        {/* Left: form */}
-        <div className="min-w-0">
-          <Tabs
-            value={mode}
-            onValueChange={(v) => {
-              setMode(v as 'video' | 'note')
-              setGroupSelection(null)
-            }}
-          >
-            <TabsList className="w-full grid grid-cols-2 mb-4">
-              <TabsTrigger value="video" className="gap-2 transition-colors duration-150 data-[state=active]:bg-card/80 data-[state=active]:shadow-sm">
-                <Video className="h-4 w-4" />
-                发布视频
-              </TabsTrigger>
-              <TabsTrigger value="note" className="gap-2 transition-colors duration-150 data-[state=active]:bg-card/80 data-[state=active]:shadow-sm">
-                <ImageIcon className="h-4 w-4" />
-                发布图文
-              </TabsTrigger>
-            </TabsList>
+      {/* ── Main: form + AI (chat-first) ── */}
+      <ResizablePanel
+        className="mt-4"
+        left={
+          <div className="min-h-0 min-w-0 overflow-y-auto overscroll-contain pr-1">
+            <Tabs
+              value={mode}
+              onValueChange={(v) => {
+                setMode(v as 'video' | 'note')
+                setGroupSelection(null)
+              }}
+            >
+              <TabsList className="mb-5 grid w-full grid-cols-2 rounded-xl bg-muted/60 p-1">
+                <TabsTrigger value="video" className="gap-2 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm data-[state=active]:font-medium">
+                  <Video className="h-4 w-4" />
+                  视频
+                </TabsTrigger>
+                <TabsTrigger value="note" className="gap-2 rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm data-[state=active]:font-medium">
+                  <ImageIcon className="h-4 w-4" />
+                  图文
+                </TabsTrigger>
+              </TabsList>
 
-            {/* ── Group selector ──── */}
-            <GroupPublishSelector
-              groups={groups}
-              mode={mode}
-              value={groupSelection}
-              onChange={setGroupSelection}
-            />
+              <GroupPublishSelector
+                groups={groups}
+                mode={mode}
+                value={groupSelection}
+                onChange={setGroupSelection}
+              />
 
-            <div className="mt-4">
-              <MediaToolsPanel />
-            </div>
+              <div className="mt-5">
+                <MediaToolsPanel />
+              </div>
 
-            <div className="mt-4">
-              <TabsContent value="video" className="mt-0 data-[state=inactive]:hidden">
-                <VideoForm
-                  ref={videoFormRef}
-                  groupSelection={groupSelection}
-                  onSuccess={handleVideoSuccess}
-                  onError={handleVideoError}
-                  onFormChange={handleFormChange}
-                />
-              </TabsContent>
-              <TabsContent value="note" className="mt-0 data-[state=inactive]:hidden">
-                <NoteForm
-                  ref={noteFormRef}
-                  groupSelection={groupSelection}
-                  onSuccess={handleNoteSuccess}
-                  onError={handleNoteError}
-                  onFormChange={handleFormChange}
-                />
-              </TabsContent>
-            </div>
-          </Tabs>
-        </div>
-
-        {/* Right (lg+): sticky AI sidebar with collapsible preview */}
-        <div className="hidden lg:block lg:sticky lg:top-6 lg:self-start">
-          <div className="h-[calc(100vh-9rem)] min-h-[480px] flex flex-col">
+              <div className="mt-5">
+                <TabsContent value="video" className="mt-0 data-[state=inactive]:hidden">
+                  <VideoForm
+                    ref={videoFormRef}
+                    groupSelection={groupSelection}
+                    onSuccess={handleVideoSuccess}
+                    onError={handleVideoError}
+                    onFormChange={handleFormChange}
+                    initialSchedule={calendarScheduleBanner ?? ''}
+                    advancedOpen={videoAdvancedOpen}
+                    onAdvancedChange={setVideoAdvancedOpen}
+                  />
+                </TabsContent>
+                <TabsContent value="note" className="mt-0 data-[state=inactive]:hidden">
+                  <NoteForm
+                    ref={noteFormRef}
+                    groupSelection={groupSelection}
+                    onSuccess={handleNoteSuccess}
+                    onError={handleNoteError}
+                    onFormChange={handleFormChange}
+                    initialSchedule={calendarScheduleBanner ?? ''}
+                  />
+                </TabsContent>
+              </div>
+            </Tabs>
+          </div>
+        }
+        right={
+          <div className="hidden min-h-0 lg:flex lg:flex-col">
             <PublishAiSidebar
               mode={mode}
               platform={groupSelection?.platforms[0] ?? ''}
               formRef={mode === 'video' ? videoFormRef : noteFormRef}
               previewData={previewData}
+              publishActions={publishActions}
             />
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* ── Mobile (<lg): floating action button + drawer ───────────── */}
       {isMobile && (
@@ -272,6 +328,7 @@ export default function PublishPage() {
           platform={groupSelection?.platforms[0] ?? ''}
           formRef={mode === 'video' ? videoFormRef : noteFormRef}
           previewData={previewData}
+          publishActions={publishActions}
         />
       </MobileAiDrawer>
     </div>

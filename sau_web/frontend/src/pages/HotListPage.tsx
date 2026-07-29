@@ -10,6 +10,8 @@ import {
 import { PlatformIcon } from '@/components/ui/platform-icon'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingTopBar from '@/components/MarketingTopBar'
+import { TestimonialsSection } from '@/components/marketing/testimonials-section'
+import { FaqSection } from '@/components/marketing/faq-section'
 import { cn } from '@/lib/utils'
 import {
   RefreshCw,
@@ -20,6 +22,7 @@ import {
   Flame,
   Clock,
 } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const API_BASE = '/api/hotlist'
 /** Client session cache TTL — aligns with server CACHE_TTL (300s). */
@@ -130,14 +133,14 @@ function CardSkeleton() {
   return (
     <div className="overflow-hidden rounded-xl border border-border/50 bg-card">
       <div className="flex items-center gap-2.5 border-b border-border/40 px-4 py-3">
-        <div className="h-6 w-6 animate-pulse rounded-md bg-muted" />
-        <div className="h-3 w-14 animate-pulse rounded bg-muted" />
+        <Skeleton className="h-6 w-6 rounded-md" />
+        <Skeleton className="h-3 w-14 rounded" />
       </div>
       <div className="space-y-2.5 px-4 py-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="flex items-center gap-2.5">
-            <div className="h-4 w-4 shrink-0 animate-pulse rounded bg-muted" />
-            <div className="h-2.5 flex-1 animate-pulse rounded bg-muted/70" />
+            <Skeleton className="h-4 w-4 shrink-0 rounded" />
+            <Skeleton className="h-2.5 flex-1 rounded" />
           </div>
         ))}
       </div>
@@ -607,6 +610,16 @@ export default function HotListPage() {
           </div>
         )}
       </main>
+
+      {/* /hotlist shares the 5-page visitor structural skeleton (Hero →
+          Data → Testimonials → FAQ → Footer) per the user's "5 个访客
+          页面的结构对齐" ask. Both sections override the marketing-page
+          default `py-20 sm:py-28` to `py-12 sm:py-16` because /hotlist
+          is a dense data tool, not a full marketing pitch — tighter
+          padding keeps the rhythm proportional to the 12-card grid
+          above. */}
+      <TestimonialsSection className="py-12 sm:py-16" />
+      <FaqSection className="py-12 sm:py-16" />
 
       <MarketingFooter />
 

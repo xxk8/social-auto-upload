@@ -58,16 +58,16 @@ export function StudioToolbar({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-3"
+      className="flex flex-wrap items-center gap-3 rounded-xl border border-border/30 bg-card/60 px-4 py-3 shadow-sm"
       data-testid="studio-toolbar"
     >
       <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/40" />
         <Input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={t('studio.toolbar.search_placeholder', '搜索标题或灵感…')}
-          className="h-9 pl-8 pr-8 text-[13px]"
+          className="h-9 pl-8 pr-8 text-[13px] bg-background/80 border-border/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-150"
           data-testid="studio-toolbar-search"
         />
         {query && (
@@ -75,7 +75,7 @@ export function StudioToolbar({
             type="button"
             onClick={() => onQueryChange('')}
             aria-label={t('common.clear', '清除')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground transition-colors duration-150"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -92,7 +92,7 @@ export function StudioToolbar({
         value={sort}
         onChange={(e) => onSortChange(e.target.value as StudioSort)}
         aria-label={t('studio.toolbar.sort_label', '排序方式')}
-        className="h-9 rounded-md border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring"
+        className="h-9 rounded-lg border border-border/50 bg-background/80 px-2.5 text-[13px] text-foreground outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-primary/20"
         data-testid="studio-toolbar-sort"
       >
         <option value="updated">{t('studio.toolbar.sort_updated', '最近更新')}</option>

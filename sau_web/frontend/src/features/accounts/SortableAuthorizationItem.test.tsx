@@ -62,7 +62,13 @@ vi.mock('@/components/ui/toast', () => ({
 }))
 
 vi.mock('@/api/client', () => ({
-  api: { checkAllAccounts: vi.fn().mockResolvedValue({ success: true, data: [] }) },
+  api: {
+    checkAllAccounts: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    checkAuthorizationHealth: vi.fn().mockResolvedValue({
+      success: true,
+      data: { valid: true, stale: false, health: 'valid' },
+    }),
+  },
   PLATFORMS: [
     { label: '抖音', value: 'douyin', color: 'magenta' },
     { label: 'TikTok', value: 'tiktok', color: 'cyan' },
@@ -183,6 +189,48 @@ describe('SortableAuthorizationItem — component render', () => {
     // The real getPlatformLabel resolves the platform string to the
     // Chinese display name via PLATFORMS[].label — "douyin" → "抖音".
     expect(screen.getByText('抖音')).toBeInTheDocument()
+  })
+
+  it('renders account_name under the platform label, not platform pinyin', () => {
+    const auth: AccountAuthorization = {
+      id: 10,
+      platform: 'douyin',
+      account_name: 'test66',
+      cookie_file: '/cookies/douyin_test66.json',
+      valid: true,
+    }
+    renderItem(auth)
+    expect(screen.getByTestId('auth-account-id-10')).toHaveTextContent('test66')
+    // Secondary line must not re-show platform pinyin ("douyin").
+    expect(screen.getByTestId('auth-account-id-10')).not.toHaveTextContent('douyin')
+  })
+
+  it('falls back to cookie stem account when account_name is missing', () => {
+    const auth: AccountAuthorization = {
+      id: 11,
+      platform: 'douyin',
+      cookie_file: '/cookies/douyin_主号.json',
+      valid: true,
+    }
+    renderItem(auth)
+    expect(screen.getByTestId('auth-account-id-11')).toHaveTextContent('主号')
+  })
+
+  it('exposes a single status pill (no HealthBadge 未检查 / 立即检查 row clutter)', () => {
+    const auth: AccountAuthorization = {
+      id: 10,
+      platform: 'douyin',
+      account_name: 'test66',
+      cookie_file: '/cookies/douyin_test66.json',
+      valid: true,
+      stale: false,
+    }
+    renderItem(auth)
+    expect(screen.getByTestId('auth-status-pill')).toHaveTextContent('有效')
+    expect(screen.queryByText('未检查')).not.toBeInTheDocument()
+    expect(screen.queryByText('未检测')).not.toBeInTheDocument()
+    expect(screen.queryByText('立即检查')).not.toBeInTheDocument()
+    expect(screen.queryByText('立即检测')).not.toBeInTheDocument()
   })
 })
 

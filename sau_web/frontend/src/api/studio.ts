@@ -4,6 +4,15 @@ const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
   (import.meta.env.DEV ? '' : 'http://localhost:6001')
 
+/** Production gates stored under ``render_config.pipeline``. */
+export interface StudioPipeline {
+  script_approved: boolean
+  cast_approved: boolean
+  source: string
+  logline: string
+  genre_tags: string[]
+}
+
 export interface StudioProject {
   id: number
   title: string
@@ -23,12 +32,45 @@ export interface StudioProject {
    * change here. Mutation input on the PATCH side still uses
    * `version: 1` literal — the literal-to-number widening is
    * allowed by TS subtyping.
+   *
+   * Optional ``pipeline`` nested field carries script/cast approval
+   * gates without a separate DB column (see studio_scriptcraft).
    */
-  render_config?: { preset: string; version: number } | null
+  render_config?: {
+    preset: string
+    version: number
+    pipeline?: Partial<StudioPipeline>
+  } | null
+  /** Flattened pipeline (server always emits; defaults to false gates). */
+  pipeline?: StudioPipeline
   status: 'draft' | 'generating' | 'ready' | 'exported'
   owner_user_id: number
   created_at: string
   updated_at: string
+}
+
+/** Structured shot from studio_scriptcraft (also accepts legacy string). */
+export interface StudioScene {
+  id?: string
+  location?: string
+  time?: string
+  shot?: string
+  visual?: string
+  action?: string
+  duration_s?: number
+  characters?: string[]
+  hook?: string
+  cliffhanger?: string
+  hook_type?: string
+  beat?: string
+}
+
+export interface StudioDialogue {
+  id?: string
+  scene_id?: string
+  speaker?: string
+  line?: string
+  emotion?: string
 }
 
 export interface StudioEpisode {
@@ -37,8 +79,8 @@ export interface StudioEpisode {
   episode_no: number
   act: '起' | '承' | '转' | '合'
   title: string
-  scenes: unknown[]
-  dialogues: unknown[]
+  scenes: Array<StudioScene | string>
+  dialogues: Array<StudioDialogue | string>
   status: 'draft' | 'generating' | 'complete'
   created_at: string
 }
@@ -145,7 +187,13 @@ export const studioApi = {
   },
   updateProject(
     id: number,
-    input: { title?: string; synopsis?: string; style?: string | null },
+    input: {
+      title?: string
+      synopsis?: string
+      style?: string | null
+      status?: StudioProject['status']
+      render_config?: { preset: string; version: 1 } | null
+    },
   ) {
     return request
       .patch<StudioApiEnvelope<StudioProject>>(`/api/studio/projects/${id}`, input)
@@ -304,6 +352,109 @@ export const studioApi = {
    */
   generateEpisodes(projectId: number) {
     return `${baseURL}/api/studio/projects/${projectId}/generate`
+  },
+
+  /**
+   * POST /api/studio/projects/<id>/pipeline — approve script / cast.
+   * Mirrors shortdrama-pipeline human gates; state lives in
+   * ``render_config.pipeline`` (no extra table).
+   */
+  updatePipeline(
+    projectId: number,
+    input: { script_approved?: boolean; cast_approved?: boolean },
+  ) {
+    return request
+      .post<
+        StudioApiEnvelope<
+          StudioProject & { episodes: StudioEpisode[]; assets: StudioAsset[] }
+        >
+      >(`/api/studio/projects/${projectId}/pipeline`, input)
+      .then((r) => r.data)
+  },
+
+  /** Grok / Imagine provider status (local 8317 + media base). */
+  providerStatus() {
+    return request
+      .get<
+        StudioApiEnvelope<{
+          local_only?: boolean
+          chat: {
+            base_url: string
+            model: string
+            ok: boolean
+            error?: string | null
+            has_imagine_image?: boolean
+            has_imagine_video?: boolean
+            models?: string[]
+          }
+          media: {
+            base_url: string
+            image_model: string
+            video_model: string
+            same_as_chat: boolean
+            image_models?: string[]
+            video_models?: string[]
+            local?: boolean
+          }
+          catalog?: { chat: string[]; image: string[]; video: string[] }
+          llm?: { base_url: string; model: string; api_key: string }
+        }>
+      >('/api/studio/provider')
+      .then((r) => r.data)
+  },
+
+  imagineAsset(projectId: number, assetId: number) {
+    return request
+      .post<StudioApiEnvelope<StudioAsset>>(
+        `/api/studio/projects/${projectId}/assets/${assetId}/imagine`,
+      )
+      .then((r) => r.data)
+  },
+
+  imagineCast(projectId: number, limit = 5) {
+    return request
+      .post<
+        StudioApiEnvelope<{
+          updated: StudioAsset[]
+          errors: Array<{ asset_id: number; message: string; hint?: string }>
+        }>
+      >(`/api/studio/projects/${projectId}/assets/imagine-cast`, { limit })
+      .then((r) => r.data)
+  },
+
+  startEpisodeVideo(
+    projectId: number,
+    episodeNo: number,
+    input?: {
+      scene_id?: string
+      duration?: number
+      resolution?: string
+      use_cast_ref?: boolean
+    },
+  ) {
+    return request
+      .post<
+        StudioApiEnvelope<{
+          request_id: string
+          episode_no: number
+          poll_url: string
+        }>
+      >(`/api/studio/projects/${projectId}/episodes/${episodeNo}/video`, input ?? {})
+      .then((r) => r.data)
+  },
+
+  pollVideoJob(requestId: string) {
+    return request
+      .get<
+        StudioApiEnvelope<{
+          request_id: string
+          status: string
+          url?: string | null
+          error?: boolean
+          message?: string
+        }>
+      >(`/api/studio/video-jobs/${encodeURIComponent(requestId)}`)
+      .then((r) => r.data)
   },
 
   /**

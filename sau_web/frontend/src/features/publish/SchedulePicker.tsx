@@ -1,7 +1,7 @@
-import { memo, useId } from 'react'
-import { Input, Label } from '@/components/ui/index'
+import { memo, useId, type ReactNode } from 'react'
+import { Badge, Input, Label } from '@/components/ui/index'
 import { Button } from '@/components/ui/button'
-import { Clock } from 'lucide-react'
+import { CalendarClock, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 // Preset list + Monday-edge math live in ./schedulePresets — the
 // preset module is single-source-of-truth consumed by both this UI
@@ -20,6 +20,13 @@ export interface SchedulePickerProps {
   id?: string
   label?: string
   className?: string
+  /**
+   * When true, ring + badge call out that the value was prefilled
+   * (e.g. content-calendar deep-link `?schedule=`).
+   */
+  highlighted?: boolean
+  /** Optional helper under the input (calendar deep-link copy, etc.). */
+  hint?: ReactNode
 }
 
 export const SchedulePicker = memo(function SchedulePicker({
@@ -28,6 +35,8 @@ export const SchedulePicker = memo(function SchedulePicker({
   id,
   label = '定时发布',
   className,
+  highlighted = false,
+  hint,
 }: SchedulePickerProps) {
   // Round-form-audit: SchedulePicker is rendered inside multiple
   // forms (VideoForm advanced / ContentStep / NoteForm). A single
@@ -40,10 +49,25 @@ export const SchedulePicker = memo(function SchedulePicker({
   const inputId = id ?? `schedule-${reactId}`
 
   return (
-    <div className={className}>
+    <div
+      className={cn(
+        className,
+        highlighted &&
+          'rounded-lg ring-2 ring-[var(--status-info-fg)]/35 bg-[var(--status-info-bg)]/40 p-3 -m-1',
+      )}
+    >
       <div className="flex items-center gap-2 mb-2">
-        <Clock className="h-4 w-4 text-muted-foreground" />
+        {highlighted ? (
+          <CalendarClock className="h-4 w-4 text-[var(--status-info-fg)]" />
+        ) : (
+          <Clock className="h-4 w-4 text-muted-foreground" />
+        )}
         <Label htmlFor={inputId}>{label}</Label>
+        {highlighted ? (
+          <Badge variant="info" className="h-5 px-1.5 text-[10px] font-normal">
+            来自日历
+          </Badge>
+        ) : null}
       </div>
       <Input
         id={inputId}
@@ -51,7 +75,11 @@ export const SchedulePicker = memo(function SchedulePicker({
         type="datetime-local"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        className={cn(highlighted && 'border-[var(--status-info-fg)]/40')}
       />
+      {hint ? (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{hint}</p>
+      ) : null}
       {/* Quick-set presets. Each button writes back through `onChange`
           so a "1 小时后" tap mirrors the same path a manual datetime
           picker would. `font-mono tabular-nums` keeps the timestamps

@@ -47,11 +47,11 @@ export function ProjectCard({ project, onOpen, onDelete }: ProjectCardProps) {
   const { t } = useTranslation()
   return (
     <Card
-      className="group flex flex-col gap-3 cursor-pointer transition-colors hover:border-foreground/30"
+      className="group flex flex-col gap-3 cursor-pointer card-refined transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
       onClick={() => onOpen(project.id)}
       data-testid="studio-project-card"
     >
-      <CardContent className="pt-6 flex-1 flex flex-col gap-3">
+      <CardContent className="pt-5 px-5 flex-1 flex flex-col gap-3">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-[15px] font-semibold tracking-tight text-foreground line-clamp-2">
             {project.title}
@@ -59,10 +59,14 @@ export function ProjectCard({ project, onOpen, onDelete }: ProjectCardProps) {
           <span
             className={cn(
               'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider',
-              STATUS_TONE[project.status],
+              STATUS_TONE[project.status] ?? STATUS_TONE.draft,
             )}
           >
-            {t(STATUS_LABEL_META[project.status].labelKey, STATUS_LABEL_META[project.status].labelFallback)}
+            {(() => {
+              const meta =
+                STATUS_LABEL_META[project.status] ?? STATUS_LABEL_META.draft
+              return t(meta.labelKey, meta.labelFallback)
+            })()}
           </span>
         </div>
         <p className="text-[13px] text-muted-foreground line-clamp-3 leading-relaxed">
@@ -104,8 +108,8 @@ export function ProjectCard({ project, onOpen, onDelete }: ProjectCardProps) {
 
 export function ProjectCardSkeleton() {
   return (
-    <Card className="flex flex-col gap-3">
-      <CardContent className="pt-6 flex-1 flex flex-col gap-3">
+    <Card className="flex flex-col gap-3 card-refined">
+      <CardContent className="pt-5 px-5 flex-1 flex flex-col gap-3">
         <Skeleton className="h-5 w-3/4" />
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-5/6" />

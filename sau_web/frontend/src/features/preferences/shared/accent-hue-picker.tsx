@@ -35,7 +35,7 @@ export function AccentHuePicker({ accentHue, setAccentHue }: AccentHuePickerProp
               onClick={() => setAccentHue(id)}
               className={cn(
                 'group flex flex-col items-center gap-1.5 outline-none',
-                'focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg',
+                'focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg',
               )}
             >
               <span

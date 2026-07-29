@@ -267,4 +267,15 @@ python -c "from web_runner.db import init_db, backend_name; init_db(); print(bac
 uv pip install -e '.[media]'
 # 切片 / 字幕 / 封面 API：
 # POST /api/video/clip  POST /api/subtitle/generate  POST /api/thumbnail/generate
+#
+# 下载中心「转写文案 / 添加字幕」也依赖本 extra + 本机 ffmpeg：
+# 字幕时间轴：stable-ts（faster-whisper 后端，词级时间戳 + 默认 regroup）
+# 翻译：deep-translator translate_batch（1 cue = 1 译文，不对齐补最后一行）
+# POST /api/inbox/transcribe
+# POST /api/inbox/subtitle   mode=bilingual|zh|en|source  burn=true|false
+# 中英翻译可选 deep-translator（media extra 已含）
+# 模型大小：export SAU_WHISPER_MODEL=small
 ```
+
+首次识别会下载 Whisper 模型（需能访问 Hugging Face / 镜像）。
+`base` 在 CPU 上处理数分钟视频通常需 1–数分钟；更准可设 `SAU_WHISPER_MODEL=small`。

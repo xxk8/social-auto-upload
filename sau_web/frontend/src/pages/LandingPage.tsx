@@ -31,6 +31,9 @@ import {
   Globe,
   Lock,
 } from 'lucide-react'
+import { TestimonialsSection } from '@/components/marketing/testimonials-section'
+import { FaqSection } from '@/components/marketing/faq-section'
+import { StatsBanner } from '@/components/marketing/stats-banner'
 
 // ── Marketing landing page (`/`) — Premium Linear/Vercel redesign ────────
 //
@@ -79,9 +82,9 @@ function ProductMockup() {
         aria-hidden
         className="absolute inset-0 -z-10 rounded-3xl"
         style={{
+          // Soft halo without filter:blur — compositor-friendly.
           background:
-            'radial-gradient(ellipse 60% 40% at 50% 50%, color-mix(in oklab, var(--primary) 12%, transparent), transparent)',
-          filter: 'blur(40px)',
+            'radial-gradient(ellipse 70% 50% at 50% 50%, color-mix(in oklab, var(--primary) 16%, transparent) 0%, color-mix(in oklab, var(--primary) 6%, transparent) 40%, transparent 70%)',
         }}
       />
       <div className="overflow-hidden rounded-2xl border border-border/50 bg-card shadow-2xl shadow-foreground/[0.06] ring-1 ring-foreground/5">
@@ -404,8 +407,13 @@ function PlatformsSection() {
             >
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-24 opacity-60 transition-opacity duration-300 group-hover:opacity-100"
-                style={{ background: p.glow, filter: 'blur(24px)' }}
+                className="pointer-events-none absolute inset-x-0 top-0 h-28 opacity-60 transition-opacity duration-300 group-hover:opacity-100"
+                style={{
+                  // Soft top wash without filter:blur (keeps hover at 60fps).
+                  background: p.glow,
+                  maskImage: 'linear-gradient(to bottom, black 0%, transparent 100%)',
+                  WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 100%)',
+                }}
               />
 
               <div className={`relative flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 ${p.tile}`}>
@@ -693,6 +701,13 @@ function FeaturesSection() {
   )
 }
 
+// ── Section 3.5 — Testimonials (social proof) ────────────────────────
+//
+// Lives at `@/components/marketing/testimonials-section.tsx`
+// (shared by /, /pricing, /hotlist, /about). Rendered below as
+// `<TestimonialsSection />` in the default export.
+
+
 // ── Section 4 — How It Works (3-step flow) ────────────────────────────────
 
 const STEPS = [
@@ -788,6 +803,12 @@ function HowItWorksSection() {
     </section>
   )
 }
+
+// ── Section 4.5 — FAQ ─────────────────────────────────────────────────────
+//
+// Lives at `@/components/marketing/faq-section.tsx` (shared by /,
+// /pricing, /hotlist, /about). Rendered below as `<FaqSection />`
+// in the default export.
 
 // ── Section 5 — CTA ──────────────────────────────────────────────────────
 
@@ -905,9 +926,24 @@ export default function LandingPage() {
       <MarketingTopBar />
       <main>
         <HeroSection />
+        {/* StatsBanner — 4-cell animated strip (6 平台 / 3h+ 节省 /
+            0 上云 / 24-7 运转) sits between Hero and Platforms so the
+            visitor lands on raw social proof right after the headline,
+            before the platform tile grid. Uses CSS @property +
+            counter-reset count-up (see index.css).
+
+            NOT inserted on /pricing /about /hotlist — the banner is a
+            landing-only social-proof macro; the other pages have their
+            own data-density rhythms (Hero stat row, tier cards, hotlist
+            grid). The 5-page-alignment structural skeleton
+            (Testimonials + FAQ) is preserved separately.
+        */}
+        <StatsBanner />
         <PlatformsSection />
         <FeaturesSection />
+        <TestimonialsSection />
         <HowItWorksSection />
+        <FaqSection />
         <CtaSection />
       </main>
       <MarketingFooter />

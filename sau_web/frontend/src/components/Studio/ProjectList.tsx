@@ -46,7 +46,7 @@ export function ProjectList({
         className="flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border/60 bg-muted/30 px-6 py-16 text-center"
         data-testid="studio-project-list-empty"
       >
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-foreground/5 text-foreground/40">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/15 shadow-sm">
           <Clapperboard className="h-7 w-7" strokeWidth={1.5} />
         </div>
         <div className="space-y-1.5">

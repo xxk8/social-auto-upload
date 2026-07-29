@@ -115,7 +115,7 @@ export function SchedulingDialog({
           <div className="w-40">
             <label className="text-xs text-muted-foreground">平台</label>
             <select
-              className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none transition-all duration-150"
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
             >

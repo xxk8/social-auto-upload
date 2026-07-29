@@ -15,8 +15,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/index'
+import { SectionIcon } from '@/components/ui/section-header'
 import {PlatformIcon} from '@/components/ui/platform-icon';
-import {PLATFORM_BORDER_LEFT} from '@/components/ui/platform-icon.helpers';import { cn } from '@/lib/utils'
+import {PLATFORM_BORDER_LEFT} from '@/components/ui/platform-icon.helpers'
+import { cn } from '@/lib/utils'
 import { toneChipClasses, toneFillBgClass, toneRingClass } from '@/lib/tone'
 import { Layers, CheckCircle2, Users, ChevronRight, Sparkles, LogIn } from 'lucide-react'
 import type { AccountGroup } from '@/api/client'
@@ -290,13 +292,11 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
     >
       <Card className="card-refined">
         <CardHeader className="pb-2 sm:pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-muted">
-              <Layers className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <span>选择发布账号组</span>
+          <CardTitle className="flex items-center gap-3 text-base">
+            <SectionIcon size="md"><Layers className="h-4 w-4" /></SectionIcon>
+            <span className="tracking-tight">选择发布账号组</span>
             {value && checkedCount > 0 && (
-              <span className="ml-auto inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <span className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
                 <Sparkles className="h-3 w-3" />
                 {checkedCount}/{totalCount} 平台
               </span>
@@ -304,7 +304,7 @@ export const GroupPublishSelector = memo(function GroupPublishSelector({
           </CardTitle>
         </CardHeader>
 
-        <CardContent className="space-y-2 sm:space-y-3">
+        <CardContent className="space-y-3 sm:space-y-4">
           {/* Group selector — 账号分组是 required。仅下拉框本身用
               `<Label htmlFor>` 配对；后置 `*` 走视觉必填信号。
               SR-only 「必填」把定位信号补到屏幕阅读器上 —

@@ -1,0 +1,8 @@
+{
+  "data": {
+    "available": true,
+    "message": "run_crawl ready (sqlite record; set SAU_CRAWLER_LIVE=1 for browser crawlers)",
+    "queue": "sqlite:crawl_tasks"
+  },
+  "success": true
+}

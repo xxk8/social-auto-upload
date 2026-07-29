@@ -135,7 +135,7 @@ export function UserMenu({ mode = 'expanded' }: UserMenuProps) {
   const triggerClassName = cn(
     'rounded-full flex items-center justify-center transition-all outline-none cursor-pointer',
     isCompact
-      ? 'h-8 w-8 bg-muted/50 hover:bg-muted/70 focus-visible:ring-1 focus-visible:ring-ring'
+      ? 'h-8 w-8 bg-muted/50 hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-primary/20'
       : 'h-10 w-10 flex-shrink-0 bg-gradient-to-br from-primary/20 to-primary/5 ring-2 ring-primary/10 hover:ring-primary/30 focus-visible:ring-primary/50',
   )
 

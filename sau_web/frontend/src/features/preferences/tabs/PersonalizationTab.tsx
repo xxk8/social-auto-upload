@@ -100,7 +100,7 @@ export function PersonalizationTab() {
                   onClick={() => setDensity(opt.id as UiDensity)}
                   className={cn(
                     'relative flex flex-col gap-1.5 rounded-xl border p-3.5 text-left outline-none transition-colors',
-                    'focus-visible:ring-2 focus-visible:ring-ring/40',
+                    'focus-visible:ring-2 focus-visible:ring-primary/20',
                     selected
                       ? 'border-primary/40 bg-primary/[0.05] ring-1 ring-primary/20'
                       : 'border-border/50 hover:border-border hover:bg-muted/30',
@@ -163,7 +163,7 @@ export function PersonalizationTab() {
                   onClick={() => void setLocale(opt.id)}
                   className={cn(
                     'relative flex flex-col gap-1 rounded-xl border p-3.5 text-left outline-none transition-colors',
-                    'focus-visible:ring-2 focus-visible:ring-ring/40',
+                    'focus-visible:ring-2 focus-visible:ring-primary/20',
                     selected
                       ? 'border-primary/40 bg-primary/[0.05] ring-1 ring-primary/20'
                       : 'border-border/50 hover:border-border hover:bg-muted/30',

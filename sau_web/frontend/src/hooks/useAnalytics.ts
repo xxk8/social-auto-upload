@@ -102,7 +102,17 @@ export function useAnalyticsAccounts(range: DateRange) {
         : Array.isArray(payload.accounts)
           ? payload.accounts
           : []
-      return list
+      // success_rate is 0–100 from the API; coerce numerics defensively.
+      return list.map((row) => ({
+        ...row,
+        total: Number(row.total ?? 0),
+        success: Number(row.success ?? 0),
+        failed: Number(row.failed ?? 0),
+        success_rate: Number(row.success_rate ?? 0),
+        account: String(row.account ?? ''),
+        platform: String(row.platform ?? ''),
+        last_active: String(row.last_active ?? ''),
+      }))
     },
     staleTime: 30_000,
   })

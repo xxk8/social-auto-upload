@@ -1,0 +1,15 @@
+{
+  "data": [
+    {
+      "account": "demo",
+      "action": "check",
+      "argv": "[\"douyin\", \"check\", \"--account\", \"demo\"]",
+      "created": "2026-07-23T06:48:19",
+      "platform": "douyin",
+      "scheduled_at": "2026-08-01 10:00:00",
+      "status": "failed",
+      "task_id": "check-064819-aa3401"
+    }
+  ],
+  "success": true
+}

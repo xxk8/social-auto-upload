@@ -3,6 +3,24 @@ import '@testing-library/jest-dom/vitest'
 import { afterEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
+// happy-dom does not provide localStorage by default in the version used.
+// Provide a minimal mock so Zustand persist middleware does not crash.
+if (typeof globalThis.localStorage === 'undefined') {
+  const ls: Record<string, string> = {}
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: (key: string) => ls[key] ?? null,
+      setItem: (key: string, val: string) => { ls[key] = val },
+      removeItem: (key: string) => { delete ls[key] },
+      clear: () => { for (const k in ls) delete ls[k] },
+      get length() { return Object.keys(ls).length },
+      key: (i: number) => Object.keys(ls)[i] ?? null,
+    },
+    writable: true,
+    configurable: true,
+  })
+}
+
 // jsdom/happy-dom DOM cleanup between tests
 afterEach(() => {
   cleanup()

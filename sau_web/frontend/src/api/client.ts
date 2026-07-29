@@ -197,6 +197,7 @@ export const api = {
   setAiConfig: aiApi.setAiConfig,
   deleteAiConfig: aiApi.deleteAiConfig,
   batchAddKeys: aiApi.batchAddKeys,
+  validateAiKey: aiApi.validateAiKey,
   generateMultiPlatformStream: aiApi.generateMultiPlatformStream,
   generatePlatformVariantsStream: aiApi.generatePlatformVariantsStream,
   generateVariantsStream: aiApi.generateVariantsStream,
@@ -206,16 +207,34 @@ export const api = {
   generateMessagesStream: aiApi.generateMessagesStream,
 
   // ── Logs ──
-  getLogs(params?: { after?: string; task_id?: string }) {
-    return request.get('/api/logs', { params }).then((res) => res.data)
+  getLogs(params?: { after?: string; task_id?: string; limit?: number; offset?: number }) {
+    return request
+      .get('/api/logs', {
+        params: {
+          ...params,
+          // Backend defaults to 200; explicit cap keeps FloatingLogs payloads small.
+          limit: params?.limit ?? 200,
+        },
+      })
+      .then((res) => res.data)
   },
+  streamLogs: tasksApi.streamLogs,
 
   // ── Inbox ──
   inboxDownload: inboxApi.inboxDownload,
   inboxList: inboxApi.inboxList,
   inboxReveal: inboxApi.inboxReveal,
+  inboxDelete: inboxApi.inboxDelete,
+  inboxClear: inboxApi.inboxClear,
+  inboxStorage: inboxApi.inboxStorage,
+  inboxCleanup: inboxApi.inboxCleanup,
+  inboxThumbUrl: inboxApi.inboxThumbUrl,
   inboxTranscribeStream: inboxApi.inboxTranscribeStream,
   inboxFetchFile: inboxApi.inboxFetchFile,
+  inboxSubtitle: inboxApi.inboxSubtitle,
+  inboxSubtitleStream: inboxApi.inboxSubtitleStream,
+  inboxSubtitleSave: inboxApi.inboxSubtitleSave,
+  inboxOrganize: inboxApi.inboxOrganize,
 
   // ── Crawler (openspec/changes/mediacrawler-integration) ────────
   // Read-only data-collection surface; 7 MediaCrawler-style

@@ -105,7 +105,7 @@ export const WizardNav = memo(function WizardNav({
               ? disabledReason
               : undefined
         }
-        className="btn-elegant gap-2"
+        className="gap-2"
       >
         {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
         {isLast ? (

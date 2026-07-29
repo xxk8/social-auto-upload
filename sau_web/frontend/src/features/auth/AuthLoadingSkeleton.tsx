@@ -54,13 +54,13 @@ export function AuthLoadingSkeleton({
       aria-hidden="true"
     >
       <div className="space-y-2">
-        <Skeleton className="h-7 w-48 bg-muted/40" />
-        <Skeleton className="h-4 w-72 bg-muted/40" />
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-4 w-72" />
       </div>
       <div className="space-y-3">
-        <Skeleton className="h-24 w-full rounded-lg bg-muted/40" />
-        <Skeleton className="h-24 w-full rounded-lg bg-muted/40" />
-        <Skeleton className="h-24 w-full rounded-lg bg-muted/40" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
       </div>
     </div>
   )

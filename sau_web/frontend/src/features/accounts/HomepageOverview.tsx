@@ -7,27 +7,20 @@ import { cn } from '@/lib/utils'
 import {
   rateToTone,
   toneChipClasses,
-  toneDotClasses,
   type Tone,
 } from '@/lib/tone'
 
 /* ── Public overview props ──────────────────────────────────────────── */
 
 interface HomepageOverviewProps {
-  /** Triggered by the inline CTA when the user has zero groups. */
   onCreateGroup?: () => void
-  /** Triggered by the "validity" tile when at least one authorization exists. */
   onCheckAllStatus?: () => void
-  /** Triggered by the "recent publish" tile to navigate to /tasks. */
   onOpenTasks?: () => void
-  /** Triggered by "recent publish" empty-state to navigate to /publish. */
   onOpenPublish?: () => void
 }
 
 /* ── Tone mappers ───────────────────────────────────────────────────── */
 
-/** Maps backend task.status → Chinese label + Tone (nullable). Mirrors
- *  the union handled by TasksPage. `null` = "unknown / no data". */
 function taskStatusDisplay(status?: string): { label: string; tone: Tone | null } {
   if (!status) return { label: '未知', tone: null }
   switch (status) {
@@ -53,7 +46,6 @@ function platformLabel(value?: string): string {
   return PLATFORMS.find((p) => p.value === value)?.label ?? value
 }
 
-/** Compact "...5 minutes ago" formatter — zh-CN, no seconds granularity. */
 function timeAgo(iso?: string): string {
   if (!iso) return '—'
   const t = Date.parse(iso)
@@ -69,50 +61,34 @@ function timeAgo(iso?: string): string {
   return new Date(t).toLocaleDateString('zh-CN')
 }
 
-/** Mirror publish/shared.formatTaskId — ellipsises long IDs to last 10 chars. */
-function compactTaskId(value?: string): string {
-  if (!value) return ''
-  return value.length > 14 ? `…${value.slice(-10)}` : value
-}
+/* ── Single-line metric chip ────────────────────────────────────────── */
 
-/* ── Single stat tile ───────────────────────────────────────────────── */
-
-interface TileProps {
+interface ChipProps {
   icon: ReactNode
   label: string
   value: ReactNode
-  hint?: ReactNode
-  /** Tone for the icon-chip background. `null` → muted neutral. */
+  title?: string
   accent: Tone | null
   onClick?: () => void
-  footer?: ReactNode
-  /** Render the value with muted foreground color — signals "zero / empty"
-   *  state vs primary foreground for "active / positive" data. Linear
-   *  convention: tertiary ink on passive metrics, full ink on actionable ones. */
   muted?: boolean
 }
 
-function Tile({ icon, label, value, hint, accent, onClick, footer, muted }: TileProps) {
+function MetricChip({ icon, label, value, title, accent, onClick, muted }: ChipProps) {
   const interactive = Boolean(onClick)
   return (
     <div
       className={cn(
-        // Solid `card-refined` + relative overflow-hidden hosts the
-        // absolute top-light sheen below. No transition on the base —
-        // non-interactive tiles have no hover state to animate.
-        'card-refined relative overflow-hidden p-4',
-        // Single Tailwind arbitrary transition covers color (bg hover
-        // from `.card-refined:hover`) AND transform (micro-lift)
-        // under one `transition-property` declaration — avoids the
-        // source-order cascade collision two separate `transition-*`
-        // classes would trigger. The lift is gated alone behind
-        // `motion-safe:`; color hover stays visible for reduced-motion
-        // users since color is not a vestibular trigger.
-        interactive && 'cursor-pointer group transition-[color,background-color,border-color,fill,stroke,transform] duration-200 motion-safe:hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'group/chip relative flex min-w-0 items-center gap-2 overflow-hidden rounded-[10px]',
+        'border border-border/40 bg-background/55 px-2.5 py-1.5 sm:gap-2.5 sm:px-3 sm:py-[7px]',
+        'shadow-[inset_0_1px_0_oklch(1_0_0_/_0.05)]',
+        'transition-[background-color,border-color,box-shadow,transform] duration-200',
+        interactive &&
+          'cursor-pointer hover:border-primary/25 hover:bg-background/85 hover:shadow-[0_1px_2px_oklch(0_0_0_/_0.04),inset_0_1px_0_oklch(1_0_0_/_0.06)] motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-background',
       )}
       onClick={onClick}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
+      title={title}
       onKeyDown={
         interactive
           ? (e) => {
@@ -123,69 +99,49 @@ function Tile({ icon, label, value, hint, accent, onClick, footer, muted }: Tile
             }
           : undefined
       }
-      aria-label={interactive ? label : undefined}
+      aria-label={
+        interactive
+          ? `${label}: ${typeof value === 'string' || typeof value === 'number' ? value : label}`
+          : undefined
+      }
     >
-      {/* Linear-style top-light sheen — pale white gradient on the upper
-          edge for tactile card depth. Mirrors ambient light on a real card. */}
       <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent"
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent dark:via-white/[0.08]"
       />
-
-      <div className="flex items-start justify-between gap-2 mb-3">
-        {/* Linear-style icon tile: tone-coloured bg+fg with inset shadow
-            stacking for "raised tactile surface" feel (top highlight + bottom
-            shade). 9×9 (was 8×8) matches the page-header icon for visual
-            hierarchy parity across the app's chrome surfaces. */}
-        <div
-          className={cn(
-            'relative flex h-9 w-9 items-center justify-center rounded-lg',
-            // Top-only highlight: the original bottom-shade had
-            // `oklch(0 0 0 / 0.04)` — black at 4% is invisible against
-            // either surface. The icon tile reads as "raised" via the
-            // single top-light cap alone; the bottom shade was a
-            // vestigial component of the Linear template, dropped.
-            'shadow-[inset_0_1px_0_oklch(1_0_0_/_0.08)]',
-            toneChipClasses(accent),
-          )}
-        >
-          {icon}
-          {/* Inner top-light — sharp 1px sheen accent on the icon tile. */}
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-1 top-1 h-px bg-gradient-to-r from-transparent via-white/[0.10] to-transparent"
-          />
-        </div>
-        {interactive && (
-          <ArrowUpRight
-            aria-hidden="true"
-            // Color shift is fine for reduced-motion users (no vestibular
-            // trigger); only the transform group-hover gets motion-safe
-            // gating so the chevron doesn't slide while the card stays
-            // static for `prefers-reduced-motion: reduce` users.
-            className="h-4 w-4 text-muted-foreground/40 group-hover:text-foreground/80 motion-safe:transition-transform motion-safe:duration-200 motion-safe:group-hover:translate-x-0.5 motion-safe:group-hover:-translate-y-0.5"
-          />
-        )}
-      </div>
-
-      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-        {label}
-      </div>
       <div
         className={cn(
-          'text-[26px] font-semibold tracking-tighter tabular-nums leading-none mt-1.5',
-          muted ? 'text-muted-foreground/70' : 'text-foreground',
+          'relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+          'shadow-[inset_0_1px_0_oklch(1_0_0_/_0.1),0_1px_1px_oklch(0_0_0_/_0.04)]',
+          toneChipClasses(accent),
         )}
       >
-        {value}
+        {icon}
       </div>
-      {hint && <div className="text-[12px] text-muted-foreground/80 mt-1.5">{hint}</div>}
-      {footer && <div className="mt-2.5">{footer}</div>}
+      <div className="min-w-0 flex-1">
+        <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60 leading-none">
+          {label}
+        </div>
+        <div
+          className={cn(
+            'mt-[3px] truncate text-[15px] font-semibold leading-none tracking-tight tabular-nums sm:text-[16px]',
+            muted ? 'text-muted-foreground/65' : 'text-foreground',
+          )}
+        >
+          {value}
+        </div>
+      </div>
+      {interactive && (
+        <ArrowUpRight
+          aria-hidden
+          className="h-3 w-3 shrink-0 text-muted-foreground/30 transition-colors duration-200 group-hover/chip:text-primary/70 motion-safe:transition-transform motion-safe:duration-200 motion-safe:group-hover/chip:translate-x-0.5 motion-safe:group-hover/chip:-translate-y-0.5"
+        />
+      )}
     </div>
   )
 }
 
-/* ── Public overview component ──────────────────────────────────────── */
+/* ── Public overview ────────────────────────────────────────────────── */
 
 function HomepageOverviewImpl({
   onCreateGroup,
@@ -202,8 +158,6 @@ function HomepageOverviewImpl({
     const authTotal = auths.length
     const authValid = auths.filter((a) => a.valid).length
     const authStale = auths.filter((a) => a.stale).length
-    // Count stale as "not fully healthy" for the rate display:
-    // a stale cookie is structurally valid but functionally expired.
     const authHealthy = authValid - authStale
     const authRate = authTotal > 0 ? authHealthy / authTotal : 0
 
@@ -211,8 +165,6 @@ function HomepageOverviewImpl({
       (t) => t.status === 'pending' || t.status === 'running',
     ).length
 
-    /* Single-pass O(N) latest-task lookup — banner only needs the most
-     * recent entry, so a full sort is wasted work on 1000+ task lists. */
     const lastTask: TaskItem | undefined =
       tasks.length > 0
         ? tasks.reduce<TaskItem>((latest, t) => {
@@ -234,26 +186,21 @@ function HomepageOverviewImpl({
     }
   }, [groups, tasks])
 
-  // Branded empty state — only shown when not loading AND the user has
-  // zero groups. Skin: muted card with right-aligned primary CTA.
   if (!isGroupsLoading && metrics.totalGroups === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex flex-col gap-2 rounded-[10px] border border-dashed border-border/55 bg-muted/15 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div
             className={cn(
-              'flex h-10 w-10 items-center justify-center rounded-xl flex-shrink-0',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
               toneChipClasses('info'),
             )}
           >
-            <Folders className="h-5 w-5" />
+            <Folders className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-              账号分组
-            </div>
-            <div className="text-base font-semibold text-foreground mt-0.5">尚未创建分组</div>
-            <div className="text-[12px] text-muted-foreground/80 mt-0.5">
+            <div className="text-[13px] font-semibold text-foreground">尚未创建分组</div>
+            <div className="text-[11px] text-muted-foreground/75">
               建一个分组，再开始给各平台添加授权
             </div>
           </div>
@@ -262,111 +209,77 @@ function HomepageOverviewImpl({
           type="button"
           onClick={onCreateGroup}
           className={cn(
-            'btn-elegant inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2',
-            'bg-primary text-primary-foreground text-[13px] font-medium',
-            'hover:opacity-90 transition-opacity self-start sm:self-auto',
+            'inline-flex items-center justify-center gap-1.5 self-start rounded-md px-3 py-1.5',
+            'bg-primary text-[12px] font-medium text-primary-foreground',
+            'shadow-[0_1px_2px_oklch(0.45_0.16_264_/_0.2)] transition-all duration-150 active:scale-[0.985] hover:opacity-90 sm:self-auto',
           )}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
           新建分组
         </button>
       </div>
     )
   }
 
-  // Loading shells (rare because useAccountGroups is fast; cheap to render).
   if (isGroupsLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
-            // Skeleton stays on `bg-card/40` (NOT `card-refined`) so the
-            // `animate-pulse` 100%→50% opacity modulation is visible
-            // against the half-opacity base. A solid surface damps the
-            // pulse to invisibility, defeating the loading affordance —
-            // this is the only place the legacy `bg-card/40` shape is
-            // intentionally retained.
-            className="rounded-xl border border-border/40 bg-card/40 p-4 min-h-[130px] animate-pulse"
+            className="h-10 animate-pulse rounded-[10px] border border-border/35 bg-muted/25 sm:h-11"
           />
         ))}
       </div>
     )
   }
 
-  /* Tile-level JSX inlined below so the parent controls render order
-   * directly. Tile is intentionally not memo-wrapped: a fresh icon element
-   * is produced each render and memo() would never hit anyway. */
-
   const lastStatus = taskStatusDisplay(metrics.lastTask?.status)
-  const lastTileContent = metrics.lastTask ? (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <span
-        className={cn(
-          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
-          toneChipClasses(lastStatus.tone),
-        )}
-      >
-        <span className={cn('w-1.5 h-1.5 rounded-full', toneDotClasses(lastStatus.tone))} />
-        {lastStatus.label}
-      </span>
-      <span className="text-[10px] font-mono text-muted-foreground/70">
-        {compactTaskId(metrics.lastTask.task_id)}
-      </span>
-    </div>
-  ) : null
+  const lastValue = metrics.lastTask
+    ? platformLabel(metrics.lastTask.platform) || metrics.lastTask.action || '—'
+    : metrics.taskCount > 0
+      ? '—'
+      : '暂无'
+  const lastHint = metrics.lastTask
+    ? `${lastStatus.label} · ${metrics.lastTask.account ?? '—'} · ${timeAgo(metrics.lastTask.created)}`
+    : metrics.taskCount > 0
+      ? '查看任务记录'
+      : '去发布中心提交任务'
+
+  const validityHint =
+    metrics.authTotal > 0
+      ? metrics.authHealthy < metrics.authValid
+        ? `${metrics.authHealthy}/${metrics.authTotal} 正常 · ${metrics.authValid - metrics.authHealthy} 过期`
+        : `${metrics.authValid}/${metrics.authTotal} 个授权正常`
+      : '暂无授权可检测'
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <Tile
-        icon={<Folders className="h-4 w-4" />}
+    <div className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
+      <MetricChip
+        icon={<Folders className="h-3.5 w-3.5" />}
         label="账号分组"
         value={metrics.totalGroups}
-        hint={
+        title={
           metrics.authTotal > 0
             ? `${metrics.authTotal} 个平台授权`
             : '尚无平台授权'
         }
         accent="info"
       />
-      <Tile
-        icon={<ShieldCheck className="h-4 w-4" />}
+      <MetricChip
+        icon={<ShieldCheck className="h-3.5 w-3.5" />}
         label="有效率"
         value={metrics.authTotal > 0 ? `${Math.round(metrics.authRate * 100)}%` : '—'}
-        hint={
-          metrics.authTotal > 0
-            ? metrics.authHealthy < metrics.authValid
-              ? `${metrics.authHealthy} / ${metrics.authTotal} 个授权正常（${metrics.authValid - metrics.authHealthy} 个过期）`
-              : `${metrics.authValid} / ${metrics.authTotal} 个授权正常`
-            : '暂无授权可检测'
-        }
+        title={validityHint}
         accent={rateToTone(metrics.authRate, metrics.authTotal)}
         onClick={metrics.authTotal > 0 ? onCheckAllStatus : undefined}
         muted={metrics.authTotal === 0}
       />
-      <Tile
-        icon={<Send className="h-4 w-4" />}
+      <MetricChip
+        icon={<Send className="h-3.5 w-3.5" />}
         label="最近发布"
-        value={
-          metrics.lastTask ? (
-            <span className="inline-block max-w-full truncate align-middle">
-              {platformLabel(metrics.lastTask.platform) ||
-                metrics.lastTask.action ||
-                '—'}
-            </span>
-          ) : metrics.taskCount > 0 ? (
-            <span className="text-muted-foreground/60 text-[18px]">—</span>
-          ) : (
-            <span className="text-muted-foreground/60 text-[18px]">暂无</span>
-          )
-        }
-        hint={
-          metrics.lastTask
-            ? `${metrics.lastTask.account ?? '—'} · ${timeAgo(metrics.lastTask.created)}`
-            : metrics.taskCount > 0
-              ? '查看上方任务记录'
-              : '去发布中心提交一个任务吧'
-        }
+        value={<span className="block max-w-full truncate">{lastValue}</span>}
+        title={lastHint}
         accent={lastStatus.tone}
         onClick={
           metrics.lastTask
@@ -375,20 +288,20 @@ function HomepageOverviewImpl({
               ? onOpenTasks
               : onOpenPublish
         }
-        footer={lastTileContent}
+        muted={!metrics.lastTask}
       />
-      <Tile
+      <MetricChip
         icon={
           <Loader2
             className={cn(
-              'h-4 w-4',
+              'h-3.5 w-3.5',
               metrics.inFlightCount > 0 && 'animate-spin',
             )}
           />
         }
         label="正在运行"
         value={metrics.inFlightCount}
-        hint={
+        title={
           metrics.inFlightCount > 0
             ? `${metrics.inFlightCount} 个任务进行中`
             : metrics.taskCount > 0

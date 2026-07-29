@@ -92,7 +92,7 @@ export const StepIndicator = memo(function StepIndicator({
               onClick={() => isClickable && onStepClick?.(s.step)}
               className={cn(
                 'group relative flex items-center gap-1 sm:gap-1.5 rounded-md px-1.5 sm:px-2 py-0.5 sm:py-1 transition-colors duration-200 outline-none',
-                'focus-visible:ring-1 focus-visible:ring-ring',
+                'focus-visible:ring-2 focus-visible:ring-primary/20',
                 isClickable && 'cursor-pointer hover:bg-muted/40',
                 !isClickable && !isCurrent && 'cursor-default',
               )}

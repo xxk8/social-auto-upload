@@ -6,21 +6,49 @@ Requires ``DATABASE_URL`` or ``SAU_DATABASE_URL`` (e.g. from ``.env``):
 
 Call sites may use ``?`` placeholders; this module rewrites them to ``%s``
 for psycopg. ``conn.execute(...).fetchall()`` remains supported.
+
+Connections are served from a process-local ``psycopg_pool.ConnectionPool``
+when available (optional dep ``psycopg-pool``), falling back to per-call
+``psycopg.connect``. The historical global ``db_lock`` is a no-op under
+Postgres (each request uses its own connection + transactions).
 """
 from __future__ import annotations
 
 import os
 import re
 import threading
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).parent.parent.resolve()
 
-db_lock = threading.Lock()
+# Kept for call-site compatibility. Under PostgreSQL, concurrent requests
+# use separate pooled connections; a process-wide mutex only serialised
+# throughput. The lock is therefore a no-op (still a valid context manager).
+class _NoOpLock:
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:  # noqa: ARG002
+        return True
+
+    def release(self) -> None:
+        return None
+
+    def __enter__(self) -> _NoOpLock:
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+
+db_lock: Any = _NoOpLock()
 
 _PLACEHOLDER_RE = re.compile(r"'[^']*'|\?")
 _DATABASE_URL: str = ""
+
+_pool: Any = None
+_pool_lock = threading.Lock()
+_pool_failed = False
 
 
 def _load_dotenv() -> None:
@@ -77,6 +105,10 @@ def using_postgres() -> bool:
 
 
 def _translate_placeholders(sql: str) -> str:
+    # psycopg v3 only allows %s, %b, %t as placeholders. Escape literal %
+    # to %% BEFORE ?→%s conversion so LIKE 'upload%' doesn't trigger
+    # "only '%s', '%b', '%t' are allowed as placeholders, got '%'" errors.
+    sql = sql.replace("%", "%%")
     return _PLACEHOLDER_RE.sub(lambda m: "%s" if m.group(0) == "?" else m.group(0), sql)
 
 
@@ -91,12 +123,71 @@ def _sqlite_ddl_to_pg(sql: str) -> str:
     return sql
 
 
+def _pool_max_size() -> int:
+    raw = os.environ.get("SAU_DB_POOL_SIZE", "16").strip()
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 16
+    return max(2, min(n, 64))
+
+
+def _ensure_pool() -> Any | None:
+    """Lazily open a ConnectionPool. Returns None if pool is unavailable."""
+    global _pool, _pool_failed
+    if _pool is not None:
+        return _pool
+    if _pool_failed:
+        return None
+    with _pool_lock:
+        if _pool is not None:
+            return _pool
+        if _pool_failed:
+            return None
+        try:
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+        except ImportError:
+            _pool_failed = True
+            return None
+        dsn = require_database_url()
+        max_size = _pool_max_size()
+        min_size = min(2, max_size)
+        try:
+            _pool = ConnectionPool(
+                conninfo=dsn,
+                min_size=min_size,
+                max_size=max_size,
+                kwargs={"row_factory": dict_row},
+                open=True,
+            )
+        except Exception:
+            _pool_failed = True
+            _pool = None
+            return None
+        return _pool
+
+
+def close_pool() -> None:
+    """Close the process pool (tests / shutdown). Safe to call repeatedly."""
+    global _pool, _pool_failed
+    with _pool_lock:
+        if _pool is not None:
+            try:
+                _pool.close()
+            except Exception:
+                pass
+            _pool = None
+        _pool_failed = False
+
+
 class _PgCursor:
     def __init__(self, conn: "_PostgresCompat", sql: str | None = None, params: tuple = ()):
         self._conn = conn
         self._rows: list[Any] = []
         self._description = None
         self.lastrowid = None
+        self.rowcount = -1
         if sql is not None:
             self.execute(sql, params)
 
@@ -110,9 +201,14 @@ class _PgCursor:
         try:
             cur.execute(sql_pg, params)
             self._description = cur.description
-            try:
-                self._rows = list(cur.fetchall() or [])
-            except Exception:
+            self.rowcount = getattr(cur, "rowcount", -1)
+            # Only materialise rows for statements that return a result set.
+            if cur.description is not None:
+                try:
+                    self._rows = list(cur.fetchall() or [])
+                except Exception:
+                    self._rows = []
+            else:
                 self._rows = []
             # Do NOT call lastval() here: inserts with explicit UUID PKs have
             # no sequence, and a failed lastval() aborts the whole PG transaction.
@@ -151,7 +247,12 @@ class _PgCursor:
 class _PostgresCompat:
     """sqlite3.Connection-shaped wrapper over a psycopg connection."""
 
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str | None = None, *, raw: Any = None, pool: Any = None):
+        self._pool = pool
+        self.row_factory = None
+        if raw is not None:
+            self._raw = raw
+            return
         try:
             import psycopg
             from psycopg.rows import dict_row
@@ -161,15 +262,28 @@ class _PostgresCompat:
                 "uv pip install -e '.[web-pg]'  or  pip install 'psycopg[binary]'"
             ) from exc
 
+        if not dsn:
+            raise RuntimeError("dsn is required when raw connection is not provided")
         self._raw = psycopg.connect(dsn, row_factory=dict_row)
-        self.row_factory = None
 
     def _map_row(self, row, description):
         if row is None:
             return None
         # dict_row already returns mappings — enough for almost all call sites.
         if isinstance(row, dict):
-            return row
+            # PostgreSQL UUID / timestamp columns deserialise as
+            # uuid.UUID / datetime objects, which break json.dumps and
+            # Flask jsonify. Convert common non-serialisable types to str.
+            # Use .isoformat() for datetimes so format matches the rest of
+            # the codebase (T separator vs space from str()).
+            def _json_safe(val: object) -> object:
+                if isinstance(val, uuid.UUID):
+                    return str(val)
+                if isinstance(val, datetime):
+                    return val.isoformat()
+                return val
+
+            return {k: _json_safe(v) for k, v in row.items()}
         if self.row_factory is None:
             return row
 
@@ -192,6 +306,15 @@ class _PostgresCompat:
         self._raw.rollback()
 
     def close(self):
+        if self._pool is not None:
+            try:
+                self._pool.putconn(self._raw)
+            except Exception:
+                try:
+                    self._raw.close()
+                except Exception:
+                    pass
+            return
         self._raw.close()
 
     def __enter__(self):
@@ -213,13 +336,24 @@ class _PostgresCompat:
 
 
 def get_connection() -> _PostgresCompat:
-    """Return a new PostgreSQL connection (required)."""
-    return _PostgresCompat(require_database_url())
+    """Return a pooled PostgreSQL connection (falls back to a fresh connect)."""
+    dsn = require_database_url()
+    pool = _ensure_pool()
+    if pool is not None:
+        try:
+            raw = pool.getconn()
+            return _PostgresCompat(raw=raw, pool=pool)
+        except Exception:
+            # Pool exhausted / closed mid-flight — fall through to direct connect.
+            pass
+    return _PostgresCompat(dsn=dsn)
 
 
 def init_db() -> None:
     """Create all tables and indexes if they don't exist (PostgreSQL)."""
     require_database_url()
+    # Warm the pool early so the first request doesn't pay connect latency.
+    _ensure_pool()
 
     def _ignore_dup(exc: BaseException) -> bool:
         msg = str(exc).lower()
@@ -232,7 +366,7 @@ def init_db() -> None:
     with get_connection() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
-                task_id TEXT PRIMARY KEY,
+                task_id UUID PRIMARY KEY,
                 status TEXT NOT NULL DEFAULT 'pending',
                 platform TEXT,
                 action TEXT,
@@ -241,7 +375,8 @@ def init_db() -> None:
                 code INTEGER,
                 error TEXT,
                 argv TEXT,
-                result TEXT
+                result TEXT,
+                priority INTEGER
             )
         """)
         conn.execute("""
@@ -311,6 +446,8 @@ def init_db() -> None:
                 rate_limited_at TEXT
             )
         """)
+        # Older installs created ai_api_keys without rate_limited_at.
+        _try_alter("ALTER TABLE ai_api_keys ADD COLUMN rate_limited_at TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS error_events (
                 id SERIAL PRIMARY KEY,
@@ -381,8 +518,9 @@ def init_db() -> None:
         ):
             _try_alter(f"ALTER TABLE users ADD COLUMN {col} {decl}")
         for col, decl in (
-            ("scheduled_at", "TEXT"),
+            ("scheduled_at", "timestamp"),
             ("title", "TEXT"),
+            ("priority", "INTEGER"),
         ):
             _try_alter(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
         conn.execute(
@@ -419,24 +557,53 @@ def init_db() -> None:
                 episode_no INTEGER NOT NULL,
                 act TEXT,
                 title TEXT,
-                content TEXT,
+                scenes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+                dialogues_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+                status TEXT NOT NULL DEFAULT 'draft',
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (project_id) REFERENCES studio_projects(id) ON DELETE CASCADE,
                 UNIQUE(project_id, episode_no)
             )
             """
         )
+        # Live DBs may predate scenes_json / may still have legacy ``content``.
+        # Additive ALTERs keep both fresh CREATE and older rows workable.
+        for ddl in (
+            "ALTER TABLE studio_episodes ADD COLUMN IF NOT EXISTS scenes_json JSONB NOT NULL DEFAULT '[]'::jsonb",
+            "ALTER TABLE studio_episodes ADD COLUMN IF NOT EXISTS dialogues_json JSONB NOT NULL DEFAULT '[]'::jsonb",
+            "ALTER TABLE studio_episodes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft'",
+            "ALTER TABLE studio_projects ADD COLUMN IF NOT EXISTS render_config JSONB",
+            """
+            CREATE TABLE IF NOT EXISTS studio_assets (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'prop',
+                code TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL DEFAULT '',
+                prompt TEXT NOT NULL DEFAULT '',
+                ref_image_url TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (project_id) REFERENCES studio_projects(id) ON DELETE CASCADE
+            )
+            """,
+        ):
+            try:
+                conn.execute(ddl)
+            except Exception:
+                pass
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS crawled_content (
                 id SERIAL PRIMARY KEY,
                 platform TEXT,
                 post_id TEXT,
+                raw_payload JSONB,
+                crawled_at TEXT,
                 title TEXT,
                 author TEXT,
                 url TEXT,
                 payload TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT
             )
             """
         )
@@ -446,10 +613,15 @@ def init_db() -> None:
                 id SERIAL PRIMARY KEY,
                 platform TEXT,
                 post_id TEXT,
+                raw_payload JSONB,
+                ai_sentiment TEXT,
+                ai_sentiment_confidence REAL,
+                ai_reply_suggestion TEXT,
+                crawled_at TEXT,
                 comment_id TEXT,
                 content TEXT,
                 sentiment TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT
             )
             """
         )
@@ -468,6 +640,29 @@ def init_db() -> None:
             )
             """
         )
+        # Bring older mediacrawler / scaffold schemas forward without wipe.
+        for ddl in (
+            "ALTER TABLE crawled_content ADD COLUMN IF NOT EXISTS raw_payload JSONB",
+            "ALTER TABLE crawled_content ADD COLUMN IF NOT EXISTS crawled_at TEXT",
+            "ALTER TABLE crawled_content ADD COLUMN IF NOT EXISTS title TEXT",
+            "ALTER TABLE crawled_content ADD COLUMN IF NOT EXISTS author TEXT",
+            "ALTER TABLE crawled_content ADD COLUMN IF NOT EXISTS url TEXT",
+            "ALTER TABLE crawled_content ADD COLUMN IF NOT EXISTS payload TEXT",
+            "ALTER TABLE crawled_content ADD COLUMN IF NOT EXISTS created_at TEXT",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS raw_payload JSONB",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS ai_sentiment TEXT",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS ai_sentiment_confidence REAL",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS ai_reply_suggestion TEXT",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS crawled_at TEXT",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS comment_id TEXT",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS content TEXT",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS sentiment TEXT",
+            "ALTER TABLE crawled_comments ADD COLUMN IF NOT EXISTS created_at TEXT",
+        ):
+            try:
+                conn.execute(ddl)
+            except Exception:
+                pass
         conn.commit()
 
 

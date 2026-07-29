@@ -84,18 +84,18 @@ def analytics_summary():
     prev_end = start
     prev_start = (start_dt - timedelta(days=span)).strftime("%Y-%m-%d")
 
+    # ISO-8601 text timestamps compare lexicographically; prefer a sargable
+    # range on `created` so idx_tasks_created can be used (substr() cannot).
     with get_connection() as conn:
         conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
         rows = conn.execute(
             "SELECT status, platform, created, error FROM tasks "
-            "WHERE substr(COALESCE(created,''),1,10) >= ? "
-            "AND substr(COALESCE(created,''),1,10) < ?",
+            "WHERE created >= ? AND created < ?",
             (start, end),
         ).fetchall()
         prev_rows = conn.execute(
             "SELECT status FROM tasks "
-            "WHERE substr(COALESCE(created,''),1,10) >= ? "
-            "AND substr(COALESCE(created,''),1,10) < ?",
+            "WHERE created >= ? AND created < ?",
             (prev_start, prev_end),
         ).fetchall()
 
@@ -171,8 +171,7 @@ def analytics_accounts():
         rows = conn.execute(
             "SELECT platform, account, status, COUNT(*) AS cnt, "
             "MAX(created) AS last_active FROM tasks "
-            "WHERE substr(COALESCE(created,''),1,10) >= ? "
-            "AND substr(COALESCE(created,''),1,10) < ? "
+            "WHERE created >= ? AND created < ? "
             "GROUP BY platform, account, status",
             (start, end),
         ).fetchall()
@@ -218,8 +217,7 @@ def analytics_export():
         conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
         rows = conn.execute(
             "SELECT task_id, platform, account, action, status, created, scheduled_at, error "
-            "FROM tasks WHERE substr(COALESCE(created,''),1,10) >= ? "
-            "AND substr(COALESCE(created,''),1,10) < ? "
+            "FROM tasks WHERE created >= ? AND created < ? "
             "ORDER BY created DESC",
             (start, end),
         ).fetchall()

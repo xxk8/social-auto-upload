@@ -77,7 +77,7 @@ function SegmentedTimeRange<V extends string>({
               className={cn(
                 'group relative inline-flex items-center justify-center whitespace-nowrap',
                 'px-3 pt-1.5 pb-2 text-[12.5px] font-medium transition-colors duration-150',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20',
                 // Radix-defaults we want to keep:
                 'disabled:pointer-events-none disabled:opacity-50',
                 // Tonal mapping: muted default, foreground on active.

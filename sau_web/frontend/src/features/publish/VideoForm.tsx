@@ -39,8 +39,10 @@ import {
   Textarea,
 } from '@/components/ui/index'
 import { cn } from '@/lib/utils'
-import {PlatformIcon} from '@/components/ui/platform-icon';import { TagInput } from '@/components/ui/tag-input'
-import { motion } from 'motion/react'
+import {PlatformIcon} from '@/components/ui/platform-icon'
+import { TagInput } from '@/components/ui/tag-input'
+import { SectionIcon } from '@/components/ui/section-header'
+import {motion} from 'motion/react'
 import { useToast } from '@/components/ui/toast'
 import { usePublishDraft } from '@/hooks/usePublishDraft'
 import { PublishDraftBanner } from './PublishDraftBanner'
@@ -53,8 +55,9 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
-import {SectionHeader} from './shared';
-import {effectiveMaxTags, platformTagLabel} from './shared.helpers';import { cardVariants, springTransition } from './animations'
+import {SectionHeader} from './shared'
+import {effectiveMaxTags, platformTagLabel} from './shared.helpers'
+import { cardVariants, springTransition } from './animations'
 import { SchedulePicker } from './SchedulePicker'
 import { formatFileSize } from '@/lib/features'
 import { Tip } from '@/lib/tip'
@@ -139,6 +142,12 @@ type VideoFormProps = {
    * in this form: 抖音 / Bilibili / 视频号.
    */
   highlightedSection?: PlatformSpecificSection | null
+  /**
+   * Deep-link schedule from the content calendar (`?schedule=`).
+   * Applied once on mount when the field is still empty so a later
+   * draft restore / user edit is never clobbered.
+   */
+  initialSchedule?: string
 }
 
 /**
@@ -162,6 +171,7 @@ export const VideoForm = memo(
       advancedOpen = false,
       onAdvancedChange,
       highlightedSection = null,
+      initialSchedule = '',
     },
     ref,
   ) {
@@ -173,7 +183,17 @@ export const VideoForm = memo(
     /** Path C: native `string[]` (canonical `#tag`). Wire-format join
      *  happens only at the api.uploadVideo call site in `submit()`. */
     const [tags, setTags] = useState<string[]>([])
-    const [schedule, setSchedule] = useState('')
+    const [schedule, setSchedule] = useState(() => initialSchedule || '')
+    // Apply calendar deep-link once if the parent resolves the query
+    // after first paint (e.g. searchParams hydrate). Never overwrite a
+    // user-edited non-empty schedule.
+    const scheduleSeedApplied = useRef(Boolean(initialSchedule))
+    useEffect(() => {
+      if (scheduleSeedApplied.current) return
+      if (!initialSchedule) return
+      scheduleSeedApplied.current = true
+      setSchedule((prev) => (prev.trim() ? prev : initialSchedule))
+    }, [initialSchedule])
     const [headless, setHeadless] = useState(true)
     const [thumbnail, setThumbnail] = useState('')
     const [thumbnailLandscape, setThumbnailLandscape] = useState('')
@@ -187,6 +207,8 @@ export const VideoForm = memo(
     const [enhancingField, setEnhancingField] = useState<'title' | 'desc' | null>(null)
 
     const fileRef = useRef<File | null>(null)
+    /** Late-bound submit for FormHandle.submit (defined after useCallback). */
+    const submitRef = useRef<(() => void | Promise<void>) | null>(null)
     const [fileInfo, setFileInfo] = useState<{ name: string; size: number } | null>(null)
     const [dragOver, setDragOver] = useState(false)
     const [submitting, setSubmitting] = useState(false)
@@ -456,8 +478,16 @@ export const VideoForm = memo(
         },
         // Path C: tags is string[] — bridge sees array form directly.
         getFormSnapshot: () => ({ title, desc, tags }),
+        setSchedule: (value: string) => {
+          setSchedule(value)
+          if (value) onAdvancedChange?.(true)
+        },
+        // Bound via submitRef so the handle stays valid before submit() is defined.
+        submit: () => {
+          void submitRef.current?.()
+        },
       }),
-      [setTitle, setDesc, setTags, setThumbnail, setFileInfo, title, desc, tags],
+      [setTitle, setDesc, setTags, setThumbnail, setFileInfo, title, desc, tags, onAdvancedChange],
     )
 
     /**
@@ -637,6 +667,7 @@ export const VideoForm = memo(
       onSuccess,
       onError,
     ])
+    submitRef.current = submit
 
     return (
       <>
@@ -647,16 +678,16 @@ export const VideoForm = memo(
           initial="hidden"
           animate="visible"
         >
-          <Card className="card-refined">
-            <CardContent className="p-5 space-y-4">
+          <Card className="card-refined overflow-hidden">
+            <CardContent className="p-6 space-y-5">
               <SectionHeader icon={<FilePlus className="h-4 w-4" />} title="内容素材" />
-              <div className="space-y-4">
-                <div className="space-y-2">
+              <div className="space-y-5">
+                <div className="space-y-2.5">
                   {/* eslint-disable-next-line sau/label-html-for -- 装饰标签·div作为click-target + 隐藏 <input id="video-file-input"> */}
-                  <Label>视频文件</Label>
+                  <Label className="text-xs font-medium text-muted-foreground tracking-wide uppercase">视频文件</Label>
                   <div
                     className={cn(
-                      'flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-5 transition-colors cursor-pointer',
+                      'flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 transition-colors cursor-pointer',
                       dragOver && !fileInfo
                         ? 'border-primary bg-primary/10'
                         : fileInfo
@@ -753,10 +784,12 @@ export const VideoForm = memo(
                   />
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     {/* eslint-disable-next-line sau/label-html-for -- 装饰标签·行内布局 (AI 优化按钮 + 0/100 计数器同行) */}
-                    <Label>标题</Label>
+                    <Label className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+                      标题
+                    </Label>
                     <div className="flex items-center gap-1.5">
                       <Tip text="AI 优化标题">
                         <Button
@@ -773,7 +806,7 @@ export const VideoForm = memo(
                           )}
                         </Button>
                       </Tip>
-                      <span className="text-[11px] text-muted-foreground tabular-nums">
+                      <span className="text-[11px] text-muted-foreground/60 tabular-nums">
                         {title.length}/100
                       </span>
                     </div>
@@ -785,13 +818,16 @@ export const VideoForm = memo(
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     maxLength={100}
+                    className="h-10 text-sm"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="video-desc">视频简介</Label>
+                      <Label htmlFor="video-desc" className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+                        视频简介
+                      </Label>
                       <Tip text="AI 优化简介">
                         <Button
                           variant="ghost"
@@ -810,18 +846,20 @@ export const VideoForm = memo(
                     </div>
                     <Textarea
                       id="video-desc"
-                      className="min-h-[90px]"
+                      className="min-h-[100px] text-sm leading-relaxed"
                       placeholder={t('publish.video_form.desc_placeholder', '补充视频简介、背景说明或发布备注')}
                       value={desc}
                       onChange={(e) => setDesc(e.target.value)}
                       maxLength={1000}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
                       {/* eslint-disable-next-line sau/label-html-for -- 装饰分组·TagInput 当前调用未挂 id (后续 PR 跟随 ContentStep 修复补) */}
-                      <Label>标签</Label>
-                      <span className="text-[11px] text-muted-foreground">
+                      <Label className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+                        标签
+                      </Label>
+                      <span className="text-[11px] text-muted-foreground/60">
                         {platformTagLabel([...activePlatforms])}
                       </span>
                     </div>
@@ -853,25 +891,32 @@ export const VideoForm = memo(
               onValueChange={(v) => onAdvancedChange?.((v as string) === 'advanced')}
             >
               <AccordionItem value="advanced" className="border-b-0">
-                <AccordionTrigger className="px-5 py-3 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      <Settings className="h-3.5 w-3.5" />
-                    </div>
-                    <span className="text-sm font-semibold">高级选项</span>
+                <AccordionTrigger className="px-6 py-4 hover:no-underline group">
+                  <div className="flex items-center gap-3">
+                    <SectionIcon size="sm"><Settings className="h-3.5 w-3.5" /></SectionIcon>
+                    <span className="text-sm font-semibold tracking-tight">高级选项</span>
                     {(thumbnail ||
                       thumbnailLandscape ||
                       thumbnailPortrait ||
                       schedule ||
                       hasAnyPlatformSpecific) && (
-                      <span className="ml-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                      <span className="ml-1 h-2 w-2 rounded-full bg-primary animate-pulse" />
                     )}
                   </div>
                 </AccordionTrigger>
-                <AccordionContent className="px-5 pb-5">
+                <AccordionContent className="px-6 pb-6">
                   {/* ── 通用行为: 定时发布 + 无头模式 ── */}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pb-4 border-b border-border/30">
-                    <SchedulePicker value={schedule} onChange={setSchedule} />
+                    <SchedulePicker
+                      value={schedule}
+                      onChange={setSchedule}
+                      highlighted={Boolean(initialSchedule) && schedule === initialSchedule}
+                      hint={
+                        initialSchedule && schedule === initialSchedule
+                          ? '已从内容日历预填，可改时间或点快捷预设。'
+                          : undefined
+                      }
+                    />
                     <div className="flex items-center gap-2 self-end pb-1">
                       <Checkbox
                         id="video-headless"
@@ -1069,14 +1114,14 @@ export const VideoForm = memo(
         </motion.div>
 
         {/* ── 提交按钮 ─────────────────────────────────────────── */}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={handleClearClick}>
+        <div className="flex items-center justify-end gap-3 pt-3 pb-1">
+          <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleClearClick}>
             {t('publish.video_form.button_clear', '清空')}
           </Button>
           <Button
             onClick={submit}
             disabled={submitting}
-            className="btn-elegant"
+            className="h-9 px-5 text-sm"
           >
             {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {t('publish.video_form.button_submit', '提交视频')}

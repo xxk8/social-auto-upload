@@ -8,6 +8,11 @@ from flask import Blueprint, Response, jsonify, request
 
 from web_runner.db import db_lock, get_connection
 from web_runner.utils import (
+    DEFAULT_LOG_LIST_LIMIT,
+    DEFAULT_TASK_LIST_LIMIT,
+    MAX_LOG_LIST_LIMIT,
+    MAX_TASK_LIST_LIMIT,
+    _clamp_limit,
     _db_get_all_tasks,
     _db_get_error_events,
     _db_get_logs,
@@ -18,7 +23,9 @@ from web_runner.utils import (
     _scheduled_timers,
     _timer_lock,
     log,
+    subscribe_logs,
     task_executor,
+    unsubscribe_logs,
 )
 
 bp = Blueprint("tasks", __name__)
@@ -26,8 +33,12 @@ bp = Blueprint("tasks", __name__)
 
 @bp.get("/api/tasks")
 def list_tasks():
-    limit = request.args.get("limit", type=int)
-    offset = request.args.get("offset", 0, type=int)
+    limit = _clamp_limit(
+        request.args.get("limit", type=int),
+        DEFAULT_TASK_LIST_LIMIT,
+        MAX_TASK_LIST_LIMIT,
+    )
+    offset = max(0, request.args.get("offset", 0, type=int) or 0)
     rows = _db_get_all_tasks(limit=limit, offset=offset)
     return jsonify({"success": True, "data": rows})
 
@@ -143,9 +154,63 @@ def add_task():
 def get_logs():
     after = request.args.get("after")
     task_id = request.args.get("task_id")
-    limit = request.args.get("limit", type=int)
-    offset = request.args.get("offset", 0, type=int)
-    return jsonify({"success": True, "data": _db_get_logs(after, task_id, limit=limit, offset=offset)})
+    limit = _clamp_limit(
+        request.args.get("limit", type=int),
+        DEFAULT_LOG_LIST_LIMIT,
+        MAX_LOG_LIST_LIMIT,
+    )
+    offset = max(0, request.args.get("offset", 0, type=int) or 0)
+    return jsonify(
+        {
+            "success": True,
+            "data": _db_get_logs(after, task_id, limit=limit, offset=offset),
+        }
+    )
+
+
+@bp.get("/api/logs/stream")
+def stream_logs():
+    """SSE live log feed — replaces aggressive REST polling on Logs / FloatingLogs.
+
+    Events:
+      - ``ready`` — subscription accepted
+      - ``log``   — ``{ts, message}``
+    Heartbeats (``: ping``) every ~15s keep proxies from idling out.
+    """
+    import json as _json
+    import queue as _queue
+
+    try:
+        q = subscribe_logs()
+    except RuntimeError:
+        return jsonify({"success": False, "message": "too many log stream subscribers"}), 503
+
+    task_filter = (request.args.get("task_id") or "").strip() or None
+
+    def generate():
+        try:
+            yield f"event: ready\ndata: {_json.dumps({'success': True})}\n\n"
+            while True:
+                try:
+                    item = q.get(timeout=15)
+                except _queue.Empty:
+                    yield ": ping\n\n"
+                    continue
+                if task_filter and task_filter not in (item.get("message") or ""):
+                    continue
+                yield f"event: log\ndata: {_json.dumps(item, ensure_ascii=False)}\n\n"
+        finally:
+            unsubscribe_logs(q)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @bp.post("/api/tasks/reschedule")
@@ -214,14 +279,15 @@ def list_scheduled():
     end = request.args.get("to") or request.args.get("end")
     sql = (
         "SELECT task_id, platform, account, action, status, created, scheduled_at, argv "
-        "FROM tasks WHERE scheduled_at IS NOT NULL AND scheduled_at != ''"
+        "FROM tasks WHERE scheduled_at IS NOT NULL"
     )
     params: list = []
     if start:
-        sql += " AND substr(scheduled_at, 1, 10) >= ?"
+        # Sargable ISO prefix compare (no substr on the column).
+        sql += " AND scheduled_at >= ?"
         params.append(start[:10])
     if end:
-        sql += " AND substr(scheduled_at, 1, 10) < ?"
+        sql += " AND scheduled_at < ?"
         params.append(end[:10])
     sql += " ORDER BY scheduled_at"
     with get_connection() as conn:
@@ -232,17 +298,62 @@ def list_scheduled():
 
 @bp.get("/api/tasks/stream")
 def stream_tasks():
-    """Lightweight SSE heartbeats + task list snapshots for polling UIs."""
+    """SSE task list snapshots for live UIs (replaces aggressive client polling).
+
+    Events:
+      - ``initial`` — first snapshot after connect
+      - ``update``  — snapshot when status signature changes
+      - ``done``    — no pending/running tasks (client may close)
+    Heartbeats (``: ping``) keep proxies from idling out the socket.
+    Connection ends after ~10 minutes or shortly after all tasks go terminal.
+    """
     import time as _time
 
+    def _status_sig(rows: list[dict]) -> str:
+        # Cheap change detector: only re-emit when task status surface moves.
+        parts = [
+            f"{r.get('task_id')}|{r.get('status')}|{r.get('code')}|{(r.get('error') or '')[:80]}"
+            for r in rows
+        ]
+        return "\n".join(parts)
+
     def generate():
-        for _ in range(30):
-            rows = _db_get_all_tasks(limit=50)
-            payload = json.dumps({"success": True, "data": rows}, ensure_ascii=False)
-            yield f"data: {payload}\n\n"
+        last_sig: str | None = None
+        idle_terminal = 0
+        # 300 × 2s ≈ 10 minutes max per connection
+        for i in range(300):
+            rows = _db_get_all_tasks(limit=100)
+            has_running = any(
+                (r.get("status") or "") in ("pending", "running") for r in rows
+            )
+            sig = _status_sig(rows)
+            if sig != last_sig:
+                last_sig = sig
+                event = "initial" if i == 0 else "update"
+                payload = json.dumps({"success": True, "data": rows}, ensure_ascii=False)
+                yield f"event: {event}\ndata: {payload}\n\n"
+            else:
+                yield ": ping\n\n"
+
+            if not has_running:
+                idle_terminal += 1
+                # Two consecutive terminal ticks after the first snapshot → done.
+                if idle_terminal >= 2 and i > 0:
+                    yield f"event: done\ndata: {json.dumps({'success': True})}\n\n"
+                    break
+            else:
+                idle_terminal = 0
             _time.sleep(2)
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @bp.get("/api/error-events")

@@ -4,6 +4,8 @@ import {
   MAGIC_HELP_TEXT,
   buildMagicCommandMessage,
   parseMagicCommand,
+  parseNaturalIntent,
+  parseScheduleWhen,
 } from './magicCommands'
 
 /**
@@ -150,15 +152,15 @@ describe('buildMagicCommandMessage', () => {
 })
 
 describe('MAGIC_COMMANDS registry', () => {
-  it('exposes the 6 registry entries aligned with the parser grammar', () => {
-    expect(MAGIC_COMMANDS.map((c) => c.cmd)).toEqual([
-      '/fullflow',
-      '/variants',
-      '/enhance',
-      '/apply',
-      '/clear',
-      '/help',
-    ])
+  it('exposes Claude Code-style commands including form + skill', () => {
+    const cmds = MAGIC_COMMANDS.map((c) => c.cmd)
+    expect(cmds).toContain('/fullflow')
+    expect(cmds).toContain('/title')
+    expect(cmds).toContain('/group')
+    expect(cmds).toContain('/skill')
+    expect(cmds).toContain('/publish')
+    expect(cmds).toContain('/help')
+    expect(cmds.length).toBeGreaterThanOrEqual(12)
   })
 
   it('every registry entry has a non-empty label and blurb', () => {
@@ -167,5 +169,40 @@ describe('MAGIC_COMMANDS registry', () => {
       expect(c.label.length).toBeGreaterThan(0)
       expect(c.blurb.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('new form/skill commands', () => {
+  it('parses /title /desc /tags /mode /group /publish /skill', () => {
+    expect(parseMagicCommand('/title 你好')).toEqual({ kind: 'title', text: '你好' })
+    expect(parseMagicCommand('/desc 正文')).toEqual({ kind: 'desc', text: '正文' })
+    expect(parseMagicCommand('/tags a,b')).toEqual({ kind: 'tags', text: 'a,b' })
+    expect(parseMagicCommand('/mode note')).toEqual({ kind: 'mode', mode: 'note' })
+    expect(parseMagicCommand('/mode 视频')).toEqual({ kind: 'mode', mode: 'video' })
+    expect(parseMagicCommand('/group 全能组')).toEqual({ kind: 'group', query: '全能组' })
+    expect(parseMagicCommand('/publish')).toEqual({ kind: 'publish' })
+    expect(parseMagicCommand('/submit')).toEqual({ kind: 'publish' })
+    expect(parseMagicCommand('/skill douyin-upload')).toEqual({
+      kind: 'skill',
+      query: 'douyin-upload',
+    })
+    expect(parseMagicCommand('/skills')).toEqual({ kind: 'skills' })
+  })
+})
+
+describe('parseNaturalIntent', () => {
+  it('detects mode switch and publish', () => {
+    expect(parseNaturalIntent('切换到图文')).toEqual({ kind: 'mode', mode: 'note' })
+    expect(parseNaturalIntent('视频')).toEqual({ kind: 'mode', mode: 'video' })
+    expect(parseNaturalIntent('现在发布')).toEqual({ kind: 'publish' })
+    expect(parseNaturalIntent('写一条抖音文案')).toBeNull()
+  })
+})
+
+describe('parseScheduleWhen', () => {
+  it('parses ISO-like and relative times', () => {
+    expect(parseScheduleWhen('2026-07-28 15:30')).toBe('2026-07-28T15:30')
+    expect(parseScheduleWhen('now')).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+    expect(parseScheduleWhen('garbage')).toBeNull()
   })
 })

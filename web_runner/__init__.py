@@ -148,10 +148,32 @@ def create_app() -> Flask:
 
     @app.get("/health")
     def health():
-        # Contract locked by tests/test_web_shell.py::TestHealth
+        # Contract locked by tests/test_web_shell.py::TestHealth — keep ok/db.
         from web_runner.db import backend_name
+        from web_runner.utils import get_runtime_stats
 
-        return jsonify({"ok": True, "db": backend_name()})
+        body: dict = {"ok": True, "db": backend_name()}
+        try:
+            body["runtime"] = get_runtime_stats()
+        except Exception:
+            pass
+        return jsonify(body)
+
+    @app.get("/api/system/stats")
+    def system_stats():
+        """Task pool / queue depth for operators and dashboards."""
+        from web_runner.db import backend_name
+        from web_runner.utils import get_runtime_stats
+
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "db": backend_name(),
+                    **get_runtime_stats(),
+                },
+            }
+        )
 
     @app.get("/")
     def index():
@@ -165,6 +187,21 @@ def create_app() -> Flask:
             "<h1>social-auto-upload web shell</h1><p>frontend not built yet.</p>",
             mimetype="text/html",
         )
+
+    @app.get("/<path:path>")
+    def spa_fallback(path: str):
+        if path.startswith("api/") or path.startswith("static/"):
+            return _not_found()
+        dist = _frontend_dist()
+        if dist:
+            return Response(
+                (dist / "index.html").read_text(encoding="utf-8"),
+                mimetype="text/html",
+            )
+        return _not_found()
+
+    def _not_found():
+        return Response("Not found", mimetype="text/plain", status=404)
 
     @app.errorhandler(Exception)
     def _handle_unexpected_error(exc):

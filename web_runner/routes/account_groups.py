@@ -34,10 +34,32 @@ def list_account_groups():
             authorizations = []
             for auth in auths:
                 cookie_path = Path(auth["cookie_file"])
-                quick = _quick_check_cookie(auth["platform"], group["name"]) if cookie_path.exists() else {"valid": False, "reason": "no_file"}
+                # Account id is the CLI `--account` label: cookie path is
+                # `{platform}_{account}.json`, and authorize always writes
+                # with the group name as that account.
+                account_name = group["name"]
+                stem = cookie_path.stem
+                parts = stem.split("_", 1)
+                if len(parts) == 2 and parts[1]:
+                    account_name = parts[1]
+                quick = (
+                    _quick_check_cookie(auth["platform"], account_name)
+                    if cookie_path.exists()
+                    else {"valid": False, "reason": "no_file", "age_hours": None}
+                )
+                age_hours = quick.get("age_hours")
+                # File present but older than 24h → treat as stale (still
+                # structurally valid, recovery = re-login / re-scan).
+                stale = bool(quick.get("valid")) and age_hours is not None and age_hours >= 24
                 authorizations.append({
-                    "id": auth["id"], "platform": auth["platform"],
-                    "cookie_file": auth["cookie_file"], "valid": quick["valid"], "reason": quick.get("reason"),
+                    "id": auth["id"],
+                    "platform": auth["platform"],
+                    "account_name": account_name,
+                    "cookie_file": auth["cookie_file"],
+                    "valid": quick["valid"],
+                    "reason": quick.get("reason"),
+                    "age_hours": age_hours,
+                    "stale": stale,
                 })
             result.append({"id": group["id"], "name": group["name"], "created": group["created"], "authorizations": authorizations})
     return jsonify({"success": True, "data": result})

@@ -1,77 +1,81 @@
 import { useMemo, useState } from 'react'
-import { motion } from 'motion/react'
+import { SectionIcon } from '@/components/ui/section-header'
 import { PageHeader } from '@/components/ui/page-header'
 import { PageWrapper } from '@/components/layout/PageWrapper'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/index'
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Separator,
+  Skeleton,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  ToggleGroup,
+  ToggleGroupItem,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/index'
 import { useToast } from '@/components/ui/toast'
 import {
   BarChart3,
   Download,
   TrendingUp,
   CheckCircle2,
+  XCircle,
   Users,
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
   Minus,
+  Percent,
+  Sparkles,
+  Table2,
+  Target,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useAnalyticsSummary, useAnalyticsAccounts, rangeToParams } from '@/hooks/useAnalytics'
+import { pctToTone, type Tone } from '@/lib/tone'
+import {
+  useAnalyticsSummary,
+  useAnalyticsAccounts,
+  rangeToParams,
+} from '@/hooks/useAnalytics'
 import { VolumeTrendChart } from '@/features/analytics/VolumeTrendChart'
 import { PlatformPieChart } from '@/features/analytics/PlatformPieChart'
 import { FailureReasonChart } from '@/features/analytics/FailureReasonChart'
 import { AccountActivityTable } from '@/features/analytics/AccountActivityTable'
 import { SuccessRateTrendChart } from '@/features/analytics/SuccessRateTrendChart'
 import { MetricsEffectPanel } from '@/features/analytics/MetricsEffectPanel'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PlatformBreakdownTable } from '@/features/analytics/PlatformBreakdownTable'
+import { DailyBreakdownTable } from '@/features/analytics/DailyBreakdownTable'
+import { FailureReasonList } from '@/features/analytics/FailureReasonList'
 import { api } from '@/api/client'
 
 /**
- * §12 — Analytics Dashboard page.
+ * Analytics page — composed from official shadcn/ui components only:
+ * Card, Badge, Button, Tabs, ToggleGroup, Table, Chart, Empty, Progress,
+ * Separator, Skeleton, Tooltip, Alert.
  *
- * Wires together:
- *   - useAnalyticsSummary / useAnalyticsAccounts hooks (TanStack Query)
- *   - 4 StatsCards with real counts + trend indicators
- *   - VolumeTrendChart (recharts AreaChart, stacked success/failed)
- *   - PlatformPieChart (recharts PieChart donut)
- *   - FailureReasonChart (recharts horizontal BarChart, top 5)
- *   - AccountActivityTable (sortable table with success-rate highlighting)
- *   - CSV export button (downloads via api.analytics.exportCsv)
- *
- * Date range selector controls the query params for both hooks.
+ * @see https://ui.shadcn.com/docs/components/card
+ * @see https://ui.shadcn.com/docs/components/chart
+ * @see https://ui.shadcn.com/docs/components/table
+ * @see https://ui.shadcn.com/docs/components/toggle-group
  */
 
 type DateRange = '7d' | '30d' | '90d' | 'all'
 
-const RANGE_LABELS: Record<DateRange, string> = {
-  '7d': '近 7 天',
-  '30d': '近 30 天',
-  '90d': '近 90 天',
-  all: '全部',
-}
-
-/** Stats card — one of 4 summary tiles with gradient + trend indicator. */
-const STATS_GRADIENTS: Record<string, string> = {
-  total: 'from-blue-500/10 to-blue-500/5',
-  success: 'from-emerald-500/10 to-emerald-500/5',
-  accounts: 'from-violet-500/10 to-violet-500/5',
-  today: 'from-amber-500/10 to-amber-500/5',
-}
-
-const STATS_ICON_BG: Record<string, string> = {
-  total: 'bg-blue-500/15',
-  success: 'bg-emerald-500/15',
-  accounts: 'bg-violet-500/15',
-  today: 'bg-amber-500/15',
-}
-
-const STATS_ICON_COLOR: Record<string, string> = {
-  total: 'text-blue-500',
-  success: 'text-emerald-500',
-  accounts: 'text-violet-500',
-  today: 'text-amber-500',
-}
+const RANGE_TABS: { value: DateRange; label: string }[] = [
+  { value: '7d', label: '近 7 天' },
+  { value: '30d', label: '近 30 天' },
+  { value: '90d', label: '近 90 天' },
+  { value: 'all', label: '全部' },
+]
 
 function StatsCard({
   label,
@@ -79,46 +83,56 @@ function StatsCard({
   icon: Icon,
   trend,
   trendDir,
-  variant = 'total',
+  meta,
+  loading,
 }: {
   label: string
   value: string | number
   icon: typeof TrendingUp
   trend?: string
   trendDir?: 'up' | 'down' | 'flat'
-  variant?: 'total' | 'success' | 'accounts' | 'today'
+  meta?: string
+  tone?: Tone
+  loading?: boolean
 }) {
-  const TrendIcon = trendDir === 'up' ? ArrowUpRight : trendDir === 'down' ? ArrowDownRight : Minus
-  const trendColor =
-    trendDir === 'up' ? 'text-emerald-500' : trendDir === 'down' ? 'text-destructive' : 'text-muted-foreground'
+  const TrendIcon =
+    trendDir === 'up' ? ArrowUpRight : trendDir === 'down' ? ArrowDownRight : Minus
+  const trendVariant =
+    trendDir === 'up' ? 'success' : trendDir === 'down' ? 'error' : 'secondary'
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-    >
-      <Card className={cn(
-        'relative overflow-hidden bg-gradient-to-br ring-1 ring-foreground/5 hover:ring-foreground/10 transition-all',
-        STATS_GRADIENTS[variant],
-      )}>
-        <div className="flex items-center gap-3 px-4 py-4">
-          <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl shrink-0', STATS_ICON_BG[variant])}>
-            <Icon className={cn('h-5 w-5', STATS_ICON_COLOR[variant])} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-2xl font-bold leading-none tabular-nums tracking-tight">{value}</p>
-            <p className="text-[11px] text-muted-foreground mt-1.5">{label}</p>
-          </div>
-          {trend && (
-            <div className={cn('flex items-center gap-0.5 text-[11px] font-medium shrink-0', trendColor)}>
-              <TrendIcon className="h-3 w-3" />
-              {trend}
-            </div>
-          )}
-        </div>
-      </Card>
-    </motion.div>
+    <Card size="sm" className="card-refined">
+      <CardHeader className="flex flex-row items-start justify-between">
+        <SectionIcon size="lg"><Icon className="size-[18px]" /></SectionIcon>
+        {trend ? (
+          <Badge
+            variant={trendVariant as 'success' | 'error' | 'secondary'}
+            className="gap-0.5 font-normal tabular-nums"
+          >
+            <TrendIcon className="size-3" />
+            {trend}
+          </Badge>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-8 w-20" />
+        ) : (
+          <CardTitle className="text-2xl font-bold tabular-nums tracking-tight">
+            {value}
+          </CardTitle>
+        )}
+        <CardDescription className="mt-1 flex items-center gap-1.5 text-xs">
+          <span>{label}</span>
+          {meta ? (
+            <>
+              <Separator orientation="vertical" className="h-3" />
+              <span className="tabular-nums">{meta}</span>
+            </>
+          ) : null}
+        </CardDescription>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -130,7 +144,6 @@ export default function AnalyticsPage() {
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary(range)
   const { data: accounts, isLoading: accountsLoading } = useAnalyticsAccounts(range)
 
-  // Derive trend direction: compare current period total vs previous period.
   const trendDir = useMemo(() => {
     if (!summary || summary.prev_total === 0) return 'flat' as const
     if (summary.total > summary.prev_total) return 'up' as const
@@ -145,14 +158,35 @@ export default function AnalyticsPage() {
   }, [summary])
 
   const successRate = useMemo(() => {
-    if (!summary || summary.total === 0) return '—'
-    return `${((summary.success / summary.total) * 100).toFixed(0)}%`
+    if (!summary) return null
+    const terminal = summary.success + summary.failed
+    if (terminal === 0) return null
+    return (summary.success / terminal) * 100
+  }, [summary])
+
+  const failRate = useMemo(() => {
+    if (!summary) return null
+    const terminal = summary.success + summary.failed
+    if (terminal === 0) return null
+    return (summary.failed / terminal) * 100
   }, [summary])
 
   const activeAccounts = useMemo(() => {
-    if (!accounts) return '—'
+    if (!accounts) return null
     return accounts.filter((a) => a.total > 0).length
   }, [accounts])
+
+  const pendingCount = useMemo(() => {
+    if (!summary) return 0
+    return Math.max(0, summary.total - summary.success - summary.failed)
+  }, [summary])
+
+  const platformCount = useMemo(() => {
+    if (!summary?.by_platform) return 0
+    return Object.values(summary.by_platform).filter(
+      (s) => (s.success ?? 0) + (s.failed ?? 0) > 0,
+    ).length
+  }, [summary])
 
   const handleExport = async () => {
     setExporting(true)
@@ -176,118 +210,230 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <PageWrapper>
-      <PageHeader
-        title="数据分析"
-        description="发布趋势、平台表现、账号活跃度"
-        icon={<BarChart3 className="h-5 w-5 text-muted-foreground" />}
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={() => void handleExport()}
-            disabled={exporting || !summary}
-          >
-            <Download className="h-4 w-4" />
-            {exporting ? '导出中…' : '导出 CSV'}
-          </Button>
-        }
-      />
+    <TooltipProvider>
+      <PageWrapper>
+        <PageHeader
+          title="数据分析"
+          description="发布趋势、平台表现、账号活跃度与失败归因"
+          icon={<BarChart3 className="size-5 text-muted-foreground" />}
+          actions={
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => void handleExport()}
+                  disabled={exporting || !summary}
+                >
+                  <Download className="size-4" />
+                  {exporting ? '导出中…' : '导出 CSV'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>下载当前时间范围的任务明细</TooltipContent>
+            </Tooltip>
+          }
+        />
 
-      {/* TODO §12.8: Add QuotaUpgradeBanner for free-tier users here —
-          shown when tier === 'free' and range is clamped to 7 days. */}
+        {/* Toolbar: Card + ToggleGroup + Badge */}
+        <Card size="sm" className="card-refined">
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Calendar className="size-4" />
+                <span className="text-xs font-medium">时间范围</span>
+              </div>
+              <ToggleGroup
+                value={[range]}
+                onValueChange={(values) => {
+                  const next = values[values.length - 1] as DateRange | undefined
+                  if (next) setRange(next)
+                }}
+                variant="outline"
+                size="sm"
+                spacing={0}
+              >
+                {RANGE_TABS.map((t) => (
+                  <ToggleGroupItem key={t.value} value={t.value}>
+                    {t.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
 
-      {/* ── Date range selector — distinct toolbar ───────── */}
-      <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
-        <Calendar className="h-4 w-4 text-muted-foreground/70" />
-        <span className="text-xs font-medium text-muted-foreground/80 mr-1">时间范围</span>
-        <div className="flex items-center gap-1">
-          {(Object.keys(RANGE_LABELS) as DateRange[]).map((r) => (
-            <Button
-              key={r}
-              variant={range === r ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setRange(r)}
-              className={cn('text-xs h-7', range === r ? 'font-medium' : 'text-muted-foreground')}
-            >
-              {RANGE_LABELS[r]}
-            </Button>
-          ))}
-        </div>
-      </div>
+            {summary && !summaryLoading ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="secondary" className="font-normal tabular-nums">
+                  总 {summary.total}
+                </Badge>
+                <Badge variant="success" className="font-normal tabular-nums">
+                  成功 {summary.success}
+                </Badge>
+                <Badge variant="error" className="font-normal tabular-nums">
+                  失败 {summary.failed}
+                </Badge>
+                {pendingCount > 0 ? (
+                  <Badge variant="warning" className="font-normal tabular-nums">
+                    进行中 {pendingCount}
+                  </Badge>
+                ) : null}
+                {platformCount > 0 ? (
+                  <Badge variant="info" className="font-normal tabular-nums">
+                    {platformCount} 平台
+                  </Badge>
+                ) : null}
+              </div>
+            ) : summaryLoading ? (
+              <div className="flex gap-1.5">
+                <Skeleton className="h-5 w-14 rounded-full" />
+                <Skeleton className="h-5 w-14 rounded-full" />
+                <Skeleton className="h-5 w-14 rounded-full" />
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
 
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">概览</TabsTrigger>
-          <TabsTrigger value="effect">效果</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview">
-      {/* ── Stats cards (4) ─────────────────────────────── */}
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          label="总发布"
-          value={summary?.total ?? '—'}
-          icon={TrendingUp}
-          trend={trendPct}
-          trendDir={trendDir}
-          variant="total"
-        />
-        <StatsCard
-          label="成功率"
-          value={successRate}
-          icon={CheckCircle2}
-          trend={summary ? `${summary.success}/${summary.total}` : undefined}
-          trendDir="flat"
-          variant="success"
-        />
-        <StatsCard
-          label="活跃账号"
-          value={activeAccounts}
-          icon={Users}
-          variant="accounts"
-        />
-        <StatsCard
-          label="今日"
-          value={summary?.today ?? '—'}
-          icon={BarChart3}
-          variant="today"
-        />
-      </div>
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList>
+            <TabsTrigger value="overview" className="gap-1.5">
+              <Sparkles className="size-3.5" />
+              概览
+            </TabsTrigger>
+            <TabsTrigger value="tables" className="gap-1.5">
+              <Table2 className="size-3.5" />
+              数据表
+            </TabsTrigger>
+            <TabsTrigger value="effect" className="gap-1.5">
+              <Target className="size-3.5" />
+              效果
+            </TabsTrigger>
+          </TabsList>
 
-      {/* ── Success rate trend (full-width) ─────────────── */}
-      <div className="mt-6">
-        <SuccessRateTrendChart data={summary?.by_day ?? []} loading={summaryLoading} />
-      </div>
+          <TabsContent value="overview" className="mt-4 space-y-6">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
+              <StatsCard
+                label="总发布"
+                value={summary?.total ?? '—'}
+                icon={TrendingUp}
+                trend={trendPct}
+                trendDir={trendDir}
+                meta={
+                  summary?.prev_total != null
+                    ? `上期 ${summary.prev_total}`
+                    : undefined
+                }
+                loading={summaryLoading}
+              />
+              <StatsCard
+                label="成功"
+                value={summary?.success ?? '—'}
+                icon={CheckCircle2}
+                meta={
+                  successRate != null ? `${successRate.toFixed(0)}%` : undefined
+                }
+                loading={summaryLoading}
+              />
+              <StatsCard
+                label="失败"
+                value={summary?.failed ?? '—'}
+                icon={XCircle}
+                meta={failRate != null ? `${failRate.toFixed(0)}%` : undefined}
+                loading={summaryLoading}
+              />
+              <StatsCard
+                label="成功率"
+                value={
+                  successRate != null ? `${successRate.toFixed(1)}%` : '—'
+                }
+                icon={Percent}
+                meta={
+                  summary
+                    ? `${summary.success}/${summary.success + summary.failed}`
+                    : undefined
+                }
+                tone={successRate != null ? pctToTone(successRate) : 'neutral'}
+                loading={summaryLoading}
+              />
+              <StatsCard
+                label="活跃账号"
+                value={activeAccounts ?? '—'}
+                icon={Users}
+                meta={accounts ? `共 ${accounts.length}` : undefined}
+                loading={accountsLoading}
+              />
+              <StatsCard
+                label="今日"
+                value={summary?.today ?? '—'}
+                icon={Calendar}
+                meta={pendingCount > 0 ? `进行中 ${pendingCount}` : undefined}
+                loading={summaryLoading}
+              />
+            </div>
 
-      {/* ── Charts row: Volume trend + Platform pie ─────── */}
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <VolumeTrendChart
-          data={summary?.by_day ?? []}
-          loading={summaryLoading}
-        />
-        <PlatformPieChart
-          data={summary?.by_platform ?? {}}
-          loading={summaryLoading}
-        />
-      </div>
+            <SuccessRateTrendChart
+              data={summary?.by_day ?? []}
+              loading={summaryLoading}
+            />
 
-      {/* ── Failure reasons + Account activity table ────── */}
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <FailureReasonChart
-          data={summary?.failure_reasons ?? []}
-          loading={summaryLoading}
-        />
-        <AccountActivityTable
-          data={accounts ?? []}
-          loading={accountsLoading}
-        />
-        </div>
-        </TabsContent>
-        <TabsContent value="effect">
-          <MetricsEffectPanel range={range} />
-        </TabsContent>
-      </Tabs>
-    </PageWrapper>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <VolumeTrendChart
+                data={summary?.by_day ?? []}
+                loading={summaryLoading}
+              />
+              <PlatformPieChart
+                data={summary?.by_platform ?? {}}
+                loading={summaryLoading}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+              <div className="xl:col-span-2">
+                <FailureReasonChart
+                  data={summary?.failure_reasons ?? []}
+                  loading={summaryLoading}
+                />
+              </div>
+              <div className="xl:col-span-3">
+                <AccountActivityTable
+                  data={accounts ?? []}
+                  loading={accountsLoading}
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="tables" className="mt-4 space-y-6">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <PlatformBreakdownTable
+                data={summary?.by_platform ?? {}}
+                loading={summaryLoading}
+              />
+              <FailureReasonList
+                data={summary?.failure_reasons ?? []}
+                loading={summaryLoading}
+                limit={15}
+              />
+            </div>
+            <DailyBreakdownTable
+              data={summary?.by_day ?? []}
+              loading={summaryLoading}
+            />
+            <AccountActivityTable
+              data={accounts ?? []}
+              loading={accountsLoading}
+            />
+          </TabsContent>
+
+          <TabsContent value="effect" className="mt-4">
+            <MetricsEffectPanel
+              range={range}
+              summary={summary}
+              accounts={accounts}
+              loading={summaryLoading || accountsLoading}
+            />
+          </TabsContent>
+        </Tabs>
+      </PageWrapper>
+    </TooltipProvider>
   )
 }

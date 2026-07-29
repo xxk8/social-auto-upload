@@ -312,7 +312,7 @@ export const UploadStep = memo(function UploadStep({
                 aria-pressed={mode === 'video'}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  'outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                  'outline-none focus-visible:ring-2 focus-visible:ring-primary/20',
                   mode === 'video'
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
@@ -327,7 +327,7 @@ export const UploadStep = memo(function UploadStep({
                 aria-pressed={mode === 'note'}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  'outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                  'outline-none focus-visible:ring-2 focus-visible:ring-primary/20',
                   mode === 'note'
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
@@ -481,7 +481,7 @@ const VideoDropzone = memo(function VideoDropzone({
         htmlFor={inputIdSafe}
         className={cn(
           'relative flex flex-col items-center justify-center rounded-xl p-4 sm:p-6 cursor-pointer transition-colors duration-200 outline-none',
-          'focus-visible:ring-1 focus-visible:ring-ring',
+          'focus-visible:ring-2 focus-visible:ring-primary/20',
           dragOver
             ? 'ring-2 ring-primary ring-inset border-transparent bg-card'
             : file
@@ -635,7 +635,7 @@ const NoteDropzone = memo(function NoteDropzone({
         htmlFor={inputIdSafe}
         className={cn(
           'flex flex-col items-center justify-center rounded-xl p-6 cursor-pointer transition-colors duration-200 outline-none',
-          'focus-visible:ring-1 focus-visible:ring-ring',
+          'focus-visible:ring-2 focus-visible:ring-primary/20',
           dragOver
             ? 'ring-2 ring-primary ring-inset border-transparent bg-card'
             : 'border-2 border-dashed border-border hover:border-primary/50 hover:bg-muted/30',

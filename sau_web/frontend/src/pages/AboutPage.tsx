@@ -9,6 +9,8 @@ import { Stat } from '@/components/ui/stat'
 import { PricingTier } from '@/components/ui/pricing-tier'
 import type { PricingTierProps } from '@/components/ui/pricing-tier'
 import { PlatformIcon } from '@/components/ui/platform-icon'
+import { TestimonialsSection } from '@/components/marketing/testimonials-section'
+import { FaqSection } from '@/components/marketing/faq-section'
 import { useRevealStagger } from '@/lib/use-reveal-stagger'
 import { useVisitorMotion } from '@/lib/use-visitor-motion'
 import { MeshGradient } from '@/components/motion/MeshGradient'
@@ -495,6 +497,8 @@ export default function AboutPage() {
         <MissionSection />
         <ScaleSection />
         <TiersSection />
+        <TestimonialsSection />
+        <FaqSection />
         <CtaSection />
       </main>
       <MarketingFooter />

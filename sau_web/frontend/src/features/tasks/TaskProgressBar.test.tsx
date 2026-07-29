@@ -1,28 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
-import { cloneElement, type ReactElement } from 'react'
+import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from '@tanstack/react-router'
 import { makeQueryClient } from '@/test/render-harness.helpers'
-
-// recharts' ResponsiveContainer needs a real sized container; jsdom
-// provides none, so we inject fixed dimensions into the chart child.
-// This is the same pattern used by SuccessRateTrendChart.test.tsx.
-vi.mock('recharts', async () => {
-  const actual = await vi.importActual<typeof import('recharts')>('recharts')
-  return {
-    ...actual,
-    ResponsiveContainer: ({ children }: { children: ReactElement }) =>
-      cloneElement(children, { width: 400, height: 40 } as Partial<unknown>),
-  }
-})
-
 import { TaskProgressBar } from './TaskProgressBar'
 import { formatTaskTooltip } from './tooltipFormatter'
+import { toneFgVar } from '@/lib/tone'
 
 // ── helpers ──────────────────────────────────────────────────────
 
-/** Render TaskProgressBar with the minimum provider stack. */
 function renderBar(total: number, counts: Record<string, number>) {
   return render(
     <MemoryRouter>
@@ -33,7 +19,19 @@ function renderBar(total: number, counts: Record<string, number>) {
   )
 }
 
-// ── formatTaskTooltip (pure function, no rendering needed) ────────
+// ── toneFgVar contract (must be CSS color, not Tailwind class) ────
+
+describe('toneFgVar', () => {
+  it('returns CSS var strings for chart/SVG fill', () => {
+    expect(toneFgVar('info')).toBe('var(--status-info-fg)')
+    expect(toneFgVar('success')).toBe('var(--status-success-fg)')
+    // Canonical token is --status-error-* (not danger)
+    expect(toneFgVar('error')).toBe('var(--status-error-fg)')
+    expect(toneFgVar('info')).not.toMatch(/^text-/)
+  })
+})
+
+// ── formatTaskTooltip (pure) ─────────────────────────────────────
 
 describe('formatTaskTooltip', () => {
   const segs = [
@@ -59,7 +57,6 @@ describe('formatTaskTooltip', () => {
   })
 
   it('rounds percentage to whole number', () => {
-    // 7 / 22 = 31.818...% → rounds to 32%
     const customSegs = [{ key: 'done', label: '成功', count: 7 }]
     const result = formatTaskTooltip(7, 'done', customSegs, 22)
     expect(result[0]).toBe('成功 · 7 (32%)')
@@ -75,32 +72,20 @@ describe('formatTaskTooltip', () => {
     expect(result[0]).toBe('42')
     expect(result[1]).toBe('')
   })
-
-  it('returns empty string as second tuple element to suppress default name', () => {
-    const result = formatTaskTooltip(5, 'active', segs, 20)
-    expect(result[1]).toBe('')
-  })
 })
 
-// ── TaskProgressBar component rendering ──────────────────────────
+// ── TaskProgressBar (CSS bar, no recharts) ────────────────────────
 
 describe('TaskProgressBar — empty state (total=0)', () => {
-  it('renders a muted placeholder bar (no recharts BarChart)', () => {
+  it('does not use recharts', () => {
     const { container } = renderBar(0, {})
-    // When total===0, the component renders a plain <div className="bg-muted">
-    // instead of a ResponsiveContainer/BarChart. Assert no recharts SVG.
     expect(container.querySelector('.recharts-bar')).not.toBeInTheDocument()
     expect(container.querySelector('.recharts-surface')).not.toBeInTheDocument()
-    // The muted placeholder div is present.
-    const placeholder = container.querySelector('.bg-muted.rounded-full')
-    expect(placeholder).toBeInTheDocument()
   })
 
   it('shows the "暂无任务" legend with count 0', () => {
     renderBar(0, {})
-    // The fallback label for the empty segment is '暂无任务' (zh-CN default).
     expect(screen.getByText('暂无任务')).toBeInTheDocument()
-    // The empty segment's count is 0 — scope via the closest legend item.
     const emptyItem = screen.getByText('暂无任务').closest('div')
     expect(emptyItem).not.toBeNull()
     expect(within(emptyItem!).getByText('0')).toBeInTheDocument()
@@ -109,8 +94,6 @@ describe('TaskProgressBar — empty state (total=0)', () => {
   it('shows "总计" label with count 0', () => {
     renderBar(0, {})
     expect(screen.getByText('总计')).toBeInTheDocument()
-    // Total count is also 0 — scope via the closest legend item to avoid
-    // collision with the empty segment's 0.
     const totalItem = screen.getByText('总计').closest('div')
     expect(totalItem).not.toBeNull()
     expect(within(totalItem!).getByText('0')).toBeInTheDocument()
@@ -127,20 +110,18 @@ describe('TaskProgressBar — all-success', () => {
 
   it('shows correct count and total', () => {
     renderBar(10, { success: 10 })
-    // "成功" segment shows count 10, "总计" shows 10.
     const successItem = screen.getByText('成功').closest('div')
     expect(successItem).not.toBeNull()
     expect(within(successItem!).getByText('10')).toBeInTheDocument()
     expect(screen.getByText('总计')).toBeInTheDocument()
-    // Total count — find the "总计" label's sibling number.
     const totalItem = screen.getByText('总计').closest('div')
     expect(within(totalItem!).getByText('10')).toBeInTheDocument()
   })
 
-  it('renders a recharts BarChart with a bar element', () => {
+  it('renders a pure CSS progress track (role=img)', () => {
     const { container } = renderBar(10, { success: 10 })
-    expect(container.querySelector('.recharts-bar')).toBeInTheDocument()
-    expect(container.querySelector('.recharts-surface')).toBeInTheDocument()
+    expect(container.querySelector('[role="img"]')).toBeInTheDocument()
+    expect(container.querySelector('.recharts-bar')).not.toBeInTheDocument()
   })
 })
 
@@ -153,8 +134,6 @@ describe('TaskProgressBar — mixed statuses', () => {
     failed: 1,
     error: 1,
   }
-  // total = 12 + 3 + 2 + 1 + 1 + 1 = 20
-  // done = 12, active = 3+2+1 = 6, failed = 1+1 = 2
 
   it('renders all three segment labels', () => {
     renderBar(20, mixedCounts)
@@ -165,14 +144,12 @@ describe('TaskProgressBar — mixed statuses', () => {
 
   it('aggregates active keys (running + pending + scheduled) into one segment', () => {
     renderBar(20, mixedCounts)
-    // "进行中" should show count 6 (= 3 + 2 + 1)
     const activeItem = screen.getByText('进行中').closest('div')
     expect(within(activeItem!).getByText('6')).toBeInTheDocument()
   })
 
   it('aggregates failed keys (failed + error) into one segment', () => {
     renderBar(20, mixedCounts)
-    // "失败/异常" should show count 2 (= 1 + 1)
     const failedItem = screen.getByText('失败/异常').closest('div')
     expect(within(failedItem!).getByText('2')).toBeInTheDocument()
   })
@@ -189,12 +166,9 @@ describe('TaskProgressBar — mixed statuses', () => {
     expect(within(totalItem!).getByText('20')).toBeInTheDocument()
   })
 
-  it('renders legend dots for each segment', () => {
+  it('renders legend chips for each segment', () => {
     const { container } = renderBar(20, mixedCounts)
-    // Each legend item has a colored dot (span with rounded-full).
     const dots = container.querySelectorAll('.rounded-full')
-    // At least 3 segment dots + the bar chart may also render dots.
-    // We check at minimum the 3 legend dots exist.
     expect(dots.length).toBeGreaterThanOrEqual(3)
   })
 })
@@ -231,20 +205,9 @@ describe('TaskProgressBar — only-active', () => {
 
 describe('TaskProgressBar — zero-value keys filtered out', () => {
   it('does not render a segment when its aggregated count is 0', () => {
-    // success=5, but no running/pending/scheduled, and no failed/error
     renderBar(5, { success: 5, running: 0, failed: 0 })
     expect(screen.getByText('成功')).toBeInTheDocument()
     expect(screen.queryByText('进行中')).not.toBeInTheDocument()
     expect(screen.queryByText('失败/异常')).not.toBeInTheDocument()
-  })
-})
-
-describe('TaskProgressBar — props interface contract', () => {
-  it('accepts a Record<string, number> for counts', () => {
-    // TypeScript compilation is the contract; this test confirms
-    // the component renders without runtime errors for a typical shape.
-    const counts: Record<string, number> = { success: 1 }
-    const { container } = renderBar(1, counts)
-    expect(container.querySelector('.recharts-bar')).toBeInTheDocument()
   })
 })

@@ -7,7 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { SectionIcon } from '@/components/ui/section-header'
 import { Button } from '@/components/ui/button'
+
+import { Clapperboard } from 'lucide-react'
 
 export interface ProjectCreateInput {
   title: string
@@ -71,6 +74,12 @@ export function ProjectCreateDialog({
     }
   }, [open])
 
+  // Clear re-entrancy guard when the parent mutation settles so a failed
+  // create can be retried without closing the dialog.
+  useEffect(() => {
+    if (!isPending) submittingRef.current = false
+  }, [isPending])
+
   const style =
     stylePreset === '' /* Custom branch */
       ? styleCustom.trim() || null
@@ -95,7 +104,10 @@ export function ProjectCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>新建剧本题材</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <SectionIcon size="sm"><Clapperboard className="h-3.5 w-3.5" /></SectionIcon>
+            新建剧本题材
+          </DialogTitle>
           <DialogDescription>
             输入一句话灵感,后续可以围绕这一句话生成多集剧本与时间轴分镜。
           </DialogDescription>
@@ -116,9 +128,9 @@ export function ProjectCreateDialog({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例：灰烬"
-              className="w-full rounded-md border border-border/60 bg-background px-3 py-2 text-[14px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground/40"
+              className="w-full rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[14px] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/20"
             />
-            <p className="text-[10px] text-muted-foreground/60 tabular-nums">
+            <p className="text-[10px] text-muted-foreground/50 tabular-nums">
               {titleTrim.length}/80
             </p>
           </div>
@@ -137,9 +149,9 @@ export function ProjectCreateDialog({
               value={synopsis}
               onChange={(e) => setSynopsis(e.target.value)}
               placeholder="例：少年剑客风雪山神庙,一夜顿悟,十年恩怨从此揭开。"
-              className="w-full resize-none rounded-md border border-border/60 bg-background px-3 py-2 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground/40"
+              className="w-full resize-none rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[13px] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/20"
             />
-            <p className="text-[10px] text-muted-foreground/60 tabular-nums">
+            <p className="text-[10px] text-muted-foreground/50 tabular-nums">
               {synopsisTrim.length}/500
             </p>
           </div>
@@ -155,7 +167,7 @@ export function ProjectCreateDialog({
               id="studio-project-style-preset"
               value={stylePreset}
               onChange={(e) => setStylePreset(e.target.value)}
-              className="w-full rounded-md border border-border/60 bg-background px-3 py-2 text-[13px] text-foreground outline-none transition-colors focus:border-foreground/40"
+              className="w-full rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[13px] text-foreground outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-primary/20"
             >
               {STYLE_PRESETS.map((p) => (
                 <option key={p.label} value={p.value}>
@@ -168,7 +180,7 @@ export function ProjectCreateDialog({
                 value={styleCustom}
                 onChange={(e) => setStyleCustom(e.target.value)}
                 placeholder="输入自定义风格,例如：赛博朋克,湿漉漉的霓虹反射"
-                className="w-full rounded-md border border-border/60 bg-background px-3 py-2 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground/40"
+                className="w-full rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[13px] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/20"
               />
             )}
           </div>
@@ -186,6 +198,7 @@ export function ProjectCreateDialog({
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={isPending}
+
           >
             取消
           </Button>
@@ -193,6 +206,7 @@ export function ProjectCreateDialog({
             type="submit"
             form="studio-project-create-form"
             disabled={!isValid || isPending}
+
           >
             {isPending ? '创建中…' : '创建项目'}
           </Button>

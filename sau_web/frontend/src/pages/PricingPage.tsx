@@ -9,6 +9,8 @@ import { PricingTier } from '@/components/ui/pricing-tier'
 import type { PricingTierProps } from '@/components/ui/pricing-tier'
 import { PlatformIcon } from '@/components/ui/platform-icon'
 import { PricingComparison } from '@/components/ui/pricing-comparison'
+import { TestimonialsSection } from '@/components/marketing/testimonials-section'
+import { FaqSection } from '@/components/marketing/faq-section'
 import { useRevealStagger } from '@/lib/use-reveal-stagger'
 import { useVisitorMotion } from '@/lib/use-visitor-motion'
 import { MeshGradient } from '@/components/motion/MeshGradient'
@@ -527,7 +529,9 @@ export default function PricingPage() {
         <TiersSection />
         <PricingComparison tiers={TIERS} />
         <CommonFeaturesSection />
+        <TestimonialsSection />
         <HighlightSection />
+        <FaqSection />
         <CtaSection />
       </main>
       <MarketingFooter />

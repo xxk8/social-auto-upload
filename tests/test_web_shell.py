@@ -34,6 +34,14 @@ class TestHealth:
         data = resp.get_json()
         assert data["ok"] is True
 
+    def test_system_stats(self, app):
+        resp = app.get("/api/system/stats")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert "task_mode" in data["data"]
+        assert "queue_max" in data["data"]
+
 
 def _data_uri_png() -> str:
     """Minimal 1x1 red PNG as data URI for testing — padded past MIN_UPLOAD_BYTES."""

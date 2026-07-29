@@ -31,6 +31,7 @@ export const aiApi = {
   },
 
   setAiConfig(apiKey: string) {
+    // Backend validates against OpenRouter by default before insert.
     return request.post('/api/ai/config', { api_key: apiKey }).then((res) => res.data)
   },
 
@@ -39,7 +40,13 @@ export const aiApi = {
   },
 
   batchAddKeys(keys: string[]) {
+    // Backend probes each key; invalid ones are skipped and returned in data.invalid.
     return request.post('/api/ai/keys/batch', { keys }).then((res) => res.data)
+  },
+
+  /** 快捷测活 — probe without storing. Pass raw key or existing key_id. */
+  validateAiKey(payload: { api_key?: string; key_id?: number }) {
+    return request.post('/api/ai/keys/validate', payload).then((res) => res.data)
   },
 
   async generateMultiPlatformStream(

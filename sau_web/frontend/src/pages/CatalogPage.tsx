@@ -1,5 +1,6 @@
 import { MDXProvider } from '@mdx-js/react'
-import {ToastProvider} from '@/components/ui/toast';import { Button } from '@/components/ui/button'
+import {ToastProvider} from '@/components/ui/toast'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardHeader,

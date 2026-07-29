@@ -38,16 +38,32 @@ import { AiRuntimeProvider } from './AiRuntimeProvider'
 import { useAiChat } from './useAiChat'
 import { PlatformVariantBubble, labelFor } from './PlatformVariantBubble'
 import { STREAMING_TAIL_ID } from './externalMessageConverter'
-import { MagicSuggestions, InlineMagicBar } from './MagicSuggestions'
+import { MagicSuggestions } from './MagicSuggestions'
 import { PLATFORMS, NOTE_PLATFORMS } from '@/api/types'
 import {
   buildMagicCommandMessage,
   MAGIC_HELP_TEXT,
+  parseScheduleWhen,
   type MagicCommand,
 } from './magicCommands'
 import { parseTags } from '@/lib/tags'
 import { safeApplyAiResult } from '@/lib/chat/chatFormBridge'
 import type { FormHandle } from '@/lib/chat/chatFormBridge'
+import type { PublishAiActions } from './publishActions'
+import {
+  findGroupByQuery,
+  formatStatus,
+  resolvePlatformIds,
+  selectionFromGroup,
+} from './publishActions'
+import { clearActiveSkill, setActiveSkill } from './activeSkill'
+import { findSkill, formatSkillsHelp } from './publishSkills'
+import { SlashCommandMenu } from './SlashCommandMenu'
+import {
+  ComposerImageStrip,
+  ComposerToolRow,
+  ThinkingPanel,
+} from './ComposerExtras'
 import type { ChatMessage } from '@/lib/chat/types'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -59,16 +75,13 @@ interface AiAssistantPanelProps {
   platform?: string
   footerExtras?: ReactNode
   /**
+   * Optional page-level actions (mode / group / submit) so slash commands
+   * and natural language can drive the publish UI beyond title/desc/tags.
+   */
+  publishActions?: PublishAiActions | null
+  /**
    * ai-sidebar-material-search §9 — slot for content that needs to
-   * render BETWEEN the chat viewport and the composer. Default null
-   * (legacy layout). PublishAiSidebar passes `<MaterialSection />`
-   * here so the spec §"viewport → material → composer" order is
-   * preserved without restructuring the AiRuntimeProvider tree.
-   *
-   * Invariant: the slot inherits `flex-shrink-0` so the chat viewport
-   * keeps `flex-1 min-h-0` and yields space when the accordion item
-   * expands (max-image=380px / max-link=240px; chat viewport's
-   * `min-h-[240px]` is enforced by MaterialSection internally).
+   * render BETWEEN the chat viewport and the composer.
    */
   betweenViewportAndFooter?: ReactNode
 }
@@ -149,6 +162,7 @@ export function AiAssistantPanel({
   mode,
   platform,
   footerExtras,
+  publishActions,
   betweenViewportAndFooter,
 }: AiAssistantPanelProps) {
   const { addToast } = useToast()
@@ -160,6 +174,17 @@ export function AiAssistantPanel({
     platform,
     model: selectedModel,
     parseResponse: parseAssistantResult,
+    onAutoApplied: (fields) => {
+      const map: Record<string, string> = {
+        title: '标题',
+        desc: '描述',
+        tags: '标签',
+      }
+      addToast(
+        `已自动填表：${fields.map((f) => map[f] ?? f).join('、')}`,
+        'success',
+      )
+    },
   })
 
   // ── Store subscriptions (for empty-state + error display) ──
@@ -174,13 +199,12 @@ export function AiAssistantPanel({
   const isRunning = jobStatus === 'generating' || jobStatus === 'enhancing'
   const showEmpty = activeMessageCount === 0 && !streamingDraft && !isRunning
 
-  // ── Magic command dispatcher (unchanged from original) ──
-
   const clearSession = useCallback(() => {
     const store = useChatStore.getState()
     if (store.activeSessionId) {
       store.deleteSession(store.activeSessionId)
     }
+    clearActiveSkill()
     store.newSession(mode, platform)
   }, [mode, platform])
 
@@ -211,41 +235,30 @@ export function AiAssistantPanel({
   const dispatchMagic = useCallback(
     async (command: MagicCommand) => {
       const store = useChatStore.getState()
+      const sys = (content: string) =>
+        appendSystemMessage(store, mode, platform, content)
+      const actions = publishActions
+
       switch (command.kind) {
         case 'help':
-          appendSystemMessage(store, mode, platform, MAGIC_HELP_TEXT)
+          sys(MAGIC_HELP_TEXT)
           return
         case 'error':
-          appendSystemMessage(
-            store,
-            mode,
-            platform,
-            buildMagicCommandMessage(command).content,
-          )
+          sys(buildMagicCommandMessage(command).content)
           return
         case 'fullflow':
-          appendSystemMessage(store, mode, platform, buildMagicCommandMessage(command).content)
+          sys(buildMagicCommandMessage(command).content)
           try {
             await chat.runFullflow(command.topic)
           } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') return
-            appendSystemMessage(
-              store,
-              mode,
-              platform,
-              `❌ 一键全流程失败：${err instanceof Error ? err.message : '未知错误'}`,
-            )
+            sys(`❌ 一键全流程失败：${err instanceof Error ? err.message : '未知错误'}`)
           }
           return
         case 'variants': {
-          appendSystemMessage(store, mode, platform, buildMagicCommandMessage(command).content)
+          sys(buildMagicCommandMessage(command).content)
           if (!command.topic.trim()) {
-            appendSystemMessage(
-              store,
-              mode,
-              platform,
-              '❌ /variants 需要一个主题文本（例如 `/variants 美食探店`）',
-            )
+            sys('❌ /variants 需要主题，例如 /variants 美食探店')
             return
           }
           const platformsList =
@@ -256,47 +269,194 @@ export function AiAssistantPanel({
             await chat.generateVariants(command.topic, platformsList, command.search)
           } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') return
-            appendSystemMessage(
-              store,
-              mode,
-              platform,
-              `❌ /variants 失败：${err instanceof Error ? err.message : '未知错误'}`,
-            )
+            sys(`❌ /variants 失败：${err instanceof Error ? err.message : '未知错误'}`)
           }
           return
         }
         case 'enhance': {
-          appendSystemMessage(store, mode, platform, buildMagicCommandMessage(command).content)
+          sys(buildMagicCommandMessage(command).content)
           try {
             await chat.enhance(command.text || '增强提示词')
           } catch (err) {
             if (err instanceof DOMException && err.name === 'AbortError') return
-            appendSystemMessage(
-              store,
-              mode,
-              platform,
-              `❌ 提示词增强失败：${err instanceof Error ? err.message : '未知错误'}`,
-            )
+            sys(`❌ 提示词增强失败：${err instanceof Error ? err.message : '未知错误'}`)
           }
           return
         }
         case 'apply':
-          appendSystemMessage(store, mode, platform, '↩️ 已触发「应用上一次结果」')
+          sys('↩️ 已触发「应用上一次结果」')
           reapplyLastAssistant()
           return
         case 'clear':
           clearSession()
-          appendSystemMessage(store, mode, platform, '🧹 会话已清空')
+          sys('🧹 会话已清空（skill 也已卸下）')
           return
+        case 'title': {
+          const attempt = safeApplyAiResult(formRef, { title: command.text })
+          sys(attempt.applied ? `✏️ 标题已写入：**${command.text}**` : '❌ 表单未挂载')
+          if (attempt.applied) addToast('标题已更新', 'success')
+          return
+        }
+        case 'desc': {
+          const attempt = safeApplyAiResult(formRef, { desc: command.text })
+          sys(attempt.applied ? '✏️ 描述已写入表单' : '❌ 表单未挂载')
+          if (attempt.applied) addToast('描述已更新', 'success')
+          return
+        }
+        case 'tags': {
+          const attempt = safeApplyAiResult(formRef, {
+            tags: parseTags(command.text),
+          })
+          sys(attempt.applied ? '🏷️ 标签 → ' + command.text : '❌ 表单未挂载')
+          if (attempt.applied) addToast('标签已更新', 'success')
+          return
+        }
+        case 'mode': {
+          if (!actions) {
+            sys('❌ 无法切换模式（页面未接入）')
+            return
+          }
+          actions.setMode(command.mode)
+          sys(`🔀 已切换到 **${command.mode === 'video' ? '视频' : '图文'}** 模式`)
+          addToast(command.mode === 'video' ? '已切到视频' : '已切到图文', 'success')
+          return
+        }
+        case 'group': {
+          if (!actions) {
+            sys('❌ 无法选分组（页面未接入）')
+            return
+          }
+          const g = findGroupByQuery(actions.groups, command.query)
+          if (!g) {
+            sys(
+              `❌ 未找到分组「${command.query}」\n可用：${actions.groups.map((x) => x.name).slice(0, 12).join('、') || '（无）'}`,
+            )
+            return
+          }
+          const sel = selectionFromGroup(g, actions.mode)
+          if (!sel) {
+            sys(`❌ 分组「${g.name}」在当前模式下没有可用平台授权`)
+            return
+          }
+          actions.setSelection(sel)
+          sys(`👥 已选择分组 **${g.name}**（${sel.platforms.join(', ')}）`)
+          addToast(`已选择分组：${g.name}`, 'success')
+          return
+        }
+        case 'platform': {
+          if (!actions) {
+            sys('❌ 无法筛平台（页面未接入）')
+            return
+          }
+          const ids = resolvePlatformIds(command.raw)
+          if (ids.length === 0) {
+            sys(`❌ 无法识别平台：${command.raw}`)
+            return
+          }
+          if (!actions.selection) {
+            sys('❌ 请先 /group <名称> 选择分组，再筛平台')
+            return
+          }
+          const g = actions.groups.find((x) => x.id === actions.selection!.groupId)
+          if (!g) {
+            sys('❌ 当前分组已失效，请重新选择')
+            return
+          }
+          const sel = selectionFromGroup(g, actions.mode, ids)
+          if (!sel) {
+            sys(`❌ 分组内没有这些平台：${ids.join(', ')}`)
+            return
+          }
+          actions.setSelection(sel)
+          sys(`📱 平台已设为：${sel.platforms.join(', ')}`)
+          addToast('平台已更新', 'success')
+          return
+        }
+        case 'schedule': {
+          const parsed = parseScheduleWhen(command.when)
+          if (!parsed) {
+            sys('❌ 无法解析时间。试试：`明天 18:00` / `now` / `2026-07-28 15:00`')
+            return
+          }
+          const fn = formRef.current?.setSchedule
+          if (!fn) {
+            sys('❌ 表单不支持定时（未挂载）')
+            return
+          }
+          fn(parsed)
+          sys('⏰ 定时已设为 ' + parsed.replace('T', ' '))
+          addToast('定时已更新', 'success')
+          return
+        }
+        case 'status': {
+          if (!actions) {
+            const snap = formRef.current?.getFormSnapshot()
+            sys(
+              snap
+                ? `标题：${snap.title || '（空）'}\n描述：${snap.desc || '（空）'}\n标签：${snap.tags?.join(', ') || '（空）'}`
+                : '❌ 无法读取状态',
+            )
+            return
+          }
+          sys(formatStatus(actions))
+          return
+        }
+        case 'publish': {
+          const submit = formRef.current?.submit
+          if (!submit) {
+            sys('❌ 无法提交（表单未挂载）')
+            return
+          }
+          sys('🚀 正在触发表单提交…')
+          try {
+            await Promise.resolve(submit())
+          } catch (err) {
+            sys(`❌ 提交失败：${err instanceof Error ? err.message : '未知错误'}`)
+          }
+          return
+        }
+        case 'skills':
+          sys(formatSkillsHelp())
+          return
+        case 'skill': {
+          if (/^(clear|none|off|清空|关闭)$/i.test(command.query)) {
+            clearActiveSkill()
+            sys('🧩 已卸下 skill')
+            return
+          }
+          const skill = findSkill(command.query)
+          if (!skill) {
+            sys(`❌ 未找到 skill「${command.query}」\n\n${formatSkillsHelp()}`)
+            return
+          }
+          setActiveSkill(skill.id, skill.systemPrompt)
+          sys(
+            '🧩 已加载 **' +
+              skill.label +
+              '** (' +
+              skill.id +
+              ')\n\n后续生成将遵循该 skill 规范。\n\n> ' +
+              skill.description,
+          )
+          addToast(`Skill：${skill.label}`, 'success')
+          return
+        }
         default: {
-          const _: never = command
-          void _
-          appendSystemMessage(store, mode, platform, '❓ 未知的 /magic 命令')
+          sys('❓ 未知命令，输入 /help 查看')
           return
         }
       }
     },
-    [appendSystemMessage, clearSession, chat, formRef, mode, platform, reapplyLastAssistant],
+    [
+      chat,
+      clearSession,
+      formRef,
+      mode,
+      platform,
+      publishActions,
+      reapplyLastAssistant,
+      addToast,
+    ],
   )
 
   // ── Apply-to-form handler for regular assistant messages ──
@@ -359,13 +519,13 @@ export function AiAssistantPanel({
 
             {/* Inline error banner */}
             {!isRunning && chatError && (
-              <div className="mx-4 mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive flex items-start gap-2">
+              <div className="mx-3 mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive flex items-start gap-2">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span className="flex-1">{chatError}</span>
               </div>
             )}
 
-            <div className="px-4 py-3 space-y-3">
+            <div className="px-3 py-3 space-y-3.5">
               <ThreadPrimitive.Messages>
                 {({ message }) => {
                   const m = readMessage(message)
@@ -404,21 +564,15 @@ export function AiAssistantPanel({
                     )
                   }
 
-                  // User message
+                  // User message — ChatGPT-like right bubble, no avatar clutter
                   if (m.role === 'user') {
                     return (
                       <div
                         key={m.id}
-                        className="flex gap-2 animate-in fade-in slide-in-from-bottom-1 duration-200 flex-row-reverse"
+                        className="flex justify-end animate-in fade-in slide-in-from-bottom-1 duration-200"
                       >
-                        <RoleAvatar role="user" />
-                        <div className="max-w-[85%]">
-                          <div className="text-[10px] font-mono text-muted-foreground/80 mb-1 tracking-wider text-right">
-                            你
-                          </div>
-                          <div className="rounded-2xl rounded-br-sm bg-gradient-to-br from-primary to-primary/90 px-3.5 py-2 text-[13px] leading-relaxed text-primary-foreground shadow-sm">
-                            <div className="whitespace-pre-wrap break-words">{m.text}</div>
-                          </div>
+                        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-[13.5px] leading-relaxed text-primary-foreground shadow-sm">
+                          <div className="whitespace-pre-wrap break-words">{m.text}</div>
                         </div>
                       </div>
                     )
@@ -434,22 +588,17 @@ export function AiAssistantPanel({
                   return (
                     <div
                       key={m.id}
-                      className="flex gap-2 animate-in fade-in slide-in-from-bottom-1 duration-200"
+                      className="flex gap-2.5 animate-in fade-in slide-in-from-bottom-1 duration-200"
                     >
                       <RoleAvatar role="assistant" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className="text-[10px] font-mono text-muted-foreground tracking-wider">
-                            {isStreaming ? 'AI · generating' : 'AI'}
-                          </span>
-                          {m.appliedTo && m.appliedTo.length > 0 && (
-                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-green-200 text-green-700 dark:border-green-800 dark:text-green-400">
-                              <CheckCheck className="h-2.5 w-2.5 mr-0.5" />
-                              已应用
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="rounded-2xl rounded-tl-md bg-muted/60 border border-border/40 px-3.5 py-2 text-[13px] leading-relaxed">
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        {m.appliedTo && m.appliedTo.length > 0 && (
+                          <Badge variant="outline" className="h-4 border-green-200 px-1 text-[9px] text-green-700 dark:border-green-800 dark:text-green-400">
+                            <CheckCheck className="mr-0.5 h-2.5 w-2.5" />
+                            已应用
+                          </Badge>
+                        )}
+                        <div className="rounded-2xl rounded-tl-md border border-border/40 bg-muted/40 px-3.5 py-2.5 text-[13.5px] leading-relaxed">
                           <ChatMarkdown content={m.text} />
                           {isStreaming && (
                             <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse rounded-full bg-primary align-middle" />
@@ -514,53 +663,62 @@ export function AiAssistantPanel({
             </div>
           </ThreadPrimitive.Viewport>
 
-          {/* ── Inline magic bar (Chinese action buttons) ─── */}
-          <InlineMagicBar />
+          {/* Live thinking / streaming panel (enhance + generate) */}
+          <ThinkingPanel />
 
-          {/* ── ai-sidebar-material-search §9 slot ── */}
-          {/* Renders between the inline magic bar and the composer
-              so the user has material-search affordances directly
-              above the composer (composer still anchored at bottom).
-              MaterialSection manages its own internal max-height so
-              chat viewport keeps ≥ 240px when expanded. */}
+          {/* Optional extras (material search etc.) */}
           {betweenViewportAndFooter}
 
-          {/* ── Composer (native Enter-to-send) ───────────── */}
+          {/*
+            Doubao / ChatGPT-style composer:
+              [  placeholder / input                     ]
+              [ + | 一键生成 | 多平台 | Skill | 更多 | 模型  ⚙ | 发送 ]
+          */}
           <ComposerPrimitive.Root
-            className="flex-shrink-0 border-t border-border/60 p-3"
+            className="flex-shrink-0 border-t border-border/30 bg-gradient-to-t from-background via-background/95 to-background/80 px-3 pb-3 pt-2"
             data-testid="ai-composer"
           >
-            <div className="flex items-end gap-2">
-              <ComposerPrimitive.Input
-                submitMode="enter"
-                rows={2}
-                placeholder="输入你的需求，回车发送（输入 / 查看快捷命令）"
-                className={cn(
-                  'flex-1 resize-none rounded-md border border-border/60 bg-transparent px-3 py-2 text-[13px] leading-relaxed',
-                  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/30',
-                  'min-h-[60px] max-h-[160px]',
-                )}
-              />
-              {isRunning ? (
-                <ComposerPrimitive.Cancel
-                  className="inline-flex h-9 items-center gap-1 rounded-md border border-border/60 px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted/60"
-                  data-testid="ai-stop"
-                >
-                  <StopCircle className="h-3.5 w-3.5" />
-                  取消
-                </ComposerPrimitive.Cancel>
-              ) : (
-                <ComposerPrimitive.Send
-                  className="inline-flex h-9 items-center gap-1 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                  data-testid="ai-send"
-                >
-                  <SendHorizontal className="h-3.5 w-3.5" />
-                  发送
-                </ComposerPrimitive.Send>
+            <SlashCommandMenu />
+            <div
+              className={cn(
+                'rounded-[22px] border border-border/50 bg-background px-2.5 py-2 shadow-[0_2px_12px_-4px_oklch(0_0_0_/_0.08)]',
+                'focus-within:border-primary/25 focus-within:shadow-[0_4px_20px_-6px_oklch(0.45_0.16_264_/_0.18)]',
+                'transition-[border-color,box-shadow] duration-200',
               )}
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground/80 font-mono">
-              <span>回车发送 · Shift+回车换行 · 输入 / 用快捷命令</span>
+            >
+              <ComposerImageStrip />
+              <div className="flex items-end gap-1.5">
+                <ComposerPrimitive.Input
+                  submitMode="enter"
+                  rows={1}
+                  placeholder="发消息，或输入 / 使用命令…"
+                  className={cn(
+                    'flex-1 resize-none bg-transparent px-1.5 py-2 text-[14px] leading-relaxed',
+                    'placeholder:text-muted-foreground/45',
+                    'focus-visible:outline-none',
+                    'min-h-[40px] max-h-[160px]',
+                  )}
+                />
+                {isRunning ? (
+                  <ComposerPrimitive.Cancel
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/50 text-muted-foreground transition-colors hover:bg-muted"
+                    data-testid="ai-stop"
+                    aria-label="停止生成"
+                  >
+                    <StopCircle className="h-4 w-4" />
+                  </ComposerPrimitive.Cancel>
+                ) : (
+                  <ComposerPrimitive.Send
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:opacity-35"
+                    data-testid="ai-send"
+                    aria-label="发送"
+                  >
+                    <SendHorizontal className="h-4 w-4" />
+                  </ComposerPrimitive.Send>
+                )}
+              </div>
+              {/* One toolbar row: + tools model settings */}
+              <ComposerToolRow />
             </div>
             {footerExtras}
           </ComposerPrimitive.Root>

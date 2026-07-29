@@ -237,7 +237,7 @@ export function ContentTemplatePicker({
               <div className="w-1/2">
                 <label className="text-xs text-muted-foreground">平台（可选）</label>
                 <select
-                  className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none transition-all duration-150"
                   value={newPlatform}
                   onChange={(e) => setNewPlatform(e.target.value)}
                 >
@@ -252,7 +252,7 @@ export function ContentTemplatePicker({
               <div className="w-1/2">
                 <label className="text-xs text-muted-foreground">类型</label>
                 <select
-                  className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none transition-all duration-150"
                   value={newType}
                   onChange={(e) => setNewType(e.target.value)}
                 >

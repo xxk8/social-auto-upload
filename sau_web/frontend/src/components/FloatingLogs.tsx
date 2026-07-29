@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { api, type LogEntry } from '../api/client'
+import { isLogsStreamSupported, subscribeLogsStream } from '../hooks/logsStream'
 import { useTheme } from './ThemeProvider'
 import {
   FileText,
@@ -101,24 +102,25 @@ function FloatingLogs() {
     shadow: isDark ? '0 12px 32px rgba(0,0,0,0.4)' : '0 12px 32px rgba(0,0,0,0.1)',
   }), [isDark])
 
-  // Persist visible/minimized state across reloads
+  // Persist visible/minimized state across reloads.
+  // Default OFF to avoid a permanent 2s /api/logs poll on every dashboard visit.
   const [visible, setVisible] = useState(() => {
-    if (typeof window === 'undefined') return true
+    if (typeof window === 'undefined') return false
     try {
       const stored = window.localStorage.getItem('sau-floating-logs-visible')
-      return stored !== null ? stored === 'true' : true
+      return stored !== null ? stored === 'true' : false
     } catch {
-      return true
+      return false
     }
   })
 
   const [minimized, setMinimized] = useState(() => {
-    if (typeof window === 'undefined') return false
+    if (typeof window === 'undefined') return true
     try {
       const stored = window.localStorage.getItem('sau-floating-logs-minimized')
-      return stored !== null ? stored === 'true' : false
+      return stored !== null ? stored === 'true' : true
     } catch {
-      return false
+      return true
     }
   })
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -220,23 +222,27 @@ function FloatingLogs() {
 
     const fetchLogs = async (): Promise<void> => {
       try {
-        const res = await api.getLogs(latestTsRef.current ? { after: latestTsRef.current } : undefined)
-      setLogs((prev) => {
-        // Merge new logs with existing ones
-        const map = new Map(prev.map((item) => [item.ts, item]))
-        for (const item of res.data) {
-          map.set(item.ts, item)
-        }
+        const res = await api.getLogs(
+          latestTsRef.current
+            ? { after: latestTsRef.current, limit: 100 }
+            : { limit: 200 },
+        )
+        setLogs((prev) => {
+          // Merge new logs with existing ones
+          const map = new Map(prev.map((item) => [item.ts, item]))
+          for (const item of res.data ?? []) {
+            map.set(item.ts, item)
+          }
 
-        // Always sort once, then slice if needed
-        const sorted = Array.from(map.values()).sort((a, b) => a.ts.localeCompare(b.ts))
-        return sorted.length > MAX_LOGS ? sorted.slice(-MAX_LOGS) : sorted
-      })
-        const payload = res.data
+          // Always sort once, then slice if needed
+          const sorted = Array.from(map.values()).sort((a, b) => a.ts.localeCompare(b.ts))
+          return sorted.length > MAX_LOGS ? sorted.slice(-MAX_LOGS) : sorted
+        })
+        const payload = res.data ?? []
         if (payload.length) {
           latestTsRef.current = payload[payload.length - 1].ts
         }
-      } catch (error) {
+      } catch {
         retryCount++
         if (retryCount < maxRetries) {
           // Exponential backoff: 1s, 2s, 4s
@@ -251,44 +257,29 @@ function FloatingLogs() {
     await fetchLogs()
   }, [])
 
+  // History once + shared live SSE while open (no interval polling).
   useEffect(() => {
-    loadLogs()
+    const active = visible && !minimized && !document.hidden
+    if (!active) return
 
-    let timer: ReturnType<typeof setInterval> | null = null
+    void loadLogs()
 
-    const startPolling = () => {
-      if (timer) clearInterval(timer)
-      timer = setInterval(loadLogs, 2000)
+    if (!isLogsStreamSupported()) {
+      const timer = setInterval(loadLogs, 5_000)
+      return () => clearInterval(timer)
     }
 
-    const stopPolling = () => {
-      if (timer) {
-        clearInterval(timer)
-        timer = null
-      }
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopPolling()
-      } else {
-        loadLogs() // Immediate fetch when page becomes visible
-        startPolling()
-      }
-    }
-
-    // Start polling if page is visible
-    if (!document.hidden) {
-      startPolling()
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      stopPolling()
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [loadLogs])
+    return subscribeLogsStream((entry) => {
+      setLogs((prev) => {
+        if (prev.some((x) => x.ts === entry.ts && x.message === entry.message)) {
+          return prev
+        }
+        const next = [...prev, entry]
+        return next.length > MAX_LOGS ? next.slice(-MAX_LOGS) : next
+      })
+      latestTsRef.current = entry.ts
+    })
+  }, [loadLogs, visible, minimized])
 
   // Persist drag-drop position + resize across reloads. ``try/catch`` keeps
   // private-mode browsers and quota errors from breaking the panel.
@@ -468,7 +459,7 @@ function FloatingLogs() {
     return (
       <Button
         ref={buttonRef}
-        className="fixed left-0 top-0 h-11 w-11 rounded-full shadow-md z-[9999] btn-elegant cursor-move"
+        className="fixed left-0 top-0 h-11 w-11 rounded-full shadow-md z-[9999] cursor-move"
         size="icon"
         style={{
           transform: `translate(${buttonPosition.x}px, ${buttonPosition.y}px)`,

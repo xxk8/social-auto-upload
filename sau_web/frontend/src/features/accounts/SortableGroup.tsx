@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils'
 import { pctToTone, toneChipClasses, toneDotStyle, toneFgVar, toneTextClass, validityTone } from '@/lib/tone'
 import type { AccountGroup } from '@/api/client'
 import { ROUTES } from '@/routes'
-import {useAccountsDispatch} from './AccountsProvider.helpers';import { SortableAuthorizationList } from './SortableAuthorizationList'
+import {useAccountsDispatch} from './AccountsProvider.helpers'
+import { SortableAuthorizationList } from './SortableAuthorizationList'
 
 interface SortableGroupProps {
   group: AccountGroup
@@ -17,17 +18,19 @@ interface SortableGroupProps {
 
 function GroupGridEmptyState({ onAuthorize }: { onAuthorize: () => void }) {
   return (
-    <div className="text-center py-8 border border-dashed border-muted-foreground/15 rounded-xl bg-muted/10">
-      <Shield className="h-10 w-10 mx-auto text-muted-foreground/25 mb-3" />
-      <p className="text-sm text-muted-foreground/70 font-medium">暂无平台授权</p>
-      <p className="text-xs text-muted-foreground/50 mt-1 mb-3">添加平台以开始使用</p>
+    <div className="rounded-xl border border-dashed border-border/40 bg-gradient-to-b from-muted/15 to-transparent px-3 py-7 text-center">
+      <div className="mx-auto mb-2.5 flex h-9 w-9 items-center justify-center rounded-xl border border-border/30 bg-background/70 shadow-sm">
+        <Shield className="h-4 w-4 text-muted-foreground/35" />
+      </div>
+      <p className="text-[13px] font-medium text-muted-foreground/75">暂无平台授权</p>
+      <p className="mt-0.5 mb-3 text-[11px] text-muted-foreground/50">添加平台以开始使用</p>
       <Button
         variant="ghost"
         size="sm"
-        className="btn-dashed mx-auto max-w-[180px]"
+        className="btn-dashed mx-auto max-w-[160px] h-8 text-[12px]"
         onClick={onAuthorize}
       >
-        <Plus className="h-3.5 w-3.5 mr-1.5" />
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
         添加授权
       </Button>
     </div>
@@ -75,7 +78,7 @@ function TokenHealthBar({
   const tone = pctToTone(pct)
 
   return (
-    <div className="token-indicator mt-2">
+    <div className="token-indicator mt-1.5 max-w-[140px]">
       <div
         className="token-indicator-bar"
         style={{
@@ -153,47 +156,48 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
       ref={ref}
       className={cn(
         'card-refined group/card relative overflow-hidden',
-        isDragging && 'opacity-50 scale-[1.02] z-50',
+        'shadow-[0_1px_0_oklch(1_0_0_/_0.03)_inset]',
+        'transition-[border-color,background-color,box-shadow,transform] duration-200',
+        'hover:shadow-[0_8px_24px_-14px_oklch(0_0_0_/_0.12)]',
+        isDragging && 'z-50 scale-[1.02] opacity-50 shadow-lg',
       )}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.03] to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity duration-500 pointer-events-none" />
+      {/* Top hairline + hover wash */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent dark:via-white/[0.08]"
+      />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/[0.035] via-transparent to-violet-500/[0.02] opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" />
 
-      <CardHeader className="pb-3 relative">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+      <CardHeader className="relative pb-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <div
               ref={handleRef}
               className={cn(
-                'cursor-grab active:cursor-grabbing p-1 rounded-md transition-colors',
-                'text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/50',
-                'group-hover/card:text-muted-foreground/60',
+                'cursor-grab active:cursor-grabbing rounded-md p-1 transition-colors',
+                'text-muted-foreground/25 hover:bg-muted/50 hover:text-muted-foreground',
+                'group-hover/card:text-muted-foreground/50',
               )}
             >
               <GripVertical className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-[0.9375rem] font-semibold text-foreground/90 leading-tight truncate">
+                <h3 className="truncate text-[0.9375rem] font-semibold leading-tight tracking-tight text-foreground/90">
                   {group.name}
-                </h3>                    {totalCount > 0 && (
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums',
-                          // Shared "chip + dot" shape with GroupListItem.GroupValidityChip
-                          // — `validityTone(validCount, totalCount)` is the dedicated
-                          // 2-band mapper (success=all-valid, warning=partial).
-                          toneChipClasses(chipTone),
-                        )}
-                      >
-                        {/* Inner dot now flows through `@/lib/tone` —
-                            `toneDotStyle(chipTone)` returns the canonical
-                            `--status-{tone}-fg` background + 40% halo
-                            (replaces the deleted `.status-dot-{valid,invalid}`
-                            CSS rules). */}
-                        <span className="status-dot" style={toneDotStyle(chipTone)} />
-                        {validCount}/{totalCount}
-                      </span>
+                </h3>
+                {totalCount > 0 && (
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums',
+                      toneChipClasses(chipTone),
                     )}
+                  >
+                    <span className="status-dot" style={toneDotStyle(chipTone)} />
+                    {validCount}/{totalCount}
+                  </span>
+                )}
               </div>
               <GroupSummaryLine validCount={validCount} totalCount={totalCount} />
               <TokenHealthBar validCount={validCount} totalCount={totalCount} />
@@ -226,11 +230,11 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
             button locks the affordance for E2E specs without coupling to
             the i18n'ed `aria-label` string.
           */}
-          <div className="flex items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+              className="h-7 w-7 text-muted-foreground/55 hover:bg-primary/10 hover:text-primary"
               onClick={() =>
                 navigate({ to: `${ROUTES.dashboard.publish}?group_id=${group.id}` as never })
               }
@@ -239,19 +243,11 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
             >
               <Send className="h-3.5 w-3.5" />
             </Button>
-            {/* Single 2px between Send and the secondary wrapper comes from
-                the outer `gap-0.5`. `border-l border-border/60` (vs the
-                lighter /40) keeps the hairline crisp on DPR≥2 viewports
-                — DESIGN.md hairline rule treats single-px lines as 60%+
-                opacity so retina subpixel render doesn't smear.
-                `md:group-focus-within/card:opacity-100` mirrors hover-
-                reveal so keyboard-tab users on desktop still see the
-                secondary cluster when focus enters the card. */}
-            <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover/card:opacity-100 md:group-focus-within/card:opacity-100 transition-opacity duration-200 border-l border-border/60 pl-1">
+            <div className="flex items-center gap-0.5 border-l border-border/50 pl-1 opacity-100 transition-opacity duration-200 md:opacity-0 md:group-hover/card:opacity-100 md:group-focus-within/card:opacity-100">
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+                className="h-7 w-7 text-muted-foreground/55 hover:bg-primary/10 hover:text-primary"
                 onClick={() => dispatch.handleStartRename(group.id, group.name)}
                 aria-label="Rename group"
               >
@@ -260,7 +256,7 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+                className="h-7 w-7 text-muted-foreground/55 hover:bg-primary/10 hover:text-primary"
                 onClick={() => dispatch.handleStartAuthorize(group.id)}
                 aria-label="Add authorization"
                 data-tour="add-auth"
@@ -277,7 +273,7 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
         </div>
       </CardHeader>
 
-      <CardContent className="relative">
+      <CardContent className="relative pt-0">
         {group.authorizations.length === 0 ? (
           <GroupGridEmptyState
             onAuthorize={() => dispatch.handleStartAuthorize(group.id)}
@@ -291,13 +287,13 @@ export function SortableGroup({ group, index }: SortableGroupProps) {
       </CardContent>
 
       {totalCount > 0 && (
-        <div className="px-5 pb-4 relative">
+        <div className="relative px-5 pb-3.5">
           <button
             type="button"
             className="btn-dashed"
             onClick={() => dispatch.handleStartAuthorize(group.id)}
           >
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
             添加更多平台
           </button>
         </div>

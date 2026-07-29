@@ -155,7 +155,7 @@ export function ThemeModesRadio({
               onClick={() => setTheme(id)}
               className={cn(
                 'group relative flex flex-col gap-2.5 rounded-xl border text-left outline-none transition-all duration-200',
-                'focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                'focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 padClass,
                 selected
                   ? 'border-primary/40 bg-primary/[0.05] shadow-sm ring-1 ring-primary/20'

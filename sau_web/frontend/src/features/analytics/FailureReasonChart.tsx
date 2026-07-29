@@ -1,33 +1,47 @@
 import { memo, useMemo } from 'react'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import {
-  Bar,
-  BarChart,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
-import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '@/components/ui/index'
-import { EmptyState } from '@/components/ui/empty-state'
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Skeleton,
+  type ChartConfig,
+} from '@/components/ui/index'
 import { XCircle } from 'lucide-react'
 import type { AnalyticsSummary } from '@/hooks/useAnalytics'
-import { CHART_TOOLTIP_STYLE, CHART_TICK_STYLE, CHART_AXIS_LINE } from '@/lib/recharts-theme'
 
 /**
- * §12.5 — FailureReasonChart: horizontal bar chart showing the top 5
- * failure reasons by count. Each bar is colored with the destructive
- * token. Truncates long reason text on the Y axis.
+ * Official shadcn Chart pattern — horizontal BarChart.
+ * @see https://ui.shadcn.com/docs/components/chart
  */
+
+const chartConfig = {
+  count: {
+    label: '失败次数',
+    color: 'var(--chart-4)',
+  },
+  reason: {
+    label: '原因',
+  },
+} satisfies ChartConfig
 
 interface FailureReasonChartProps {
   data: AnalyticsSummary['failure_reasons']
   loading: boolean
 }
 
-/** Truncate reason text to 20 chars for the Y-axis label. */
 function truncate(reason: string): string {
-  return reason.length > 20 ? `${reason.slice(0, 18)}…` : reason
+  return reason.length > 18 ? `${reason.slice(0, 16)}…` : reason
 }
 
 export const FailureReasonChart = memo(function FailureReasonChart({
@@ -38,72 +52,84 @@ export const FailureReasonChart = memo(function FailureReasonChart({
     () =>
       data
         .slice(0, 5)
-        .map((d) => ({ reason: truncate(d.reason), fullReason: d.reason, count: d.count }))
-        .reverse(), // reverse so the largest bar is at the top
+        .map((d) => ({
+          reason: truncate(d.reason),
+          fullReason: d.reason,
+          count: d.count,
+        }))
+        .reverse(),
     [data],
   )
 
-  const hasData = chartData.length > 0
-  const maxCount = useMemo(() => Math.max(...chartData.map((d) => d.count), 0), [chartData])
+  const totalShown = useMemo(
+    () => chartData.reduce((s, d) => s + d.count, 0),
+    [chartData],
+  )
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-          <XCircle className="h-4 w-4 text-destructive" />
-          失败原因 Top 5
-        </CardTitle>
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle>失败原因 Top 5</CardTitle>
+        <CardDescription>
+          {loading
+            ? '加载中…'
+            : chartData.length > 0
+              ? `展示合计 ${totalShown} 次失败`
+              : '无失败记录'}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (
-          <Skeleton className="h-[200px] w-full rounded-lg" />
-        ) : !hasData ? (
-          <EmptyState
-            className="h-[200px]"
-            title="无失败记录"
-            description="在选定时间范围内没有失败任务"
-          />
+          <Skeleton className="h-[220px] w-full rounded-lg" />
+        ) : chartData.length === 0 ? (
+          <Empty className="h-[220px] border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <XCircle />
+              </EmptyMedia>
+              <EmptyTitle>无失败记录</EmptyTitle>
+              <EmptyDescription>在选定时间范围内没有失败任务</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
-          <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 42)}>
+          <ChartContainer
+            config={chartConfig}
+            className="aspect-auto w-full"
+            style={{ height: Math.max(200, chartData.length * 44) }}
+          >
             <BarChart
+              accessibilityLayer
               data={chartData}
               layout="vertical"
-              margin={{ top: 4, right: 16, left: 8, bottom: 4 }}
+              margin={{ left: 0, right: 12 }}
             >
-              <XAxis
-                type="number"
-                tick={CHART_TICK_STYLE}
+              <CartesianGrid horizontal={false} />
+              <YAxis
+                dataKey="reason"
+                type="category"
                 tickLine={false}
                 axisLine={false}
-                allowDecimals={false}
-                domain={[0, maxCount]}
+                width={110}
+                tickMargin={8}
               />
-              <YAxis
-                type="category"
-                dataKey="reason"
-                tick={CHART_TICK_STYLE}
-                tickLine={false}
-                axisLine={CHART_AXIS_LINE}
-                width={120}
-              />
-              <Tooltip
-                contentStyle={CHART_TOOLTIP_STYLE}
-                formatter={(value, _name, entry) => [
-                  `${value} 次`,
-                  (entry?.payload as { fullReason?: string })?.fullReason ?? '失败',
-                ]}
-              />
-              <Bar dataKey="count" name="失败次数" radius={[0, 4, 4, 0]}>
-                {chartData.map((_, index) => (
-                  <Cell
-                    key={index}
-                    fill="var(--status-error-fg)"
-                    fillOpacity={0.7 + (index / chartData.length) * 0.3}
+              <XAxis type="number" hide />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    indicator="line"
+                    labelFormatter={(_label, payload) => {
+                      const item = payload?.[0]?.payload as
+                        | { fullReason?: string }
+                        | undefined
+                      return item?.fullReason ?? ''
+                    }}
                   />
-                ))}
-              </Bar>
+                }
+              />
+              <Bar dataKey="count" fill="var(--color-count)" radius={4} />
             </BarChart>
-          </ResponsiveContainer>
+          </ChartContainer>
         )}
       </CardContent>
     </Card>

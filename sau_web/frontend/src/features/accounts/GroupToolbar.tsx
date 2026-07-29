@@ -18,13 +18,6 @@ import { toneDotStyle, toneTextClass, type Tone } from '@/lib/tone'
 import type { LucideIcon } from 'lucide-react'
 import { useAccountsDispatch, useAccountsState } from './AccountsProvider'
 
-/** All four shape axes (value / label / icon / tone) are present on every
- *  item so iterating `VALIDITY_OPTIONS` doesn't fall into a discriminated
- *  union with missing properties (TS2339 in render). 'all' has `tone = null`
- *  and renders no decoration — it's the "no filter" baseline. The `tone`
- *  field is `Tone | null` (renamed from `dotClass: string | null`) so the
- *  filter decoration pulls colour from `@/lib/tone.ts` rather than from
- *  the deleted `.status-dot-{valid,invalid}` CSS rules. */
 const VALIDITY_OPTIONS: ReadonlyArray<{
   value: 'all' | 'valid' | 'invalid'
   label: string
@@ -37,19 +30,13 @@ const VALIDITY_OPTIONS: ReadonlyArray<{
 ] as const
 
 /**
- * Toolbar at the top of the accounts page: search input + validity filter
- * (paired as "filter controls"), batch-delete bar (only when something is
- * selected), select-all + view toggle + reorder-in-flight chip.
- *
- * Search state is intentionally LOCAL with a 120ms debounce — typing must
- * not churn the dispatch context identity (which memoized children depend
- * on to skip re-renders).
+ * Slim filter bar: search + validity + batch + view toggle.
+ * Local debounced search keeps dispatch identity stable while typing.
  */
 function GroupToolbarImpl() {
   const state = useAccountsState()
   const dispatch = useAccountsDispatch()
 
-  // ── local search state with debounce ──
   const [localSearch, setLocalSearch] = useState(state.searchQuery)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -61,7 +48,6 @@ function GroupToolbarImpl() {
     return () => clearTimeout(handle)
   }, [localSearch, state.searchQuery, dispatch])
 
-  // ── keep local in sync if dispatch changes from outside (clear button etc.) ──
   useEffect(() => {
     setLocalSearch(state.searchQuery)
   }, [state.searchQuery])
@@ -70,37 +56,50 @@ function GroupToolbarImpl() {
     state.selectedIds.size === state.filteredGroups.length &&
     state.filteredGroups.length > 0
 
-  /** Decorative dot/decoration rendering right after each segmented button
-   *  label. Centralised here to keep the segmented map below readable. */
   const renderValidityIcon = (opt: (typeof VALIDITY_OPTIONS)[number]) => {
     if (opt.icon) {
       const Icon = opt.icon
-      return <Icon className={cn('h-3 w-3 mr-1', toneTextClass(opt.tone))} />
+      return <Icon className={cn('mr-1 h-3 w-3', toneTextClass(opt.tone))} />
     }
     if (opt.tone) {
-      return <span className="mr-1.5 h-1.5 w-1.5 rounded-full" style={toneDotStyle(opt.tone)} />
+      return (
+        <span
+          className="mr-1.5 h-1.5 w-1.5 rounded-full"
+          style={toneDotStyle(opt.tone)}
+        />
+      )
     }
     return null
   }
 
   return (
-    <div className="flex items-center gap-3 flex-wrap">
-      {/* Search with keyword hint */}
-      <div className="relative flex-1 min-w-[200px] max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50" />
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-1.5 rounded-[10px] p-1 sm:gap-2 sm:p-1.5',
+        'border border-border/40 bg-muted/20',
+        'shadow-[inset_0_1px_0_oklch(1_0_0_/_0.04)]',
+      )}
+    >
+      {/* Search */}
+      <div className="relative min-w-[140px] max-w-md flex-1">
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/45" />
         <Input
           id="accounts-group-search"
           name="search"
           placeholder="搜索分组名称、平台..."
           value={localSearch}
           onChange={(e) => setLocalSearch(e.target.value)}
-          className="pl-9 pr-16"
+          className={cn(
+            'h-8 border-border/35 bg-background/70 pl-8 pr-11 text-[12px] shadow-none',
+            'placeholder:text-muted-foreground/45 focus-visible:border-primary/30 focus-visible:ring-primary/15',
+            'sm:text-[13px]',
+          )}
           autoComplete="off"
           data-search-input
         />
         {!localSearch && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none">
-            <kbd className="kbd-hint">/</kbd>
+          <div className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center">
+            <kbd className="kbd-hint opacity-70">/</kbd>
           </div>
         )}
         {localSearch && (
@@ -110,17 +109,16 @@ function GroupToolbarImpl() {
               setLocalSearch('')
               dispatch.handleClearSearch()
             }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
             aria-label="Clear search"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
 
-      {/* Validity filter — visually paired with search input (both are
-          "filter controls"); replaces the magic 已/失效 search-keyword branch. */}
-      <div className="flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/50">
+      {/* Validity filter */}
+      <div className="flex items-center rounded-lg border border-border/40 bg-background/50 p-0.5 shadow-[inset_0_1px_0_oklch(1_0_0_/_0.03)]">
         {VALIDITY_OPTIONS.map((opt) => {
           const active = state.validityFilter === opt.value
           return (
@@ -129,10 +127,10 @@ function GroupToolbarImpl() {
               type="button"
               onClick={() => dispatch.setValidityFilter(opt.value)}
               className={cn(
-                'flex items-center justify-center h-7 px-2.5 rounded-md text-[11px] font-medium transition-all duration-200',
+                'flex h-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-all duration-200 sm:px-2.5',
                 active
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground/60 hover:text-muted-foreground',
+                  ? 'bg-background text-foreground shadow-[0_1px_2px_oklch(0_0_0_/_0.06)] ring-1 ring-border/50'
+                  : 'text-muted-foreground/55 hover:text-muted-foreground',
               )}
               aria-pressed={active}
               aria-label={`筛选：${opt.label}`}
@@ -144,56 +142,57 @@ function GroupToolbarImpl() {
         })}
       </div>
 
-      {/* Batch actions (only when something is selected) */}
+      {/* Batch actions */}
       {state.selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
-          <span className="text-sm text-muted-foreground">
-            已选择 {state.selectedIds.size} 项
+        <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-left-2 sm:gap-2">
+          <span className="rounded-md bg-primary/8 px-2 py-0.5 text-[11px] font-medium tabular-nums text-primary">
+            已选 {state.selectedIds.size}
           </span>
           <Button
             variant="destructive"
             size="sm"
+            className="h-7 text-[11px]"
             onClick={() => dispatch.setBatchDeleteOpen(true)}
           >
-            <Trash className="h-4 w-4 mr-1" />
-            批量删除
+            <Trash className="mr-1 h-3 w-3" />
+            删除
           </Button>
           <Button
             variant="ghost"
             size="sm"
+            className="h-7 text-[11px] text-muted-foreground"
             onClick={() => dispatch.setSelectedIds(new Set())}
           >
-            取消选择
+            取消
           </Button>
         </div>
       )}
 
-      {/* Select-all + view toggle + reorder-in-flight chip */}
-      <div className="flex items-center gap-1.5">
+      {/* Select-all + view toggle */}
+      <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
         <Button
           variant={allSelected ? 'secondary' : 'ghost'}
           size="sm"
           onClick={dispatch.handleSelectAll}
-          className="text-muted-foreground h-8"
+          className="h-7 px-2 text-[11px] text-muted-foreground"
         >
           {allSelected ? (
-            <CheckSquare className="h-4 w-4 mr-1" />
+            <CheckSquare className="mr-1 h-3.5 w-3.5" />
           ) : (
-            <Square className="h-4 w-4 mr-1" />
+            <Square className="mr-1 h-3.5 w-3.5" />
           )}
           全选
         </Button>
 
-        {/* Segmented view toggle */}
-        <div className="flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/50">
+        <div className="flex items-center rounded-lg border border-border/40 bg-background/50 p-0.5 shadow-[inset_0_1px_0_oklch(1_0_0_/_0.03)]">
           <button
             type="button"
             onClick={() => dispatch.setViewMode('grid')}
             className={cn(
-              'flex items-center justify-center h-7 w-7 rounded-md shadow-sm transition-all duration-200',
+              'flex h-7 w-7 items-center justify-center rounded-md transition-all duration-200',
               state.viewMode === 'grid'
-                ? 'bg-background text-foreground'
-                : 'text-muted-foreground/50 hover:text-muted-foreground',
+                ? 'bg-background text-foreground shadow-[0_1px_2px_oklch(0_0_0_/_0.06)] ring-1 ring-border/50'
+                : 'text-muted-foreground/45 hover:text-muted-foreground',
             )}
             aria-label="Grid view"
           >
@@ -203,10 +202,10 @@ function GroupToolbarImpl() {
             type="button"
             onClick={() => dispatch.setViewMode('list')}
             className={cn(
-              'flex items-center justify-center h-7 w-7 rounded-md shadow-sm transition-all duration-200',
+              'flex h-7 w-7 items-center justify-center rounded-md transition-all duration-200',
               state.viewMode === 'list'
-                ? 'bg-background text-foreground'
-                : 'text-muted-foreground/50 hover:text-muted-foreground',
+                ? 'bg-background text-foreground shadow-[0_1px_2px_oklch(0_0_0_/_0.06)] ring-1 ring-border/50'
+                : 'text-muted-foreground/45 hover:text-muted-foreground',
             )}
             aria-label="List view"
           >
@@ -218,10 +217,10 @@ function GroupToolbarImpl() {
           <div
             role="status"
             aria-live="polite"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-foreground/[0.04] animate-in fade-in slide-in-from-left-2 duration-200"
+            className="flex items-center gap-1.5 rounded-md border border-border/30 bg-background/60 px-2 py-1 animate-in fade-in slide-in-from-left-2 duration-200"
           >
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+            <span className="whitespace-nowrap text-[11px] text-muted-foreground">
               保存顺序中…
             </span>
           </div>

@@ -56,6 +56,7 @@ import {
   type MaybeRef,
 } from '@/lib/chat/chatFormBridge'
 import { parseTags } from '@/lib/tags'
+import { getActiveSkillPrompt } from './activeSkill'
 
 /** Subset of the parsed AI-result shape consumed by `applyAiResult`. */
 export interface ParsedResponse {
@@ -83,6 +84,11 @@ export interface UseAiChatParams {
    * generic chat replies.
    */
   parseResponse?: (raw: string) => ParsedResponse
+  /**
+   * Fired when a free-form / fullflow reply is auto-applied to the form.
+   * `fields` is e.g. `['title','desc','tags']`.
+   */
+  onAutoApplied?: (fields: string[]) => void
 }
 
 export interface UseAiChatResult {
@@ -165,7 +171,9 @@ export interface UseAiChatResult {
  * during phase 2.
  */
 export function useAiChat(params: UseAiChatParams): UseAiChatResult {
-  const { formRef, mode, platform, model, parseResponse } = params
+  const { formRef, mode, platform, model, parseResponse, onAutoApplied } = params
+  const onAutoAppliedRef = useRef(onAutoApplied)
+  onAutoAppliedRef.current = onAutoApplied
 
   // The single shared AbortController. Every public method goes
   // through `acquire()` which replaces this ref.
@@ -235,6 +243,19 @@ export function useAiChat(params: UseAiChatParams): UseAiChatResult {
       const apiMessages: Array<{ role: string; content: unknown }> = payload.messages.map(
         (m) => ({ role: m.role, content: m.content }),
       )
+      // Inject active skill + structured-output contract so free-form
+      // chat reliably auto-fills the publish form.
+      const skillPrompt = getActiveSkillPrompt()
+      const structureHint = [
+        '你是发布中心文案助手。除非用户只要闲聊，否则请用以下格式输出，便于自动填表：',
+        '标题：…',
+        '描述：…',
+        '标签：tag1, tag2, tag3',
+        skillPrompt ? `\n【当前 Skill 规范】\n${skillPrompt}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+      apiMessages.unshift({ role: 'system', content: structureHint })
       if (images.length > 0) {
         const lastIdx = apiMessages.length - 1
         const lastText =
@@ -286,6 +307,7 @@ export function useAiChat(params: UseAiChatParams): UseAiChatResult {
               })
               if (attempt.applied) {
                 useChatStore.getState().markApplied(sidInner, committed.id, fields)
+                onAutoAppliedRef.current?.(fields)
               }
             }
           },

@@ -17,6 +17,7 @@
 
 import { PLATFORMS, PLATFORM_URLS, type PlatformKey } from './platform-chip-strip.constants'
 import { PlatformIcon } from '@/components/ui/platform-icon'
+import { cn } from '@/lib/utils'
 
 // ── PlatformChipStrip — rendered chip row ───────────────────────────────
 //
@@ -41,17 +42,23 @@ export interface PlatformChipStripProps {
   testId?: string
   /** Strip header label rendered before the chip row. Default = '支持下载'. */
   label?: string
+  /** Optional className override for the outer nav (e.g. drop border when parent already frames it). */
+  className?: string
 }
 
 export function PlatformChipStrip({
   activeKey,
   testId = 'inbox-platform-chip-strip',
   label = '支持下载',
+  className,
 }: PlatformChipStripProps) {
   return (
     <nav
       data-testid={testId}
-      className="flex flex-wrap items-center gap-x-2 gap-y-1.5 pt-3 border-t border-border/40"
+      className={cn(
+        'flex flex-wrap items-center gap-x-2 gap-y-1.5 pt-3 border-t border-border/40',
+        className,
+      )}
       aria-label={`支持平台: ${PLATFORMS.map(p => p.name).join(', ')}`}
     >
       <span className="text-xs text-muted-foreground shrink-0 leading-none">{label}</span>

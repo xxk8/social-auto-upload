@@ -1,47 +1,41 @@
 import { memo, useMemo } from 'react'
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
-import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '@/components/ui/index'
-import { EmptyState } from '@/components/ui/empty-state'
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Skeleton,
+  type ChartConfig,
+} from '@/components/ui/index'
 import { TrendingUp } from 'lucide-react'
 import type { AnalyticsSummary } from '@/hooks/useAnalytics'
 import { computeSuccessRates } from './format'
-import { CHART_TOOLTIP_STYLE, CHART_TICK_STYLE, CHART_AXIS_LINE } from '@/lib/recharts-theme'
 
 /**
- * §12.6 — SuccessRateTrendChart: line chart showing the daily publish
- * success rate (success / (success + failed)) as a percentage. Days with
- * no tasks render as `null` and are skipped (`connectNulls={false}`) so
- * the line never falsely drops to 0.
+ * Official shadcn Chart pattern — Line chart.
+ * @see https://ui.shadcn.com/docs/components/chart
  */
+
+const chartConfig = {
+  rate: {
+    label: '成功率',
+    color: 'var(--chart-2)',
+  },
+} satisfies ChartConfig
 
 interface SuccessRateTrendChartProps {
   data: AnalyticsSummary['by_day']
   loading: boolean
-}
-
-interface SuccessRateTooltipProps {
-  active?: boolean
-  label?: string | number
-  payload?: Array<{ value: number | null }>
-}
-
-function SuccessRateTooltip({ active, label, payload }: SuccessRateTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null
-  const rate = payload[0]?.value
-  return (
-    <div style={CHART_TOOLTIP_STYLE} className="px-3 py-2">
-      <p style={{ fontWeight: 600, marginBottom: 4 }}>{label}</p>
-      <p>{rate === null || rate === undefined ? '无任务' : `成功率 ${rate}%`}</p>
-    </div>
-  )
 }
 
 export const SuccessRateTrendChart = memo(function SuccessRateTrendChart({
@@ -49,61 +43,79 @@ export const SuccessRateTrendChart = memo(function SuccessRateTrendChart({
   loading,
 }: SuccessRateTrendChartProps) {
   const chartData = useMemo(() => computeSuccessRates(data), [data])
-  const hasData = chartData.length > 0
+  const avgRate = useMemo(() => {
+    const valid = chartData.filter((d) => d.rate != null) as Array<{ rate: number }>
+    if (valid.length === 0) return null
+    return valid.reduce((s, d) => s + d.rate, 0) / valid.length
+  }, [chartData])
 
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          成功率趋势
-        </CardTitle>
+      <CardHeader>
+        <CardTitle>成功率趋势</CardTitle>
+        <CardDescription>
+          {loading
+            ? '加载中…'
+            : avgRate != null
+              ? `区间日均成功率 ${avgRate.toFixed(1)}%`
+              : '暂无数据'}
+        </CardDescription>
       </CardHeader>
-      <CardContent className="pl-2">
+      <CardContent>
         {loading ? (
           <Skeleton className="h-[280px] w-full rounded-lg" />
-        ) : !hasData ? (
-          <EmptyState
-            className="h-[280px]"
-            title="暂无发布数据"
-            description="在选定时间范围内没有任务记录"
-          />
+        ) : chartData.length === 0 ? (
+          <Empty className="h-[280px] border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <TrendingUp />
+              </EmptyMedia>
+              <EmptyTitle>暂无发布数据</EmptyTitle>
+              <EmptyDescription>在选定时间范围内没有任务记录</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="var(--border)"
-                opacity={0.5}
-                vertical={false}
-              />
+          <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full">
+            <LineChart
+              accessibilityLayer
+              data={chartData}
+              margin={{ left: 12, right: 12, top: 12 }}
+            >
+              <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="date"
-                tick={CHART_TICK_STYLE}
                 tickLine={false}
-                axisLine={CHART_AXIS_LINE}
+                axisLine={false}
+                tickMargin={8}
               />
               <YAxis
                 domain={[0, 100]}
-                tickFormatter={(v: number) => `${v}%`}
-                allowDecimals={false}
-                tick={CHART_TICK_STYLE}
                 tickLine={false}
                 axisLine={false}
+                tickMargin={8}
                 width={36}
+                tickFormatter={(v: number) => `${v}%`}
               />
-              <Tooltip content={<SuccessRateTooltip />} />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    indicator="line"
+                    formatter={(value) =>
+                      value == null ? '无任务' : `${value}%`
+                    }
+                  />
+                }
+              />
               <Line
-                type="monotone"
                 dataKey="rate"
-                name="成功率"
-                stroke="var(--status-success-fg)"
+                type="monotone"
+                stroke="var(--color-rate)"
                 strokeWidth={2}
                 dot={{ r: 2 }}
                 connectNulls={false}
               />
             </LineChart>
-          </ResponsiveContainer>
+          </ChartContainer>
         )}
       </CardContent>
     </Card>

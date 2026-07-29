@@ -80,11 +80,13 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react'
 import { useChatStore, getActiveMessages } from '@/stores/useChatStore'
+import { useAiStore } from '@/stores/useAiStore'
 import type { UseAiChatResult } from './useAiChat'
 import { convertMessage } from './externalMessageConverter'
 import {
   buildMagicCommandMessage,
   parseMagicCommand,
+  parseNaturalIntent,
   type MagicCommand,
 } from './magicCommands'
 import type { ChatMessage } from '@/lib/chat/types'
@@ -160,12 +162,18 @@ function useAiChatRuntime(
         appliedTo: m.appliedTo,
       }),
     )
-    // Append the streaming-tail for live in-progress drafts.
-    if (jobStatus === 'generating' && streamingDraft.length > 0) {
+    // Append the streaming-tail for live drafts (generate AND enhance
+    // phases) so the user can watch thinking / prompt optimization.
+    if (
+      (jobStatus === 'generating' || jobStatus === 'enhancing') &&
+      streamingDraft.length > 0
+    ) {
+      const prefix =
+        jobStatus === 'enhancing' ? '**【思考 · 优化提示词】**\n\n' : ''
       base.push({
         id: '__streaming__:tail',
         role: 'assistant',
-        content: [{ type: 'text', text: streamingDraft }],
+        content: [{ type: 'text', text: prefix + streamingDraft }],
         createdAt: new Date(),
       })
     }
@@ -226,15 +234,22 @@ function useAiChatRuntime(
   const onNew = useCallback(
     async (msg: AppendMessage) => {
       const text = readMessageText(msg)
-      const parsed = parseMagicCommand(text)
-      if (parsed.kind !== 'error') {
-        await dispatchMagic(parsed)
+      // Slash commands (incl. unknown → system error breadcrumb)
+      if (text.trim().startsWith('/')) {
+        await dispatchMagic(parseMagicCommand(text))
         return
       }
-      // Forward normal chat text to the SSE pipeline. Note that this
-      // shares the same AbortController as the composer's send() —
-      // a 取消 click in either surface aborts both.
-      await chatActions.send(text)
+      // High-confidence natural intents: switch mode / select group / publish…
+      const intent = parseNaturalIntent(text)
+      if (intent) {
+        await dispatchMagic(intent)
+        return
+      }
+      // Free-form chat → SSE (auto-applies structured 标题/描述/标签).
+      // Drain any ChatGPT-style attached images from the composer store.
+      const images = useAiStore.getState().composerImages
+      useAiStore.getState().clearComposerImages()
+      await chatActions.send(text, images.length > 0 ? images : undefined)
     },
     [chatActions, dispatchMagic],
   )

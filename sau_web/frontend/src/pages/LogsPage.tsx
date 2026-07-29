@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/ui/page-header'
 import { cn } from '@/lib/utils'
 import { api, type LogEntry } from '../api/client'
+import { isLogsStreamSupported, subscribeLogsStream } from '../hooks/logsStream'
 import { useToast } from '@/components/ui/toast'
 import {
   AlertCircle,
@@ -102,14 +104,43 @@ function LogsPage() {
     }
   }, [keyword])
 
+  const MAX_LOGS_MEMORY = 2_000
+  const [tabVisible, setTabVisible] = useState(
+    () => (typeof document === 'undefined' ? true : !document.hidden),
+  )
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const onVis = () => setTabVisible(!document.hidden)
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+
   const { data: logs = [] } = useQuery<LogEntry[]>({
     queryKey: ['logs'],
     queryFn: async () => {
-      const res = await api.getLogs()
+      // One-shot history load. Live tail is driven by SSE below.
+      const res = await api.getLogs({ limit: 500 })
       return res.data ?? []
     },
-    refetchInterval: 2000,
+    // SSE owns live updates; rare REST poll only as degraded fallback.
+    refetchInterval: false,
+    staleTime: 30_000,
   })
+
+  // Live log SSE (shared) — primary path while the tab is visible.
+  useEffect(() => {
+    if (!tabVisible || !isLogsStreamSupported()) return
+    return subscribeLogsStream((entry) => {
+      qc.setQueryData<LogEntry[]>(['logs'], (prev) => {
+        const list = prev ?? []
+        if (list.some((x) => x.ts === entry.ts && x.message === entry.message)) {
+          return list
+        }
+        const next = [...list, entry]
+        return next.length > MAX_LOGS_MEMORY ? next.slice(-MAX_LOGS_MEMORY) : next
+      })
+    })
+  }, [tabVisible, qc])
 
   useEffect(() => {
     if (autoScroll && containerRef.current) {
@@ -175,8 +206,16 @@ function LogsPage() {
   }
 
   const handleReset = () => {
+    qc.setQueryData(['logs'], [])
     qc.invalidateQueries({ queryKey: ['logs'] })
   }
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredLogs.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 22,
+    overscan: 16,
+  })
 
   return (
     <div className="space-y-6 p-6">
@@ -258,24 +297,41 @@ function LogsPage() {
               ref={containerRef}
               className="h-[520px] overflow-y-auto rounded-lg bg-muted p-4 font-mono text-xs leading-relaxed"
             >
-              {filteredLogs.map((entry, idx) => {
-                const lv = classifyLevel(entry.message)
-                return (
-                  <div key={`${entry.ts}-${idx}`} className="flex items-start gap-2 mb-0.5">
-                    <span
-                      className={cn(
-                        'mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full',
-                        LEVEL_DOT_CLASS[lv],
-                      )}
-                      aria-hidden
-                    />
-                    <span className="mr-1 select-none whitespace-nowrap text-emerald-600 dark:text-emerald-400">
-                      {parseDate(entry.ts)}
-                    </span>
-                    <span className={LEVEL_TEXT_CLASS[lv]}>{entry.message}</span>
-                  </div>
-                )
-              })}
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const entry = filteredLogs[virtualRow.index]
+                  if (!entry) return null
+                  const lv = classifyLevel(entry.message)
+                  return (
+                    <div
+                      key={`${entry.ts}-${virtualRow.index}`}
+                      className="absolute left-0 top-0 flex w-full items-start gap-2"
+                      style={{
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <span
+                        className={cn(
+                          'mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full',
+                          LEVEL_DOT_CLASS[lv],
+                        )}
+                        aria-hidden
+                      />
+                      <span className="mr-1 select-none whitespace-nowrap text-emerald-600 dark:text-emerald-400">
+                        {parseDate(entry.ts)}
+                      </span>
+                      <span className={cn('truncate', LEVEL_TEXT_CLASS[lv])}>{entry.message}</span>
+                    </div>
+                  )
+                })}
+              </div>
               <div className="flex items-center gap-2 mt-1 text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 <span className="text-[11px]">实时接收中...</span>

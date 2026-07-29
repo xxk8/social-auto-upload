@@ -1,76 +1,86 @@
 /**
- * Empty-state suggestion chips + inline quick-action bar.
- *
- * Uses assistant-ui's ThreadPrimitive.Suggestion primitive so chip clicks
- * route through the runtime's onNew → parseMagicCommand pipeline natively.
- * No manual onSend callback — the runtime owns the dispatch.
- *
- * MUST be rendered inside <ThreadPrimitive.Root> (the Suggestion primitive
- * reads thread context to send the prompt).
+ * Empty-state — short, useful starters (no slash-command spam).
  */
 /* eslint-disable react-refresh/only-export-components */
-import { Sparkles, Zap, Palette, Edit3, RotateCcw, Trash2 } from 'lucide-react'
+import { SectionIcon } from '@/components/ui/section-header'
+import { Sparkles, FileText, Feather, RefreshCw, Share2 } from 'lucide-react'
 import { ThreadPrimitive } from '@assistant-ui/react'
 import type { ThreadSuggestion } from '@assistant-ui/react'
 
-/**
- * Build assistant-ui's suggestion-shape for the empty thread.
- * Kept for backward compat (barrel export + any callers that read
- * the shape directly).
- */
 export function buildSuggestions(): ThreadSuggestion[] {
-  return [
-    { prompt: '/fullflow 生成一份美食探店的文案' },
-    { prompt: '/variants' },
-    { prompt: '/enhance 写一段短视频开场' },
-    { prompt: '写一份小红书风格的种草文案' },
-  ]
+  return NATURAL_PROMPTS.map((p) => ({ prompt: p.prompt }))
 }
 
-/**
- * Empty-state suggestion grid. Rendered inside <ThreadPrimitive.Empty>.
- * Chips use ThreadPrimitive.Suggestion → runtime onNew → parseMagicCommand.
- * No onSend prop — the framework routes clicks natively.
- */
-export function MagicSuggestions() {
-  const items: ReadonlyArray<{
-    icon: typeof Sparkles
-    label: string
-    blurb: string
-    prompt: string
-  }> = [
-    { icon: Zap, label: '一键全流程', blurb: '增强 → 生成 → 应用', prompt: '/fullflow' },
-    { icon: Palette, label: '多平台变体', blurb: '各平台并行生成', prompt: '/variants' },
-    { icon: Edit3, label: '优化表达', blurb: '只跑提示词优化', prompt: '/enhance' },
-    { icon: Sparkles, label: '自由对话', blurb: '聊天式打磨', prompt: '写一份抖音短视频文案' },
-  ]
+const NATURAL_PROMPTS: ReadonlyArray<{
+  label: string
+  hint: string
+  prompt: string
+  icon: typeof Sparkles
+}> = [
+  {
+    label: '写完整发布文案',
+    hint: '标题 + 描述 + 标签，自动填表',
+    icon: FileText,
+    prompt:
+      '根据左侧表单（若为空请自拟「周末探店」主题），写一版适合短视频发布的文案。要求：标题抓人、描述口语有转化、标签 4-6 个。严格输出：\n标题：…\n描述：…\n标签：…',
+  },
+  {
+    label: '小红书种草风',
+    hint: '真诚分点 · 不硬广',
+    icon: Feather,
+    prompt:
+      '用小红书种草风格写图文文案，主题周末探店。标题带情绪，正文分 3 点，标签含场景词。严格输出：\n标题：…\n描述：…\n标签：…',
+  },
+  {
+    label: '优化现有内容',
+    hint: '基于表单已有字段改写',
+    icon: RefreshCw,
+    prompt:
+      '请读取表单已有标题与描述，改写得更吸引人、转化更强，并给出更准的标签。严格输出：\n标题：…\n描述：…\n标签：…',
+  },
+  {
+    label: '多平台各一版',
+    hint: '抖音 / 小红书 / 快手',
+    icon: Share2,
+    prompt: '/variants 根据表单主题，为抖音、小红书、快手各写一版差异化文案',
+  },
+]
 
+export function MagicSuggestions() {
   return (
     <div
-      className="space-y-3 px-4 py-6 text-center animate-in fade-in slide-in-from-bottom-1 duration-300"
+      className="flex flex-col items-center justify-center gap-7 px-4 py-8 text-center animate-in fade-in duration-300"
       data-testid="ai-suggestions"
     >
-      <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono tabular-nums">
-        <Sparkles className="h-3 w-3 text-primary" />
-        <span>选一个动作开始</span>
+      <div className="flex flex-col items-center gap-3">
+        <SectionIcon size="lg"><Sparkles className="h-5 w-5" strokeWidth={1.75} /></SectionIcon>
+        <div className="space-y-1.5">
+          <h3 className="text-[15px] font-semibold tracking-tight text-foreground">
+            有什么可以帮你的？
+          </h3>
+          <p className="max-w-[240px] text-[12px] leading-relaxed text-muted-foreground/70">
+            直接说需求，生成后会自动写入左侧表单。
+          </p>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
-        {items.map((item) => {
+
+      <div className="grid w-full max-w-xs grid-cols-1 gap-2.5">
+        {NATURAL_PROMPTS.map((item) => {
           const Icon = item.icon
           return (
             <ThreadPrimitive.Suggestion
               key={item.label}
               prompt={item.prompt}
               send={true}
-              className="flex h-auto flex-col items-start gap-0.5 rounded-md border border-dashed border-border/60 px-3 py-2.5 text-left text-[11px] transition-all hover:border-solid hover:bg-primary/5 dark:hover:bg-primary/10 group"
+              className="group flex items-start gap-3 rounded-xl border border-border/40 bg-card px-4 py-3 text-left shadow-sm transition-all duration-200 hover:border-primary/20 hover:bg-primary/[0.03] hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99]"
             >
-              <span className="flex items-center gap-1.5 font-medium text-foreground">
-                <Icon className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-                {item.label}
-              </span>
-              <span className="text-[10px] text-muted-foreground font-normal leading-snug">
-                {item.blurb}
-              </span>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 text-primary/70 ring-1 ring-primary/10 transition-colors group-hover:from-primary/15 group-hover:to-primary/5 group-hover:text-primary">
+                <Icon className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-foreground leading-snug">{item.label}</span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground/60">{item.hint}</span>
+              </div>
             </ThreadPrimitive.Suggestion>
           )
         })}
@@ -79,46 +89,7 @@ export function MagicSuggestions() {
   )
 }
 
-/**
- * Inline quick-action bar — always visible above the composer.
- * Chinese action buttons replacing the old `/fullflow /variants ...`
- * developer-style slash-command bar. Clicks route through
- * ThreadPrimitive.Suggestion → runtime onNew → parseMagicCommand.
- *
- * MUST be rendered inside <ThreadPrimitive.Root>.
- */
+/** @deprecated tools live in ComposerToolRow */
 export function InlineMagicBar() {
-  const items: ReadonlyArray<{
-    icon: typeof Sparkles
-    label: string
-    prompt: string
-  }> = [
-    { icon: Zap, label: '一键生成', prompt: '/fullflow' },
-    { icon: Palette, label: '多平台变体', prompt: '/variants' },
-    { icon: Edit3, label: '优化表达', prompt: '/enhance' },
-    { icon: RotateCcw, label: '应用上次', prompt: '/apply' },
-    { icon: Trash2, label: '清空', prompt: '/clear' },
-  ]
-
-  return (
-    <div
-      className="flex flex-wrap gap-1 px-3 py-2 border-t border-border/40 bg-muted/20"
-      data-testid="ai-inline-magic-bar"
-    >
-      {items.map((item) => {
-        const Icon = item.icon
-        return (
-          <ThreadPrimitive.Suggestion
-            key={item.label}
-            prompt={item.prompt}
-            send={true}
-            className="inline-flex h-6 items-center gap-1 rounded-md px-2 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          >
-            <Icon className="h-3 w-3" />
-            {item.label}
-          </ThreadPrimitive.Suggestion>
-        )
-      })}
-    </div>
-  )
+  return null
 }

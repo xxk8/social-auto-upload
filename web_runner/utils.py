@@ -1,17 +1,21 @@
 """Shared utilities for web_runner routes."""
 from __future__ import annotations
 
+import atexit
 import base64
 import binascii
 import json
+import os
+import queue
 import re
 import sys
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 
 from utils.log import logger as _task_logger
 
@@ -34,17 +38,211 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 INBOX_DIR = BASE_DIR / "videos" / "inbox"
 INBOX_DIR.mkdir(parents=True, exist_ok=True)
 
-task_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sau-task")
+# ── Dual thread pools ────────────────────────────────────────────────
+# short: cookie checks / light CLI  ·  upload: long browser upload jobs
+# Isolated so a full upload backlog never starves quick health checks.
+_SHORT_WORKERS = max(1, int(os.environ.get("SAU_SHORT_WORKERS", "4")))
+_UPLOAD_WORKERS = max(1, int(os.environ.get("SAU_UPLOAD_WORKERS", "4")))
+_TASK_QUEUE_MAX = max(8, int(os.environ.get("SAU_TASK_QUEUE_MAX", "64")))
+
+
+def worker_mode_enabled() -> bool:
+    """When true, web process only enqueues DB rows; ``sau-worker`` executes CLI."""
+    return os.environ.get("SAU_TASK_MODE", "inline").strip().lower() in (
+        "worker",
+        "external",
+        "pg",
+        "queue",
+    )
+
+
+_short_executor = ThreadPoolExecutor(
+    max_workers=_SHORT_WORKERS, thread_name_prefix="sau-short"
+)
+_upload_executor = ThreadPoolExecutor(
+    max_workers=_UPLOAD_WORKERS, thread_name_prefix="sau-upload"
+)
+_pending_tasks = 0
+_pending_lock = threading.Lock()
+
+
+def _is_heavy_argv(argv: list[str]) -> bool:
+    joined = " ".join(str(a) for a in argv).lower()
+    return any(
+        token in joined
+        for token in (
+            "upload",
+            "publish",
+            "login",
+            "render",
+            "studio",
+            "crawl",
+        )
+    )
+
+
+def _completed_future(result: Any = None) -> Future:
+    fut: Future = Future()
+    fut.set_result(result)
+    return fut
+
+
+def _enqueue_run_sau(task_id: str, argv: list[str]) -> Future:
+    """Submit a CLI job with back-pressure and pool selection.
+
+    In ``SAU_TASK_MODE=worker`` the web process does **not** run the CLI —
+    a separate ``python -m web_runner.worker`` claims pending rows from Postgres.
+    """
+    global _pending_tasks
+
+    if worker_mode_enabled():
+        # Ensure row is claimable; callers usually insert as pending already.
+        try:
+            row = _db_get_task(task_id)
+            if row and (row.get("status") or "") == "scheduled":
+                _db_update_task(task_id, status="pending")
+        except Exception:
+            pass
+        log(f"[{task_id}] queued for external worker (SAU_TASK_MODE=worker)")
+        return _completed_future(None)
+
+    def _reject() -> None:
+        _db_update_task(
+            task_id,
+            status="error",
+            error=f"Task queue full (max {_TASK_QUEUE_MAX} pending)",
+        )
+        log(f"[{task_id}] rejected: task queue full")
+
+    with _pending_lock:
+        if _pending_tasks >= _TASK_QUEUE_MAX:
+            return _short_executor.submit(_reject)
+        _pending_tasks += 1
+
+    pool = _upload_executor if _is_heavy_argv(argv) else _short_executor
+
+    def _runner() -> None:
+        global _pending_tasks
+        try:
+            _run_sau(task_id, argv)
+        finally:
+            with _pending_lock:
+                _pending_tasks = max(0, _pending_tasks - 1)
+
+    return pool.submit(_runner)
+
+
+def get_runtime_stats() -> dict[str, Any]:
+    """Lightweight process stats for /health and /api/system/stats."""
+    with _pending_lock:
+        in_flight = _pending_tasks
+    with _log_sub_lock:
+        log_subs = len(_log_subscribers)
+    db_pending = 0
+    db_running = 0
+    db_scheduled = 0
+    def _count(row: Any) -> int:
+        if row is None:
+            return 0
+        if isinstance(row, dict):
+            for k in ("cnt", "count", "COUNT"):
+                if k in row and row[k] is not None:
+                    return int(row[k])
+            return int(next(iter(row.values()), 0) or 0)
+        try:
+            return int(row[0])
+        except Exception:
+            return 0
+
+    try:
+        with get_connection() as conn:
+            db_pending = _count(
+                conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM tasks WHERE status = ?",
+                    ("pending",),
+                ).fetchone()
+            )
+            db_running = _count(
+                conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM tasks WHERE status = ?",
+                    ("running",),
+                ).fetchone()
+            )
+            db_scheduled = _count(
+                conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM tasks WHERE status = ?",
+                    ("scheduled",),
+                ).fetchone()
+            )
+    except Exception:
+        pass
+    return {
+        "task_mode": "worker" if worker_mode_enabled() else "inline",
+        "in_flight_local": in_flight,
+        "queue_max": _TASK_QUEUE_MAX,
+        "short_workers": _SHORT_WORKERS,
+        "upload_workers": _UPLOAD_WORKERS,
+        "log_sse_subscribers": log_subs,
+        "db_pending": db_pending,
+        "db_running": db_running,
+        "db_scheduled": db_scheduled,
+    }
+
+
+class _TaskExecutorFacade:
+    """Backward-compatible ``task_executor.submit(_run_sau, id, argv)`` API.
+
+    Routes ``_run_sau`` through the dual-pool queue; other callables go to
+    the short pool. Tests that patch ``task_executor.submit`` keep working.
+    """
+
+    def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future:
+        name = getattr(fn, "__name__", "")
+        if name == "_run_sau" and len(args) >= 2 and not kwargs:
+            return _enqueue_run_sau(args[0], args[1])
+        return _short_executor.submit(fn, *args, **kwargs)
+
+    def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
+        kwargs: dict[str, Any] = {"wait": wait}
+        # cancel_futures is 3.9+; keep call sites portable.
+        try:
+            _short_executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+            _upload_executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+        except TypeError:
+            _short_executor.shutdown(wait=wait)
+            _upload_executor.shutdown(wait=wait)
+
+
+task_executor = _TaskExecutorFacade()
 _progress_subscribers: dict[str, list] = {}
 _progress_sub_lock = threading.Lock()
-_MAX_SSE_CONNECTIONS = 5
+_MAX_SSE_CONNECTIONS = 8
 _SSE_TIMEOUT_SECONDS = 300
+
+# Live log fan-out for ``GET /api/logs/stream``.
+_log_subscribers: list[queue.Queue] = []
+_log_sub_lock = threading.Lock()
+_LOG_SUB_QUEUE_SIZE = 256
 
 sys.path.insert(0, str(BASE_DIR))
 
 LOG_MAX_ROWS = 10_000
 _log_trim_counter = 0
 MIN_UPLOAD_BYTES = 10240
+
+# Default list-API caps (overridable via query params, hard-capped).
+DEFAULT_TASK_LIST_LIMIT = 100
+MAX_TASK_LIST_LIMIT = 500
+DEFAULT_LOG_LIST_LIMIT = 200
+MAX_LOG_LIST_LIMIT = 1000
+
+# Buffered log writes — coalesce high-frequency CLI chatter into fewer
+# Postgres round-trips. Flushed on batch size, timer, or log read.
+_LOG_BATCH_SIZE = 24
+_LOG_FLUSH_SECONDS = 0.12
+_log_queue: list[tuple[str, str]] = []
+_log_queue_lock = threading.Lock()
+_log_flush_timer: threading.Timer | None = None
 
 
 class _LogCapture:
@@ -60,9 +258,54 @@ class _LogCapture:
         pass
 
 
+def _publish_log_event(ts: str, message: str) -> None:
+    """Push a log line to all SSE subscribers (best-effort, non-blocking)."""
+    payload = {"ts": ts, "message": message}
+    with _log_sub_lock:
+        dead: list[queue.Queue] = []
+        for q in _log_subscribers:
+            try:
+                q.put_nowait(payload)
+            except queue.Full:
+                # Drop oldest to keep the stream moving for slow clients.
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    q.put_nowait(payload)
+                except queue.Full:
+                    dead.append(q)
+        for q in dead:
+            try:
+                _log_subscribers.remove(q)
+            except ValueError:
+                pass
+
+
+def subscribe_logs() -> queue.Queue:
+    """Register a subscriber queue for live log SSE. Raises if at capacity."""
+    q: queue.Queue = queue.Queue(maxsize=_LOG_SUB_QUEUE_SIZE)
+    with _log_sub_lock:
+        if len(_log_subscribers) >= _MAX_SSE_CONNECTIONS:
+            raise RuntimeError("too many log stream subscribers")
+        _log_subscribers.append(q)
+    return q
+
+
+def unsubscribe_logs(q: queue.Queue) -> None:
+    with _log_sub_lock:
+        try:
+            _log_subscribers.remove(q)
+        except ValueError:
+            pass
+
+
 def log(message: str) -> None:
+    ts = datetime.now().isoformat(timespec="milliseconds")
     _task_logger.info(message)
-    _db_insert_log(datetime.now().isoformat(timespec="milliseconds"), message)
+    _db_insert_log(ts, message)
+    _publish_log_event(ts, message)
 
 
 def _save_data_uri(data_uri: str) -> Path | None:
@@ -160,18 +403,29 @@ def _db_update_task(task_id: str, **kwargs: str | int | None) -> None:
             conn.commit()
 
 
+def _clamp_limit(value: int | None, default: int, hard_max: int) -> int:
+    if value is None:
+        return default
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(n, hard_max))
+
+
 def _db_get_all_tasks(limit: int | None = None, offset: int = 0) -> list[dict]:
+    # List omits `result` / `publish_detail` (large JSON blobs). Keep `argv`
+    # so the Tasks drawer can show the CLI command; retry still uses task_id.
+    capped = _clamp_limit(limit, DEFAULT_TASK_LIST_LIMIT, MAX_TASK_LIST_LIMIT)
+    off = max(0, int(offset or 0))
     with db_lock:
         with get_connection() as conn:
-            query = "SELECT * FROM tasks ORDER BY created DESC"
-            params: list = []
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
-            rows = conn.execute(query, params).fetchall()
+            query = (
+                "SELECT task_id, status, platform, action, account, created, "
+                "code, error, argv, scheduled_at, title "
+                "FROM tasks ORDER BY created DESC LIMIT ? OFFSET ?"
+            )
+            rows = conn.execute(query, (capped, off)).fetchall()
             return [dict(r) for r in rows]
 
 
@@ -182,23 +436,69 @@ def _new_task_id(prefix: str = "task") -> str:
     return str(uuid.uuid4())
 
 
-def _db_insert_log(ts: str, message: str) -> None:
-    global _log_trim_counter
+def _flush_log_queue() -> None:
+    """Drain the in-memory log buffer into Postgres (idempotent)."""
+    global _log_flush_timer, _log_trim_counter
+    with _log_queue_lock:
+        _log_flush_timer = None
+        if not _log_queue:
+            return
+        batch = list(_log_queue)
+        _log_queue.clear()
+
     with db_lock:
         with get_connection() as conn:
-            conn.execute("INSERT INTO logs (ts, message) VALUES (?, ?)", (ts, message))
+            for ts, message in batch:
+                conn.execute(
+                    "INSERT INTO logs (ts, message) VALUES (?, ?)",
+                    (ts, message),
+                )
             conn.commit()
-            _log_trim_counter += 1
+            _log_trim_counter += len(batch)
             if _log_trim_counter >= 200:
                 _log_trim_counter = 0
+                # Keep newest LOG_MAX_ROWS by deleting older than the Nth row.
                 conn.execute(
-                    "DELETE FROM logs WHERE ts NOT IN (SELECT ts FROM logs ORDER BY ts DESC LIMIT ?)",
+                    "DELETE FROM logs WHERE ts < ("
+                    "  SELECT ts FROM logs ORDER BY ts DESC "
+                    "  OFFSET ? LIMIT 1"
+                    ")",
                     (LOG_MAX_ROWS,),
                 )
                 conn.commit()
 
 
+def _schedule_log_flush() -> None:
+    global _log_flush_timer
+    with _log_queue_lock:
+        if _log_flush_timer is not None:
+            return
+        timer = threading.Timer(_LOG_FLUSH_SECONDS, _flush_log_queue)
+        timer.daemon = True
+        _log_flush_timer = timer
+        timer.start()
+
+
+def _db_insert_log(ts: str, message: str) -> None:
+    """Queue a log row; flushes in batches to cut DB connection churn."""
+    with _log_queue_lock:
+        _log_queue.append((ts, message))
+        if len(_log_queue) >= _LOG_BATCH_SIZE:
+            # Flush on a worker so the hot path returns quickly.
+            should_flush_now = True
+        else:
+            should_flush_now = False
+    if should_flush_now:
+        _flush_log_queue()
+    else:
+        _schedule_log_flush()
+
+
 def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: int | None = None, offset: int = 0) -> list[dict]:
+    # Make buffered rows visible to API consumers before SELECT.
+    _flush_log_queue()
+    capped = _clamp_limit(limit, DEFAULT_LOG_LIST_LIMIT, MAX_LOG_LIST_LIMIT)
+    off = max(0, int(offset or 0))
     with db_lock:
         with get_connection() as conn:
             query = "SELECT ts, message FROM logs"
@@ -212,15 +512,18 @@ def _db_get_logs(after: str | None = None, task_id: str | None = None, limit: in
                 params.append(f"%{task_id}%")
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
-            query += " ORDER BY ts ASC"
-            if limit is not None:
-                query += " LIMIT ?"
-                params.append(limit)
-            if offset:
-                query += " OFFSET ?"
-                params.append(offset)
+            # Incremental tail reads (`after=`) want ascending; full page
+            # loads prefer newest-first then reverse for stable UI.
+            if after:
+                query += " ORDER BY ts ASC LIMIT ? OFFSET ?"
+                params.extend([capped, off])
+                rows = conn.execute(query, params).fetchall()
+                return [dict(r) for r in rows]
+            query += " ORDER BY ts DESC LIMIT ? OFFSET ?"
+            params.extend([capped, off])
             rows = conn.execute(query, params).fetchall()
-            return [dict(r) for r in rows]
+            # Ascending order for consumers that append chronologically.
+            return [dict(r) for r in reversed(rows)]
 
 
 def _recover_orphaned_tasks() -> None:
@@ -339,42 +642,89 @@ def _store_result(task_id: str, stdout: str) -> None:
 
 
 def _run_sau(task_id: str, argv: list[str]) -> None:
+    """Run ``python -m sau_cli …`` streaming stdout into the live log bus.
+
+    Uses a dual-pool worker (via ``task_executor``). Output is line-buffered
+    so `/api/logs/stream` subscribers see progress without waiting for the
+    whole 10-minute job to finish.
+    """
     import subprocess
+
     _db_update_task(task_id, status="running")
     log(f"[{task_id}] starting: sau {' '.join(argv)}")
+    timeout_s = int(os.environ.get("SAU_TASK_TIMEOUT", "600"))
+    out_lines: list[str] = []
+    proc: subprocess.Popen[str] | None = None
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, "-m", "sau_cli"] + argv,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=600,
+            bufsize=1,
             cwd=str(BASE_DIR),
         )
-        if result.returncode == 0:
+        assert proc.stdout is not None
+        deadline = time.time() + timeout_s
+        while True:
+            if time.time() > deadline:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+                raise subprocess.TimeoutExpired(proc.args, timeout_s)
+            line = proc.stdout.readline()
+            if line == "" and proc.poll() is not None:
+                break
+            if not line:
+                # Brief yield when pipe is momentarily empty but process lives.
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.05)
+                continue
+            text = line.rstrip("\n")
+            out_lines.append(text)
+            if text:
+                # Avoid double-prefixing lines the CLI already tags with task id.
+                if text.startswith(f"[{task_id}]"):
+                    log(text)
+                else:
+                    log(f"[{task_id}] {text}")
+        code = proc.wait(timeout=5)
+        stdout = "\n".join(out_lines)
+        if code == 0:
             _db_update_task(task_id, status="success", code=0)
-            _store_result(task_id, result.stdout)
+            _store_result(task_id, stdout)
             log(f"[{task_id}] completed successfully")
         else:
-            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-            _db_update_task(task_id, status="failed", code=result.returncode, error=error_msg)
-            log(f"[{task_id}] failed with code {result.returncode}: {error_msg[:200]}")
+            error_msg = stdout.strip() or "Unknown error"
+            _db_update_task(task_id, status="failed", code=code, error=error_msg[-2000:])
+            log(f"[{task_id}] failed with code {code}: {error_msg[:200]}")
             _log_error_event(
                 phase="cli",
                 task_id=task_id,
                 exc_type="NonZeroExit",
                 exc_message=error_msg[:500],
-                tb=result.stderr[-2000:] if result.stderr else None,
+                tb=stdout[-2000:] if stdout else None,
                 argv=argv,
-                status_code=result.returncode,
+                status_code=code,
             )
     except subprocess.TimeoutExpired:
-        _db_update_task(task_id, status="error", error="Task timed out after 600 seconds")
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        _db_update_task(
+            task_id, status="error", error=f"Task timed out after {timeout_s} seconds"
+        )
         log(f"[{task_id}] timed out")
         _log_error_event(
             phase="cli",
             task_id=task_id,
             exc_type="TimeoutExpired",
-            exc_message="Task timed out after 600 seconds",
+            exc_message=f"Task timed out after {timeout_s} seconds",
             argv=argv,
         )
     except (OSError, ValueError) as exc:
@@ -454,3 +804,6 @@ __all_reexports__ = (
     "_log_error_event",
     "_db_get_error_events",
 )
+
+# Best-effort drain so process exit does not drop the last log batch.
+atexit.register(_flush_log_queue)

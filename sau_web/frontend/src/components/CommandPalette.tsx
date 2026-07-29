@@ -65,7 +65,9 @@ const STATUS_CHIP_CLASS: Record<StatusVariant, string> = {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate()
-  const { data: tasksData } = useTasks()
+  // Only hit the network when the palette is open; never open a live SSE
+  // from this opportunistic consumer (shared cache is enough for search).
+  const { data: tasksData } = useTasks({ enabled: open, live: false })
   // useMemo caches the same [] for repeated undefined — avoids dep-array churn
   // (inline `?? []` makes a new array ref every render).
   const tasks = useMemo(() => tasksData ?? [], [tasksData])

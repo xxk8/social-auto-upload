@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/toast'
 import type { FormHandle } from '@/lib/chat/chatFormBridge'
 import type { RefObject } from 'react'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, ImagePlus, Check } from 'lucide-react'
 
 interface MaterialImageGridProps {
@@ -173,10 +174,7 @@ export const MaterialImageGridSkeleton = memo(function MaterialImageGridSkeleton
   return (
     <div className="grid grid-cols-3 gap-1.5" data-testid="material-image-grid-skeleton">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div
-          key={i}
-          className="aspect-square animate-pulse rounded-md bg-muted/40"
-        />
+        <Skeleton key={i} className="aspect-square rounded-md" />
       ))}
     </div>
   )

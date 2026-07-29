@@ -1,9 +1,7 @@
 {
   "locale": {
     "switch_label": "切换语言",
-    "select_label": "选择语言",
-    "name_zh-CN": "中文",
-    "name_en-US": "English"
+    "select_label": "选择语言"
   },
   "marketing": {
     "topbar": {
@@ -18,7 +16,6 @@
       }
     },
     "footer": {
-      "brand": "social-auto-upload",
       "subtitle": "多平台视频自动发布工具",
       "copyright": "© social-auto-upload. 保留所有权利.",
       "columns": {
@@ -114,70 +111,51 @@
         "trust_24x7": "全天候自动运行",
         "trust_full_coverage": "全网平台全覆盖"
       }
+    },
+    "testimonials": {
+      "eyebrow": "用户反馈",
+      "title_1": "创作者的真实声音",
+      "subtitle": "示例反馈 · 真实场景",
+      "quote_1": "以前我一天要花 3 小时手动发布到 5 个平台,现在定时队列直接把视频放上去,我可以专心做内容。",
+      "author_1_name": "M",
+      "author_1_role": "个人创作者",
+      "quote_2": "管理 12 个账号组,过去需要 4 个运营同事。现在一个就能搞定,出错还有 Cookie 过期提前提醒。",
+      "author_2_name": "L",
+      "author_2_role": "矩阵运营",
+      "quote_3": "我们工作室运营 80+ 账号,sau 是唯一靠谱的工具 —— 不卡登录态、不卡验证码、不卡视频上传。",
+      "author_3_name": "Y",
+      "author_3_role": "内容工作室合伙人"
+    },
+    "faq": {
+      "eyebrow": "常见问题",
+      "title_1": "还有什么疑问?",
+      "q_1": "我的账号安全吗?Cookie 会泄漏吗?",
+      "a_1": "Cookie 和登录态完全保存在你的本地。系统不收集、不上传任何账号信息,所有发布动作都在你自己的电脑上执行。",
+      "q_2": "我完全不会写代码,能用吗?",
+      "a_2": "能。扫码登录平台账号 — 拖入视频 — 选择账号组 — 一键发布。一步都不需要看代码。",
+      "q_3": "支持哪些平台?短期内还会加吗?",
+      "a_3": "目前主线支持抖音、B 站、小红书、快手;视频号与百家号处于 Beta。TikTok 与 YouTube 在路线图。",
+      "q_4": "Cookie 过期了怎么办?",
+      "a_4": "系统会定时检测登录态,过期前提前 24 小时提醒,重新扫码登录即可。所有平台均走标准二维码登录。",
+      "q_5": "视频文件会传到哪里?",
+      "a_5": "全部本地处理。除非你主动开启云端备份,视频文件不会离开你的电脑。"
+    },
+    "stats": {
+      "banner_label": "信任指标概览",
+      "caption_platforms": "主流平台已覆盖",
+      "caption_hours_saved": "每天节省发布时长",
+      "caption_cloud": "视频文件上云",
+      "caption_runtime": "小时自动调度"
     }
   },
-  "dashboard": {
-    "sidebar": {
-      "section_main": "导航",
-      "section_admin": "管理",
-      "nav": {
-        "accounts": "账号管理",
-        "publish": "发布中心",
-        "tasks": "任务列表",
-        "analytics": "数据分析",
-        "logs": "运行日志",
-        "inbox": "下载中心",
-        "calendar": "内容日历",
-        "studio": "剧本工坊"
-      },
-      "admin": {
-        "root": "管理后台",
-        "overview": "概览",
-        "users": "用户管理",
-        "audit": "审计日志"
-      },
-      "footer": {
-        "role_admin": "管理员",
-        "role_user": "用户",
-        "email_fallback": "管理员"
-      },
-      "expand_sidebar": "展开侧边栏",
-      "collapse_sidebar": "收起侧边栏",
-      "toggle_sidebar": "切换侧边栏",
-      "search_button": "搜索",
-      "help_aria": "键盘快捷键",
-      "mobile_nav_label": "主导航"
-    }
-  },
+  "dashboard": {}
+  ,
   "common": {
-    "back": "返回",
-    "close": "关闭",
-    "loading": "加载中…"
+    "clear": "清除"
   },
   "accounts": {
     "actions": {
       "menu": "授权操作"
-    },
-    "group": {
-      "rename": "重命名分组",
-      "add_authorization": "添加授权",
-      "delete": "删除分组"
-    },
-    "toolbar": {
-      "clear_search": "清除搜索",
-      "grid_view": "网格视图",
-      "list_view": "列表视图"
-    },
-    "login": {
-      "interactive_browser_handoff": {
-        "title": "浏览器已就绪 — 请切换窗口完成登录",
-        "guidance_l1": "平台不提供网页扫码通道，后台已在 host 机器上启动 headed Chromium。",
-        "guidance_l2": "在弹出窗口中完成 Google 账号密码 + 2FA（按平台引导顺序操作）。",
-        "guidance_l3": "完成后无需点击任何按钮，后台自动监测登录态并保存 Cookie。",
-        "cta_label": "后台正在等待 headed Chrome 登录 · 5 分钟内未完成会自动取消",
-        "timeout_label": "5 分钟超时已触发，已自动取消本次授权",
-        "status_label": "headed Chrome 等待中"
-      }
     }
   },
   "tasks": {
@@ -261,6 +239,9 @@
       }
     },
     "progress": {
+      "title": "任务状态",
+      "subtitle": "按状态汇总当前列表",
+      "success_rate": "成功率",
       "empty": "暂无任务",
       "done": "成功",
       "active": "进行中",
@@ -275,13 +256,15 @@
       "downloaded": "已下载",
       "failed": "失败",
       "transcribing": "转写中",
-      "transcribed": "已转写"
+      "transcribed": "已转写",
+      "subtitling": "加字幕中"
     },
     "batch": {
       "select_all": "全选",
       "unselect_all": "取消全选",
       "selected_count": "已选 {{count}} 项",
-      "remove_selected": "清除选中",
+      "organize_selected": "归档分组",
+      "remove_selected": "移除选中",
       "retry_selected": "重试选中",
       "transcribe_selected": "转写选中",
       "collapse_all": "全部收起",
@@ -299,9 +282,14 @@
         "downloading": "下载中",
         "downloaded": "已下载",
         "failed": "失败",
+        "subtitling": "加字幕中",
         "transcribing": "转写中",
         "transcribed": "已转写"
       },
+      "subtitle": "添加字幕",
+      "subtitle_again": "重新加字幕",
+      "download": "下载文件",
+      "download_aria": "下载文件到本地",
       "transcribe": "转写",
       "copy": "复制",
       "export": "导出",

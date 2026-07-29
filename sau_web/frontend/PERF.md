@@ -52,7 +52,25 @@
 
 ## ✅ 已完成优化
 
-- [x] **代码分割** — 4 个页面组件使用 `React.lazy()` + Suspense，每个页面生成独立 JS chunk
+- [x] **代码分割** — 全路由 `lazyPage()`；Vite `manualChunks`（react / motion / gsap / recharts / calendar / assistant）
+- [x] **任务列表 SSE** — `useTasks` 有 running 时走 `/api/tasks/stream`，失败回退轮询
+- [x] **日志页** — 增量 `after=` 拉取 + 虚拟列表 + 后台 tab 停轮询
+- [x] **FloatingLogs** — 默认关闭；仅展开时轮询
+- [x] **Marketing FPS** — 去掉 live `filter:blur`；Mesh 离屏暂停；parallax rAF；移动端跳过 section scrub
+- [x] **字体 preload** — Google Fonts stylesheet `rel=preload`
+- [x] **共享 tasks SSE** — 多组件共用一个 EventSource（ref-count）
+- [x] **CommandPalette 按需** — lazy + 仅 open 时 fetch，不挂 live SSE
+- [x] **去掉全局 GET `_t` cache-bust** — 交由 React Query staleTime
+- [x] **首屏 idle 启动** — chat IndexedDB / inbox resume 延后
+- [x] **Vite** — es2022 target、query/axios/i18n/markdown 分包
+- [x] **任务双池队列** — short/upload 隔离 + 队列上限；CLI stdout 流式进日志
+- [x] **日志 SSE** — `/api/logs/stream`；LogsPage / FloatingLogs 实时推送
+- [x] **生产 WSGI** — `python run.py` 默认 Waitress；`SAU_DEBUG=1` 才用 Flask debug
+- [x] **Router 分包** — 保持 `autoCodeSplitting:false`（ticket 07），用 `lazyPage` 等价拆包
+- [x] **PG 外部 worker** — `SAU_TASK_MODE=worker` + `python -m web_runner.worker`（SKIP LOCKED）
+- [x] **系统指标** — `/health.runtime` + `/api/system/stats`
+- [x] **日志 SSE 共享** — LogsPage / FloatingLogs 共用一条 EventSource
+- [x] **TypeScript 7.0.2** — `tsc -b` 冷检查约 2.4s（此前 TS6 常见 15–20s）；可选 `tsgo -b`（`@typescript/native-preview`）
 - [x] **页面过渡动画** — 轻量 `motion` 动画（120ms tween），替代了原始 spring 动画
 - [x] **响应式布局** — 桌面/平板/手机三套布局，侧边栏自动折叠
 - [x] **暗色模式** — 所有新 UI 元素均有 dark mode CSS 覆盖

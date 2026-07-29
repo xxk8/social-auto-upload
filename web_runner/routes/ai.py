@@ -16,11 +16,13 @@ from web_runner.ai_worker import (
     PLATFORM_PROMPTS,
     _ai_request_semaphore,
     _build_media_content,
+    _clear_rate_limited,
     _get_all_keys,
     _get_all_keys_cached,
     _get_next_key,
     _has_any_api_key,
     _mark_rate_limited,
+    _validate_openrouter_key,
 )
 from web_runner.db import db_lock, get_connection
 from web_runner.utils import log
@@ -74,8 +76,12 @@ def _ai_queue_worker():
                             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                             result_holder["success"] = True
                             result_holder["data"] = {"content": content.strip()}
+                            try:
+                                _clear_rate_limited(current_key)
+                            except Exception:
+                                pass
                             break
-                        elif resp.status_code == 429:
+                        elif resp.status_code in (429, 402):
                             _mark_rate_limited(current_key)
                             current_key = _get_next_key()
                             continue
@@ -103,15 +109,23 @@ def _ensure_ai_worker():
 
 
 def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000, temperature: float = 0.7) -> Generator[str, None, None]:
-    """Shared SSE streaming generator with key rotation and 429 retry logic."""
+    """Shared SSE streaming generator with key rotation on 429/402."""
     all_keys = _get_all_keys()
     max_attempts = max(len(all_keys), 1)
+    tried: set[str] = set()
     current_key = _get_next_key()
 
     for _ in range(max_attempts):
         if not current_key:
             yield f"event: error\ndata: {json.dumps({'message': 'No API keys available.'})}\n\n"
             return
+        if current_key in tried:
+            # Pool exhausted unique keys — pick any remaining untried from DB.
+            remaining = [k["api_key"] for k in all_keys if k["api_key"] not in tried]
+            if not remaining:
+                break
+            current_key = remaining[0]
+        tried.add(current_key)
 
         key_info = None
         for k in _get_all_keys():
@@ -139,9 +153,15 @@ def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000,
                 stream=True,
             )
 
-            if resp.status_code == 429:
+            # Rate limit / quota — mark and rotate to next key.
+            if resp.status_code in (429, 402):
                 _mark_rate_limited(current_key)
-                current_key = _get_next_key()
+                nxt = _get_next_key()
+                # Prefer a key we have not tried this request.
+                if nxt in tried:
+                    untried = [k["api_key"] for k in _get_all_keys() if k["api_key"] not in tried]
+                    nxt = untried[0] if untried else ""
+                current_key = nxt
                 continue
 
             if resp.status_code != 200:
@@ -168,6 +188,11 @@ def _stream_openrouter(model: str, messages: list[dict], max_tokens: int = 2000,
                 except json.JSONDecodeError:
                     continue
 
+            # Success — re-enable key for future rotation.
+            try:
+                _clear_rate_limited(current_key)
+            except Exception:
+                pass
             yield f"event: done\ndata: {json.dumps({'content': full_content.strip()})}\n\n"
             return
 
@@ -240,26 +265,97 @@ def ai_config_get():
 
 @bp.get("/api/ai/keys")
 def ai_keys_list():
+    from web_runner.ai_worker import _is_key_cooling_down
+
     keys = _get_all_keys_cached()
-    return jsonify({"success": True, "data": [{"id": k["id"], "masked": k["masked"], "created": k["created"], "rate_limited": bool(k.get("rate_limited_at"))} for k in keys]})
+    return jsonify(
+        {
+            "success": True,
+            "data": [
+                {
+                    "id": k["id"],
+                    "masked": k["masked"],
+                    "created": k["created"],
+                    "rate_limited": _is_key_cooling_down(k),
+                    "rate_limited_at": k.get("rate_limited_at"),
+                }
+                for k in keys
+            ],
+        }
+    )
+
+
+@bp.post("/api/ai/keys/validate")
+def ai_keys_validate():
+    """Probe a key against OpenRouter (快捷测活). Pass api_key or key_id."""
+    data = request.get_json(silent=True) or {}
+    key = (data.get("api_key") or "").strip()
+    key_id = data.get("key_id")
+    if not key and key_id is not None:
+        with db_lock:
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT api_key FROM ai_api_keys WHERE id = ?",
+                    (int(key_id),),
+                ).fetchone()
+        if not row:
+            return jsonify({"success": False, "message": "Key not found."}), 404
+        key = row["api_key"] if not isinstance(row, dict) else row.get("api_key", "")
+    result = _validate_openrouter_key(key)
+    if result.get("ok"):
+        # Live key — clear any stale cooldown so rotation can use it.
+        try:
+            _clear_rate_limited(key)
+        except Exception:
+            pass
+        return jsonify(
+            {
+                "success": True,
+                "message": result.get("message", "Key 有效"),
+                "data": result.get("data") or {},
+            }
+        )
+    return jsonify({"success": False, "message": result.get("message") or "Key 无效"}), 400
 
 
 @bp.post("/api/ai/config")
 def ai_config_set():
     from datetime import datetime
+
     data = request.get_json(silent=True) or {}
     key = data.get("api_key", "").strip()
+    skip_validate = bool(data.get("skip_validate"))
     if not key:
         return jsonify({"success": False, "message": "API key is required."})
+
+    # Default: probe OpenRouter so we never store dead keys.
+    if not skip_validate:
+        probe = _validate_openrouter_key(key)
+        if not probe.get("ok"):
+            return jsonify({"success": False, "message": probe.get("message") or "Key 校验失败"}), 400
+
     masked = key[:8] + "****" + key[-4:] if len(key) > 12 else "****"
     now = datetime.now().isoformat(timespec="seconds")
     try:
         with db_lock:
             with get_connection() as conn:
-                conn.execute("INSERT INTO ai_api_keys (api_key, masked, created) VALUES (?, ?, ?)", (key, masked, now))
+                conn.execute(
+                    "INSERT INTO ai_api_keys (api_key, masked, created) VALUES (?, ?, ?)",
+                    (key, masked, now),
+                )
                 conn.commit()
                 row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return jsonify({"success": True, "data": {"configured": True, "key_masked": masked, "key_id": row_id}})
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "configured": True,
+                    "key_masked": masked,
+                    "key_id": row_id,
+                    "validated": not skip_validate,
+                },
+            }
+        )
     except Exception as _int_exc:  # unique violation
         return jsonify({"success": False, "message": "该 Key 已经添加过了。"}), 409
 
@@ -286,15 +382,17 @@ def ai_config_delete():
 @bp.post("/api/ai/keys/batch")
 def ai_keys_batch():
     from datetime import datetime
+
     data = request.get_json(silent=True) or {}
     raw = data.get("keys", [])
+    skip_validate = bool(data.get("skip_validate"))
     if not isinstance(raw, list):
         return jsonify({"success": False, "message": "keys must be an array."}), 400
 
     now = datetime.now().isoformat(timespec="seconds")
     added = 0
     skipped = 0
-    errors: list[str] = []
+    invalid: list[dict] = []
     with db_lock:
         with get_connection() as conn:
             for entry in raw:
@@ -302,6 +400,17 @@ def ai_keys_batch():
                 if not key or not key.startswith("sk-"):
                     skipped += 1
                     continue
+                if not skip_validate:
+                    probe = _validate_openrouter_key(key)
+                    if not probe.get("ok"):
+                        invalid.append(
+                            {
+                                "masked": (key[:8] + "****" + key[-4:]) if len(key) > 12 else "****",
+                                "message": probe.get("message") or "无效",
+                            }
+                        )
+                        skipped += 1
+                        continue
                 masked = key[:8] + "****" + key[-4:] if len(key) > 12 else "****"
                 try:
                     conn.execute(
@@ -312,7 +421,17 @@ def ai_keys_batch():
                 except Exception as _int_exc:  # unique violation
                     skipped += 1
             conn.commit()
-    return jsonify({"success": True, "data": {"added": added, "skipped": skipped}})
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "added": added,
+                "skipped": skipped,
+                "invalid": invalid,
+                "validated": not skip_validate,
+            },
+        }
+    )
 
 
 @bp.post("/api/ai/enhance-prompt")

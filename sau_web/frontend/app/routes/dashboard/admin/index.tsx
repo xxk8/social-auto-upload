@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import AdminOverviewPage from '@/features/admin/AdminOverviewPage'
+import { lazyPage } from '@/lib/lazy-page'
 
 export const Route = createFileRoute('/dashboard/admin/')({
-  component: AdminOverviewPage,
+  component: lazyPage(() => import('@/features/admin/AdminOverviewPage')),
 })

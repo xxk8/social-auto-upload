@@ -8,6 +8,11 @@ export function useAccountGroups() {
       const res = await api.getAccountGroups()
       return res.data ?? []
     },
+    // Limit retries: TanStack Query default (3) + axios retry interceptor (3)
+    // creates a nested retry storm (up to 9 attempts). 1 retry is enough
+    // to survive a transient blip without keeping the loading skeleton
+    // on screen for 10+ seconds.
+    retry: 1,
   })
 }
 

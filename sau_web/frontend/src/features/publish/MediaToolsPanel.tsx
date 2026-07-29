@@ -6,10 +6,11 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SectionIcon } from '@/components/ui/section-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import { request } from '@/api/request'
-import { Clapperboard, Captions, ImageIcon, Loader2 } from 'lucide-react'
+import { Clapperboard, Captions, ImageIcon, Loader2, Wand2 } from 'lucide-react'
 
 type ToolResult = { kind: string; summary: string; url?: string; raw?: unknown }
 
@@ -72,10 +73,13 @@ export function MediaToolsPanel() {
   }
 
   return (
-    <Card className="border-border/60 shadow-sm">
+    <Card className="card-refined">
       <CardHeader className="pb-2 pt-4">
-        <CardTitle className="text-sm font-semibold tracking-tight">媒体生产工具</CardTitle>
-        <p className="text-xs text-muted-foreground">
+        <CardTitle className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
+          <SectionIcon size="sm"><Wand2 className="h-3.5 w-3.5" /></SectionIcon>
+          媒体生产工具
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1.5">
           场景切片 / 自动字幕 / 封面生成（依赖后端 media 可选包）
         </p>
       </CardHeader>

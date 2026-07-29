@@ -110,7 +110,7 @@ export function PreferencesDialog() {
                     data-testid={`preferences-tab-${id}`}
                     className={cn(
                       'group relative flex h-10 shrink-0 items-center gap-1.5 px-3.5 text-[13px] font-medium outline-none transition-colors',
-                      'focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-1',
+                      'focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-1',
                       'data-[state=active]:font-semibold data-[state=active]:text-foreground',
                       'data-[state=inactive]:text-muted-foreground hover:text-foreground',
                     )}
@@ -143,7 +143,7 @@ export function PreferencesDialog() {
                 key={id}
                 value={id}
                 data-tab-body={id}
-                className="min-h-0 flex-1 overflow-y-auto px-5 py-5 outline-none focus-visible:ring-1 focus-visible:ring-ring sm:px-7 sm:py-6"
+                className="min-h-0 flex-1 overflow-y-auto px-5 py-5 outline-none focus-visible:ring-2 focus-visible:ring-primary/20 sm:px-7 sm:py-6"
               >
                 <div
                   data-testid="preferences-dialog-tab-header"

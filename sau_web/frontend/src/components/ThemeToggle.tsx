@@ -37,7 +37,7 @@ export function ThemeToggle({ size = 'default' }: ThemeToggleProps = {}) {
           onClick={toggle}
           data-testid="theme-toggle"
           aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
-          className={cn('btn-elegant', isCompact ? 'h-7 w-7' : 'h-8 w-8')}
+          className={cn(isCompact ? 'h-7 w-7' : 'h-8 w-8')}
         >
           {isDark ? (
             <Moon className={isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />

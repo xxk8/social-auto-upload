@@ -41,10 +41,10 @@ Browser → Vite :5174 (dev) / Flask static (prod)
 | 任务/日志 | `/api/tasks*`、`/api/logs` | SQLite 任务队列 |
 | AI | `/api/ai/*` | OpenRouter 等 |
 | 日历 | `/api/calendar/tasks` | 任务按日聚合 |
-| 下载中心 | `/api/inbox/*` | yt-dlp 下载到 `videos/inbox` |
+| 下载中心 | `/api/inbox/*` | 分享链接下载到 `videos/inbox`；转写 `POST /api/inbox/transcribe`；**添加字幕** `POST /api/inbox/subtitle`（zh/en/双语 + 可选烧录，需 `.[media]` + ffmpeg） |
 | 热榜 | `/api/hotlist/*` | 公开页 `/hotlist`；代理各平台热搜，进程内缓存 5 分钟 |
-| 采集 | `/api/crawl/*` | 入队 + `crawler.run_crawl` 写 SQLite；浏览器真爬设 `SAU_CRAWLER_LIVE=1` |
-| 剧本工坊 | `/api/studio/*` | 项目 CRUD；`POST .../generate` 生成起承转合四幕 SSE |
+| 采集 | `/api/crawl/*` | 入队 / SSE 搜索；默认写 **demo 行**到 PG（`raw_payload`）；真爬：`SAU_CRAWLER_LIVE=1` + 平台 cookie |
+| 剧本工坊 | `/api/studio/*` | 结构化四幕（分镜+对白+角色）；`generate` SSE；pipeline 门禁；Grok Imagine 定妆图/镜头视频（见 `.env.example` `SAU_LLM_*` / `SAU_MEDIA_*`） |
 | 分析 | `/api/analytics/*` | 任务统计 |
 | 模板 | `/api/templates*` | 发布模板 |
 | 许可证/配额 | `/api/license/*`、`/api/usage/quota` | 本地不限额 stub |
@@ -59,9 +59,32 @@ Browser → Vite :5174 (dev) / Flask static (prod)
 ```bash
 export SAU_CORS_ALLOWED_ORIGINS="http://localhost:5174"
 export SAU_AUTH_ENABLED=false   # 默认已是 false
-python web_runner.py
+python run.py                   # 默认 Waitress；开发用 SAU_DEBUG=1
 cd sau_web/frontend && npm run dev
 ```
+
+### 任务执行模式
+
+| `SAU_TASK_MODE` | 行为 |
+|-----------------|------|
+| `inline`（默认） | Web 进程内双线程池执行 CLI（short / upload 隔离） |
+| `worker` | Web 只写 `tasks` 表；由外部 worker 抢占执行 |
+
+水平扩展（推荐上传高峰）：
+
+```bash
+# 终端 A — HTTP
+SAU_TASK_MODE=worker python run.py
+
+# 终端 B/C — 可多开
+python -m web_runner.worker
+# 或: sau-worker
+```
+
+运维观测：
+
+- `GET /health` → `ok` + `runtime`（队列深度 / 本地 in-flight）
+- `GET /api/system/stats` → 完整池与 DB 状态计数
 
 ## 快速启动
 

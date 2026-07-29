@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json as _json
 import re as _re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 
 from flask import Blueprint, jsonify, request
@@ -14,7 +16,12 @@ bp = Blueprint("hotlist", __name__)
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 _cache: dict[str, tuple[float, list]] = {}
+_cache_lock = threading.Lock()
 CACHE_TTL = 300
+# Soft TTL for stale-while-revalidate: serve expired data immediately while
+# refreshing in the background. Hard-expire after this age.
+CACHE_STALE_TTL = 1800
+_hotlist_pool = ThreadPoolExecutor(max_workers=6, thread_name_prefix="hotlist")
 
 
 def _get(url: str, timeout: int = 10, headers: dict | None = None, **kw) -> http_requests.Response:
@@ -244,19 +251,53 @@ _SOURCE_NAMES = {
 }
 
 
+def _safe_fetch(source: str) -> list:
+    """Fetch one source and update cache. Never raises."""
+    try:
+        items = _FETCHERS[source]()
+        with _cache_lock:
+            _cache[source] = (time.time(), items)
+        return items
+    except Exception:
+        with _cache_lock:
+            cached = _cache.get(source)
+        return list(cached[1]) if cached else []
+
+
+def _fetch_sources_parallel(sources: list[str]) -> dict[str, list]:
+    if not sources:
+        return {}
+    out: dict[str, list] = {}
+    # Cap workers to source count; share the process pool for bg refresh too.
+    futs = {_hotlist_pool.submit(_safe_fetch, s): s for s in sources}
+    for fut in as_completed(futs):
+        s = futs[fut]
+        try:
+            out[s] = fut.result()
+        except Exception:
+            cached = _cache.get(s)
+            out[s] = list(cached[1]) if cached else []
+    return out
+
+
 @bp.route("/api/hotlist/<source>")
 def get_hotlist(source: str):
     if source not in _FETCHERS:
         return jsonify({"error": f"Unknown source: {source}", "data": []}), 400
 
     now = time.time()
-    cached = _cache.get(source)
+    with _cache_lock:
+        cached = _cache.get(source)
     if cached and now - cached[0] < CACHE_TTL:
         return jsonify({"data": cached[1], "source": source, "name": _SOURCE_NAMES.get(source, source)})
 
+    # Stale-while-revalidate: return expired cache and refresh in background.
+    if cached and now - cached[0] < CACHE_STALE_TTL:
+        _hotlist_pool.submit(_safe_fetch, source)
+        return jsonify({"data": cached[1], "source": source, "name": _SOURCE_NAMES.get(source, source), "stale": True})
+
     try:
-        items = _FETCHERS[source]()
-        _cache[source] = (now, items)
+        items = _safe_fetch(source)
         return jsonify({"data": items, "source": source, "name": _SOURCE_NAMES.get(source, source)})
     except Exception as e:
         return jsonify({"data": [], "source": source, "name": _SOURCE_NAMES.get(source, source), "error": str(e)})
@@ -264,20 +305,43 @@ def get_hotlist(source: str):
 
 @bp.route("/api/hotlist")
 def get_all_hotlists():
-    results = {}
+    """Bulk hotlist — parallel fetch + stale-while-revalidate.
+
+    Cold miss: wait for parallel fetch of missing sources.
+    Soft-expired: serve cached immediately, refresh in background.
+    """
+    results: dict[str, list] = {}
     now = time.time()
+    missing: list[str] = []
+    expired: list[str] = []
+
+    with _cache_lock:
+        snapshot = dict(_cache)
 
     for source in _FETCHERS:
-        cached = _cache.get(source)
-        if cached and now - cached[0] < CACHE_TTL:
-            results[source] = cached[1]
+        cached = snapshot.get(source)
+        if not cached:
+            missing.append(source)
             continue
-        try:
-            items = _FETCHERS[source]()
-            _cache[source] = (now, items)
-            results[source] = items
-        except Exception:
-            results[source] = []
+        age = now - cached[0]
+        if age < CACHE_TTL:
+            results[source] = cached[1]
+        elif age < CACHE_STALE_TTL:
+            results[source] = cached[1]
+            expired.append(source)
+        else:
+            missing.append(source)
+
+    if missing:
+        results.update(_fetch_sources_parallel(missing))
+
+    if expired:
+        for source in expired:
+            _hotlist_pool.submit(_safe_fetch, source)
+
+    # Guarantee every known source key is present.
+    for source in _FETCHERS:
+        results.setdefault(source, [])
 
     return jsonify({"data": results})
 

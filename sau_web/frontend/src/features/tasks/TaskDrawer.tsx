@@ -40,12 +40,19 @@ export const TaskDrawer = memo(function TaskDrawer({
   onClose,
   onRetry,
   retrying,
+  /**
+   * Optional seed from a non-tasks surface (e.g. content calendar).
+   * Used when the global `['tasks']` list cache does not yet contain
+   * this id (calendar window can exceed the default list limit of 100).
+   */
+  seedTask = null,
 }: {
   taskId: string | null
   onClose: () => void
   onRetry: (task: TaskItem) => void
   /** task_id currently being retried — drives the spinner in the drawer's primary button */
   retrying: string | null
+  seedTask?: TaskItem | null
 }) {
   return (
     <Drawer
@@ -57,14 +64,19 @@ export const TaskDrawer = memo(function TaskDrawer({
       <div className="flex flex-col space-y-2 text-center sm:text-left">
         <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
           任务详情
-          {taskId && <TaskStatusBadge taskId={taskId} />}
+          {taskId && <TaskStatusBadge taskId={taskId} seedTask={seedTask} />}
         </h2>
         <p className="text-sm text-muted-foreground">查看任务的详细信息和运行日志</p>
       </div>
       {taskId && (
         <div className="mt-6 space-y-5">
-          <RetryButton taskId={taskId} onRetry={onRetry} retrying={retrying} />
-          <TaskDrawerBody taskId={taskId} />
+          <RetryButton
+            taskId={taskId}
+            onRetry={onRetry}
+            retrying={retrying}
+            seedTask={seedTask}
+          />
+          <TaskDrawerBody taskId={taskId} seedTask={seedTask} />
         </div>
       )}
     </Drawer>
@@ -75,8 +87,14 @@ export const TaskDrawer = memo(function TaskDrawer({
  * Live badge that subscribes to cache updates. Re-rendering is local —
  * never busts the outer memo unless `taskId` truly changes.
  */
-const TaskStatusBadge = memo(function TaskStatusBadge({ taskId }: { taskId: string }) {
-  const task = useTaskFromCache(taskId)
+const TaskStatusBadge = memo(function TaskStatusBadge({
+  taskId,
+  seedTask,
+}: {
+  taskId: string
+  seedTask?: TaskItem | null
+}) {
+  const task = useTaskFromCache(taskId, seedTask)
   const meta = STATUS_META[task?.status ?? 'pending'] ?? STATUS_META.pending
   return <Badge variant={meta.variant}>{meta.labelFallback}</Badge>
 })
@@ -85,12 +103,14 @@ const RetryButton = memo(function RetryButton({
   taskId,
   onRetry,
   retrying,
+  seedTask,
 }: {
   taskId: string
   onRetry: (task: TaskItem) => void
   retrying: string | null
+  seedTask?: TaskItem | null
 }) {
-  const task = useTaskFromCache(taskId)
+  const task = useTaskFromCache(taskId, seedTask)
   const canRetry = task && (task.status === 'failed' || task.status === 'error')
   if (!canRetry) return null
   return (
@@ -114,14 +134,24 @@ const RetryButton = memo(function RetryButton({
  * Detail body — task metadata + collapsible log accordion. Memoized on
  * `taskId` only.
  */
-const TaskDrawerBody = memo(function TaskDrawerBody({ taskId }: { taskId: string }) {
-  const task = useTaskFromCache(taskId)
+const TaskDrawerBody = memo(function TaskDrawerBody({
+  taskId,
+  seedTask,
+}: {
+  taskId: string
+  seedTask?: TaskItem | null
+}) {
+  const task = useTaskFromCache(taskId, seedTask)
   const { data: taskLogs = [], isLoading: logsLoading } = useTaskLogs(
     task?.task_id ?? null,
     task?.status,
   )
   const statusMeta = STATUS_META[task?.status ?? 'pending'] ?? STATUS_META.pending
   const logsEndRef = useRef<HTMLDivElement | null>(null)
+  // Seed-only = calendar (or similar) provided a stub without argv/error payload.
+  const fromSeedOnly = Boolean(
+    task && seedTask?.task_id === taskId && task.argv == null && task.error == null,
+  )
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -143,10 +173,25 @@ const TaskDrawerBody = memo(function TaskDrawerBody({ taskId }: { taskId: string
     return null
   }, [task])
 
-  if (!task) return null
+  if (!task) {
+    return (
+      <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+        <p>未在任务列表缓存中找到该任务。</p>
+        <p className="mt-1 text-xs">
+          可在任务页搜索 ID：
+          <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-[11px]">{taskId}</code>
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
+      {fromSeedOnly ? (
+        <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          当前展示来自内容日历的摘要信息；完整日志与 CLI 细节请在任务页打开。
+        </div>
+      ) : null}
       <div className="space-y-3">
         <Field label="任务 ID">
           <code className="text-xs bg-muted px-2 py-1 rounded max-w-[300px] truncate" title={task.task_id}>
@@ -338,8 +383,14 @@ function ResultSection({ result }: { result?: string | null }) {
  * to the parent `['tasks']` query (instead of a synthetic by-id subquery),
  * so the drawer's render naturally fires whenever the polling list is
  * invalidated. No secondary query, no error-retry loop on initial mount.
+ *
+ * `seedTask` covers calendar / other surfaces whose id may not be in the
+ * default list window (limit 100). Live list data always wins over seed.
  */
-function useTaskFromCache(taskId: string | null): TaskItem | undefined {
+function useTaskFromCache(
+  taskId: string | null,
+  seedTask?: TaskItem | null,
+): TaskItem | undefined {
   const { data: tasks } = useQuery({
     queryKey: TASKS_QUERY_KEY,
     queryFn: async () => {
@@ -350,7 +401,11 @@ function useTaskFromCache(taskId: string | null): TaskItem | undefined {
     // its own; it stays a pure subscriber to list updates.
     staleTime: 1_000,
   })
-  return tasks?.find((t: TaskItem) => t.task_id === taskId)
+  if (!taskId) return undefined
+  const fromList = tasks?.find((t: TaskItem) => t.task_id === taskId)
+  if (fromList) return fromList
+  if (seedTask && seedTask.task_id === taskId) return seedTask
+  return undefined
 }
 
 // silence unused-import warning for the LiveBadge short-circuit shape above

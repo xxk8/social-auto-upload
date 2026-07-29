@@ -124,28 +124,29 @@ class SauliteStore:
         ``idx_crawled_content_post`` is a regular (non-unique) btree
         so duplicate inserts are tolerated during retry storms.
         """
-        from web_runner.db import get_database
+        from web_runner.db import db_lock, get_connection
 
-        db = get_database()
-        created = datetime.now(timezone.utc).isoformat()
-        # psycopg's parameter binding does NOT auto-adapt Python dicts
-        # to JSONB when using ``?`` placeholders (translated to %s).
-        # Serialize explicitly so the JSONB column receives a valid
-        # JSON string regardless of caller shape.
-        payload_json = json.dumps(raw_payload) if isinstance(raw_payload, dict) else raw_payload
-        # Use ``insert_returning_id`` rather than ``db.execute(...)``
-        # so the actual row id is returned verbatim, not the rowcount.
-        # ``db.execute`` returns ``cur.rowcount`` (always 1 for a
-        # successful INSERT) which would silently lie about the id
-        # if a caller passed the value through. ``insert_returning_id``
-        # reads the id directly from psycopg's RETURNING result.
-        new_id = db.insert_returning_id(
-            "INSERT INTO crawled_content "
-            "(platform, post_id, raw_payload, crawled_at) "
-            "VALUES (?, ?, ?, ?)",
-            (platform, post_id, payload_json, created),
+        created = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+        payload_json = (
+            json.dumps(raw_payload, ensure_ascii=False)
+            if isinstance(raw_payload, dict)
+            else raw_payload
         )
-        return int(new_id)
+        with db_lock:
+            with get_connection() as conn:
+                cur = conn.execute(
+                    "INSERT INTO crawled_content "
+                    "(platform, post_id, raw_payload, crawled_at) "
+                    "VALUES (?, ?, ?::jsonb, ?) RETURNING id",
+                    (platform, post_id, payload_json, created),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                if isinstance(row, dict):
+                    return int(row.get("id") or cur.lastrowid or 0)
+                if row:
+                    return int(row[0] if not isinstance(row, dict) else row["id"])
+                return int(cur.lastrowid or 0)
 
     # ── crawled_comments (with async AI hooks) ─────────────────────
     def store_comment(
@@ -183,18 +184,30 @@ class SauliteStore:
         upstream ``post_id`` pairs with the comment to give a unique
         (post, comment) tuple in real crawl data.
         """
-        from web_runner.db import get_database
+        from web_runner.db import db_lock, get_connection
 
-        db = get_database()
-        created = datetime.now(timezone.utc).isoformat()
-        # See store_content: explicit JSON serialization for JSONB.
-        payload_json = json.dumps(raw_payload) if isinstance(raw_payload, dict) else raw_payload
-        new_id = db.insert_returning_id(
-            "INSERT INTO crawled_comments "
-            "(platform, post_id, raw_payload, crawled_at) "
-            "VALUES (?, ?, ?, ?)",
-            (platform, post_id, payload_json, created),
+        created = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+        payload_json = (
+            json.dumps(raw_payload, ensure_ascii=False)
+            if isinstance(raw_payload, dict)
+            else raw_payload
         )
+        with db_lock:
+            with get_connection() as conn:
+                cur = conn.execute(
+                    "INSERT INTO crawled_comments "
+                    "(platform, post_id, raw_payload, crawled_at) "
+                    "VALUES (?, ?, ?::jsonb, ?) RETURNING id",
+                    (platform, post_id, payload_json, created),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                if isinstance(row, dict):
+                    new_id = int(row.get("id") or cur.lastrowid or 0)
+                elif row:
+                    new_id = int(row[0])
+                else:
+                    new_id = int(cur.lastrowid or 0)
 
         # Round-MC-2024-threadpool (13.5): submit to the bounded
         # ThreadPoolExecutor instead of spawning a bare daemon thread.
@@ -236,30 +249,25 @@ class SauliteStore:
         platform: str | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        """Return rows from ``crawled_content`` (optionally filtered).
+        """Return rows from ``crawled_content`` (optionally filtered)."""
+        from web_runner.db import get_connection
 
-        ``limit`` is server-side (no full-table scans); ``platform``
-        filter uses the partial covering index ``idx_crawled_content_platform``.
-        """
-        from web_runner.db import get_database
-
-        db = get_database()
-        if platform:
-            rows = db.fetch_all(
-                "SELECT id, platform, post_id, raw_payload, crawled_at "
-                "FROM crawled_content WHERE platform = ? "
-                "ORDER BY crawled_at DESC LIMIT ?",
-                (platform, int(limit)),
-            )
-        else:
-            rows = db.fetch_all(
-                "SELECT id, platform, post_id, raw_payload, crawled_at "
-                "FROM crawled_content "
-                "ORDER BY crawled_at DESC LIMIT ?",
-                (int(limit),),
-            )
-        # psycopg's dict_row already decoded JSONB to dict — return
-        # the row dicts unchanged.
+        with get_connection() as conn:
+            conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
+            if platform:
+                rows = conn.execute(
+                    "SELECT id, platform, post_id, raw_payload, crawled_at "
+                    "FROM crawled_content WHERE platform = ? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (platform, int(limit)),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, platform, post_id, raw_payload, crawled_at "
+                    "FROM crawled_content "
+                    "ORDER BY id DESC LIMIT ?",
+                    (int(limit),),
+                ).fetchall()
         return list(rows) if rows else []
 
     def list_comments(
@@ -271,13 +279,8 @@ class SauliteStore:
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         """Return rows from ``crawled_comments`` with optional filters."""
-        from web_runner.db import get_database
+        from web_runner.db import get_connection
 
-        db = get_database()
-        # Build WHERE clause from optional filters. The triple-filter
-        # combination is rare (operator-driven drill-down) so building
-        # the SQL with placeholders is fine; the query-plan cache
-        # amortizes across calls.
         conditions: list[str] = []
         params: list[Any] = []
         if platform:
@@ -296,31 +299,29 @@ class SauliteStore:
             f"ai_sentiment, ai_sentiment_confidence, ai_reply_suggestion, "
             f"crawled_at "
             f"FROM crawled_comments {where_sql} "
-            f"ORDER BY crawled_at DESC LIMIT ?"
+            f"ORDER BY id DESC LIMIT ?"
         )
-        rows = db.fetch_all(sql, tuple(params))
+        with get_connection() as conn:
+            conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
+            rows = conn.execute(sql, tuple(params)).fetchall()
         return list(rows) if rows else []
 
     def count_by_sentiment(self, *, platform: str | None = None) -> dict[str, int]:
-        """Return counts ``{'positive': N, 'negative': N, 'neutral': N, 'pending': N}``.
+        """Return counts ``{'positive': N, 'negative': N, 'neutral': N, 'pending': N}``."""
+        from web_runner.db import get_connection
 
-        ``pending`` = rows where ``ai_sentiment IS NULL`` (AI
-        augmentation in flight or failed). Used by Frontend's
-        sentiment summary card.
-        """
-        from web_runner.db import get_database
-
-        db = get_database()
         where_clause = "WHERE platform = ?" if platform else ""
         params: tuple = (platform,) if platform else ()
-        rows = db.fetch_all(
-            f"SELECT "
-            f"  COALESCE(ai_sentiment, 'pending') AS bucket, "
-            f"  COUNT(*) AS n "
-            f"FROM crawled_comments {where_clause} "
-            f"GROUP BY COALESCE(ai_sentiment, 'pending')",
-            params,
-        )
+        with get_connection() as conn:
+            conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
+            rows = conn.execute(
+                f"SELECT "
+                f"  COALESCE(ai_sentiment, 'pending') AS bucket, "
+                f"  COUNT(*) AS n "
+                f"FROM crawled_comments {where_clause} "
+                f"GROUP BY COALESCE(ai_sentiment, 'pending')",
+                params,
+            ).fetchall()
         buckets = {"positive": 0, "negative": 0, "neutral": 0, "pending": 0}
         for row in rows or []:
             b = row.get("bucket")
@@ -347,7 +348,7 @@ def _augment_comment_with_ai(
     try:
         from crawler.ai.sentiment import analyze_sentiment
         from crawler.ai.reply import generate_reply_suggestion
-        from web_runner.db import get_database
+        from web_runner.db import get_connection
 
         sentiment_label, confidence = analyze_sentiment(comment_text)
         reply_text = generate_reply_suggestion(
@@ -355,13 +356,14 @@ def _augment_comment_with_ai(
             platform=platform,
             post_id=post_id,
         )
-        db = get_database()
-        db.execute(
-            "UPDATE crawled_comments "
-            "SET ai_sentiment = ?, ai_sentiment_confidence = ?, ai_reply_suggestion = ? "
-            "WHERE id = ?",
-            (sentiment_label, float(confidence), reply_text, comment_id),
-        )
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE crawled_comments "
+                "SET ai_sentiment = ?, ai_sentiment_confidence = ?, ai_reply_suggestion = ? "
+                "WHERE id = ?",
+                (sentiment_label, float(confidence), reply_text, comment_id),
+            )
+            conn.commit()
     except Exception as exc:  # pragma: no cover — defensive
         _module_logger.warning(
             "[crawler] AI augmentation for comment_id=%s failed: %s: %s",

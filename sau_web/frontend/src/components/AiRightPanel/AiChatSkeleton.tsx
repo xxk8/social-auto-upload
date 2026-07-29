@@ -30,6 +30,8 @@
 // rendering if we later want to test the two paths separately.
 // ──────────────────────────────────────────────────────────────────────────
 
+import { Skeleton } from '@/components/ui/skeleton'
+
 export function AiChatSkeleton({ className }: { className?: string }) {
   return (
     <div
@@ -47,31 +49,30 @@ export function AiChatSkeleton({ className }: { className?: string }) {
           those would create a stale live-region on swap, which is
           worse than the simple readable label approach.) */}
       <div aria-hidden="true" className="mb-3 flex items-center gap-2">
-        <div className="h-5 w-5 rounded-md bg-muted/60 animate-pulse" />
-        <div className="h-3 w-24 rounded bg-muted/60 animate-pulse" />
+        <Skeleton className="h-5 w-5 rounded-md" />
+        <Skeleton className="h-3 w-24 rounded" />
       </div>
 
       <div aria-hidden="true" className="mb-3 flex items-start gap-2.5">
-        <div className="h-9 w-9 shrink-0 rounded-lg bg-muted/60 animate-pulse" />
+        <Skeleton className="h-9 w-9 shrink-0 rounded-lg" />
         <div className="flex-1 space-y-1.5">
-          <div className="h-4 w-2/3 rounded bg-muted/60 animate-pulse" />
-          <div className="h-3 w-full rounded bg-muted/60 animate-pulse" />
-          <div className="h-3 w-5/6 rounded bg-muted/60 animate-pulse" />
+          <Skeleton className="h-4 w-2/3 rounded" />
+          <Skeleton className="h-3 w-full rounded" />
+          <Skeleton className="h-3 w-5/6 rounded" />
         </div>
       </div>
 
       <div aria-hidden="true" className="mb-4 space-y-1.5 pl-2">
-        <div className="h-3 w-3/4 rounded bg-muted/60 animate-pulse" />
-        <div className="h-3 w-2/3 rounded bg-muted/60 animate-pulse" />
-        <div className="h-3 w-4/5 rounded bg-muted/60 animate-pulse" />
+        <Skeleton className="h-3 w-3/4 rounded" />
+        <Skeleton className="h-3 w-2/3 rounded" />
+        <Skeleton className="h-3 w-4/5 rounded" />
       </div>
 
       <div className="flex-1" />
 
-      <div
-        aria-hidden="true"
-        className="ml-auto h-9 w-28 rounded bg-muted/60 animate-pulse"
-      />
+      <div aria-hidden="true" className="ml-auto">
+        <Skeleton className="h-9 w-28 rounded" />
+      </div>
     </div>
   )
 }

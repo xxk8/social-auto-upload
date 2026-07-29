@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "created_at": "2026-07-22T22:36:26",
+      "id": 2,
+      "mode": "video",
+      "name": "smoke",
+      "snapshot": {
+        "title": "hi"
+      },
+      "updated_at": "2026-07-22T22:36:26"
+    },
+    {
+      "created_at": "2026-07-22T19:00:08",
+      "id": 1,
+      "mode": "video",
+      "name": "demo",
+      "snapshot": {
+        "title": "t"
+      },
+      "updated_at": "2026-07-22T19:00:08"
+    }
+  ],
+  "success": true
+}

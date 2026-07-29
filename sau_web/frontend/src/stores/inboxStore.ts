@@ -22,18 +22,14 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 // result lands when the promise resolves.
 //
 // Persisted to localStorage (`sau-inbox`) so rows survive a full page
-// reload (which kills the in-flight fetch chain — only the row metadata
-// is preserved; file recovery is out of scope for v1). Per-entry
-// stripping drops `transcript` (could be 100 KB+ during an OpenAI stream
-// and would blow the ~5 MB localStorage cap) but keeps `error` (handy
-// diagnostic the user wants to see after reload). UI-local state
-// (selection, filter, collapse, search, batch busy, in-flight set) is
-// NOT persisted — fresh defaults on each rehydrate. After hydration,
-// any entry whose persisted `status` was `'downloading'` or
-// `'transcribing'` is auto-flipped to `'failed'` with a clear error
-// message: the underlying fetch promise was killed by the reload, so
-// the row stays visible but the chip honestly turns red instead of
-// being stuck in an infinite-spinner "downloading" state.
+// reload. Per-entry stripping drops `transcript` (could be 100 KB+ and
+// would blow the ~5 MB localStorage cap) but keeps `error`. UI-local
+// state (selection, filter, collapse, search, batch busy, in-flight set)
+// is NOT persisted. In-progress rows (`downloading` / `transcribing`)
+// stay as-is after rehydrate — `resumeInterruptedDownloads()` in
+// `inboxResume.ts` re-issues the fetch so background work continues
+// across reloads. Disk-side history is merged from `GET /api/inbox/list`
+// on InboxPage mount (files under videos/inbox/ that LS never saw).
 
 export type InboxStatus =
   | 'downloading'
@@ -41,6 +37,9 @@ export type InboxStatus =
   | 'failed'
   | 'transcribing'
   | 'transcribed'
+  | 'subtitling'
+
+export type SubtitleMode = 'bilingual' | 'zh' | 'en' | 'source'
 
 // All fields MUST be JSON-serializable primitives — Sets, Dates,
 // and class instances will crash partialize + merge (zustand blindly
@@ -58,6 +57,20 @@ export interface InboxEntry {
   error?: string
   transcript?: string
   startedAt?: number
+  /** Last successful subtitle job result (soft SRT + optional burned video). */
+  subtitleMode?: SubtitleMode
+  subtitleSrtFilename?: string
+  subtitleSrtUrl?: string
+  subtitleBurnedFilename?: string
+  subtitleBurnedUrl?: string
+  /** Live subtitle job progress (0–100). Not persisted. */
+  subtitleProgress?: number
+  subtitlePhase?: string
+  subtitleLabel?: string
+  /** Editable SRT body after generation. */
+  subtitleSrtText?: string
+  /** File size bytes if known from disk list. */
+  sizeBytes?: number
 }
 
 export type StatusFilter = InboxStatus | 'all'
@@ -82,6 +95,13 @@ interface InboxStore {
   clearAll: () => void
   /** Replace all entries (used by batch remove / drag reorder) */
   setEntries: (entries: InboxEntry[]) => void
+  /**
+   * Merge files already on disk (`GET /api/inbox/list`) into the UI list.
+   * Skips filenames already present so in-flight / LS rows win.
+   */
+  mergeDiskFiles: (
+    files: ReadonlyArray<{ filename: string; size?: number; mtime?: string }>,
+  ) => void
 
   // ── Inflight tracking ──
   markInflight: (id: string) => void
@@ -159,6 +179,36 @@ export const useInboxStore = create<InboxStore>()(
 
       setEntries: (entries) => set({ entries }),
 
+      mergeDiskFiles: (files) =>
+        set((s) => {
+          if (!files.length) return s
+          const known = new Set(
+            s.entries
+              .map((e) => e.filename)
+              .filter((name): name is string => Boolean(name)),
+          )
+          const additions: InboxEntry[] = []
+          for (const f of files) {
+            const name = (f.filename || '').trim()
+            if (!name || known.has(name)) continue
+            known.add(name)
+            const mtimeMs = f.mtime ? Date.parse(f.mtime) : NaN
+            additions.push({
+              id: `disk_${name}`,
+              // Disk rows have no original share URL — UI falls back to filename.
+              url: '',
+              filename: name,
+              status: 'downloaded',
+              startedAt: Number.isFinite(mtimeMs) ? mtimeMs : undefined,
+              sizeBytes: typeof f.size === 'number' ? f.size : undefined,
+            })
+          }
+          if (additions.length === 0) return s
+          // Newest disk files first among additions; keep existing (in-session) rows on top.
+          additions.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
+          return { entries: [...s.entries, ...additions] }
+        }),
+
       // ── Inflight tracking ──
       markInflight: (id) =>
         set((s) => {
@@ -223,7 +273,7 @@ export const useInboxStore = create<InboxStore>()(
     }),
     {
       name: 'sau-inbox',
-      version: 1,
+      version: 3,
       // Only `entries` is persisted. UI-local state (selectedIds /
       // collapsedGroups / search query / filterStatus / batchBusy /
       // inflightEntryIds) is intentionally dropped: cross-reload
@@ -245,69 +295,52 @@ export const useInboxStore = create<InboxStore>()(
       // configurations) error loudly rather than silently disabling
       // persist. Production Vite SPA always has localStorage.
       storage: createJSONStorage(() => localStorage),
+      migrate: (persistedState: unknown, version: number) => {
+        // Version 3 (current): already correct format, pass through
+        // — `merge()` below handles final shaping.
+        // Version 2, 1, undefined (legacy unversioned): drop any
+        // stale shape and let `merge()` extract entries from whatever
+        // shape was stored.
+        if (version >= 3) return persistedState
+        // Fallback: return a minimal object with just entries so the
+        // rest of the state falls to in-memory defaults.
+        if (persistedState && typeof persistedState === 'object') {
+          const p = persistedState as Record<string, unknown>
+          if (Array.isArray(p.entries)) {
+            return { entries: p.entries }
+          }
+        }
+        return { entries: [] }
+      },
       // Pure data-massage callback that fires DURING hydrate (before
-      // `create()` returns the store AND before `useInboxStore` is
-      // bound on the LHS). We deliberately DO NOT reference
-      // `useInboxStore` from inside this callback — the closure-on-
-      // itself would sit in TDZ and throw `ReferenceError: Cannot
-      // access 'useInboxStore' before initialization` whenever the
-      // in-browser page reloaded with non-trivial LS state (vitest
-      // + jsdom with `isolate: true` masks this in unit tests, but
-      // real browsers don't). Using the `merge:` callback keeps the
-      // transform pure (no closure needed) and gets the same
-      // post-rehydrate state shape that onRehydrateStorage would
-      // have produced.
+      // `create()` returns). Do NOT reference `useInboxStore` here —
+      // that would sit in TDZ and throw on real-browser reloads.
       //
-      // Three transforms:
-      //   1. `entries` — each entry whose persisted status was
-      //      `'downloading'` or `'transcribing'` is flipped to
-      //      `'failed'` with the pinned interrupted message; the
-      //      underlying fetch promise was killed by the reload, so
-      //      leaving the row stuck in an infinite-spinner state
-      //      would be dishonest. Pre-existing `error` on already-
-      //      failed entries is NOT touched (only the two in-progress
-      //      statuses flip; stable statuses pass through).
-      //   2. `inflightEntryIds` — reset to an empty Set. The LS blob
-      //      carries no in-flight Set (partialize drops it), but the
-      //      in-memory `currentState` may carry one if helper code
-      //      set it via `setState(...)`. After a reload, ZERO
-      //      fetches are running, so empty is the honest state.
-      //      `handleRetry` + `markInflight` re-mark per-id
-      //      immediately when the user clicks 重试.
-      //   3. UI-local state (`selectedIds`, `filterStatus`,
-      //      `collapsedGroups`, `searchQuery`, `batchBusy`) stays at
-      //      its in-memory default because we DON'T spread
-      //      `persistedState` over `currentState` — only `entries`
-      //      is pulled from LS. This is the same contract partialize
-      //      gives on the WRITE path; symmetry eliminates a subtle
-      //      bug class where a rehydrated UI chip could leak across
-      //      reloads.
-      //
-      // Future compatibility: bump `version` + add a `migrate:`
-      // handler here if the persisted shape ever changes.
+      // Transforms:
+      //   1. `entries` — restore as-is. In-progress rows keep
+      //      `downloading` / `transcribing` so `resumeInterruptedDownloads`
+      //      can re-issue the HTTP work after a full page reload.
+      //   2. `inflightEntryIds` — empty Set (no live fetches yet;
+      //      resume marks them again).
+      //   3. UI-local state stays at in-memory defaults (only `entries`
+      //      comes from LS — mirrors partialize on the write path).
       merge: (
         persistedState: unknown,
         currentState: InboxStore,
       ): InboxStore => {
-        // Reuse Partial<InboxStore> so the cast auto-tracks whenever
-        // a new persisted-key is added to InboxStore (e.g. a future
-        // `pinned` flag) — no second structural-type definition to
-        // drift out of sync.
         const persistedEntries =
           (persistedState as Partial<InboxStore> | null | undefined)
             ?.entries ?? []
         return {
           ...currentState,
-          entries: persistedEntries.map((e): InboxEntry =>
-            e.status === 'downloading' || e.status === 'transcribing'
-              ? {
-                  ...e,
-                  status: 'failed',
-                  error:
-                    '页面刷新时下载中断，文件可能已落盘到 videos/inbox/，请重试或手动核验',
-                }
-              : { ...e },
-          ),
+          entries: persistedEntries.map((e): InboxEntry => {
+            // Subtitle jobs are not auto-resumed (long ffmpeg). Drop back to
+            // a stable row so the user can click「添加字幕」again.
+            if (e.status === 'subtitling') {
+              return { ...e, status: 'downloaded', error: undefined }
+            }
+            return { ...e }
+          }),
           inflightEntryIds: new Set<string>(),
         }
       },

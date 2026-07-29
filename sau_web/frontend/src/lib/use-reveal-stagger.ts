@@ -22,11 +22,8 @@
  * ────────────────────────────────────────────────────────────────────── */
 
 import { useRef } from 'react'
-import gsap from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { useGSAP } from '@gsap/react'
-
-gsap.registerPlugin(useGSAP, ScrollTrigger)
+// Always go through the shared setup so ScrollTrigger is registered once.
+import { gsap, useGSAP } from '@/lib/gsap/setup'
 
 export function useRevealStagger() {
   const rootRef = useRef<HTMLDivElement>(null)

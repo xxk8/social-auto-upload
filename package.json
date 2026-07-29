@@ -1,0 +1,16 @@
+{
+  "name": "social-auto-upload",
+  "private": true,
+  "description": "Root convenience scripts — real frontend lives in sau_web/frontend",
+  "scripts": {
+    "dev": "npm run dev --prefix sau_web/frontend",
+    "build": "npm run build --prefix sau_web/frontend",
+    "build:go": "npm run build:go --prefix sau_web/frontend",
+    "typecheck": "npm run typecheck --prefix sau_web/frontend",
+    "typecheck:go": "npm run typecheck:go --prefix sau_web/frontend",
+    "test": "npm run test --prefix sau_web/frontend",
+    "lint": "npm run lint --prefix sau_web/frontend",
+    "preview": "npm run preview --prefix sau_web/frontend",
+    "web": "bash sau_web/start.sh"
+  }
+}

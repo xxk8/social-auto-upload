@@ -14,7 +14,7 @@
  */
 
 export { AiAssistantPanel } from './AiAssistantPanel'
-export { AiRuntimeProvider, buildMagicCommandMessage } from './AiRuntimeProvider'
+export { AiRuntimeProvider } from './AiRuntimeProvider'
 export { useAiChat } from './useAiChat'
 export type { UseAiChatParams, UseAiChatResult, ParsedResponse } from './useAiChat'
 export {
@@ -30,6 +30,7 @@ export {
 } from './MagicSuggestions'
 export {
   parseMagicCommand,
+  buildMagicCommandMessage,
   buildMagicCommandMessage as buildMagicCommandMessageFromCmd,
   MAGIC_COMMANDS,
   MAGIC_HELP_TEXT,

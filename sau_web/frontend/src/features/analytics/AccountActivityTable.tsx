@@ -1,11 +1,20 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import {
   Badge,
+  Button,
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Input,
   Pagination,
+  Progress,
   Skeleton,
   Table,
   TableBody,
@@ -13,27 +22,49 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui/index'
-import { EmptyState } from '@/components/ui/empty-state'
-import {PlatformIcon} from '@/components/ui/platform-icon';import { Users, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { PlatformIcon } from '@/components/ui/platform-icon'
+import {
+  Users,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Search,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { toneTextClass, pctToTone } from '@/lib/tone'
-import { formatDateTime } from '@/lib/features'
+import { toneTextClass, toneBgClass, pctToTone } from '@/lib/tone'
+import { relativeTimeFromNow } from '@/lib/relativeTime'
 import { PLATFORMS } from '@/api/client'
 import type { AccountActivity } from '@/hooks/useAnalytics'
 
 /**
- * §12.6 — AccountActivityTable: sortable table showing per-account
- * stats (total, success, failed, success rate, last active). Success
- * rate cells get tone-based coloring (green ≥100%, amber ≥50%, red <50%).
+ * shadcn Card + Table + Badge + Progress + Empty + Input + Button
+ * @see https://ui.shadcn.com/docs/components/table
+ * @see https://ui.shadcn.com/docs/components/card
  */
 
-type SortKey = 'account' | 'platform' | 'total' | 'success' | 'failed' | 'success_rate' | 'last_active'
+type SortKey =
+  | 'account'
+  | 'platform'
+  | 'total'
+  | 'success'
+  | 'failed'
+  | 'pending'
+  | 'success_rate'
+  | 'last_active'
 type SortDir = 'asc' | 'desc'
 
 interface AccountActivityTableProps {
   data: AccountActivity[]
   loading: boolean
+}
+
+function rateAsPct(rate: number): number {
+  if (!Number.isFinite(rate)) return 0
+  return rate <= 1 && rate > 0 ? rate * 100 : rate
 }
 
 export const AccountActivityTable = memo(function AccountActivityTable({
@@ -42,36 +73,59 @@ export const AccountActivityTable = memo(function AccountActivityTable({
 }: AccountActivityTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('total')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const platformLabel = useMemo(
     () => Object.fromEntries(PLATFORMS.map((p) => [p.value, p.label])),
     [],
   )
 
+  const enriched = useMemo(
+    () =>
+      data.map((row) => ({
+        ...row,
+        pending: Math.max(0, row.total - row.success - row.failed),
+        rate_pct: rateAsPct(row.success_rate),
+      })),
+    [data],
+  )
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return enriched
+    return enriched.filter((row) => {
+      const label = platformLabel[row.platform] ?? row.platform
+      return (
+        row.account.toLowerCase().includes(q) ||
+        row.platform.toLowerCase().includes(q) ||
+        label.toLowerCase().includes(q)
+      )
+    })
+  }, [enriched, query, platformLabel])
+
   const sorted = useMemo(() => {
-    const arr = [...data]
+    const arr = [...filtered]
     arr.sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1
-      const av = a[sortKey]
-      const bv = b[sortKey]
+      const key = sortKey === 'success_rate' ? 'rate_pct' : sortKey
+      const av = a[key as keyof typeof a]
+      const bv = b[key as keyof typeof b]
       if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
       return String(av).localeCompare(String(bv)) * dir
     })
     return arr
-  }, [data, sortKey, sortDir])
+  }, [filtered, sortKey, sortDir])
 
   const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
+    if (sortKey === key) setSortDir((p) => (p === 'asc' ? 'desc' : 'asc'))
+    else {
       setSortKey(key)
       setSortDir('desc')
     }
   }
 
-  // ── pagination ──
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const safePage = Math.min(Math.max(1, page), totalPages)
   const pageItems = useMemo(
@@ -79,150 +133,235 @@ export const AccountActivityTable = memo(function AccountActivityTable({
     [sorted, safePage, pageSize],
   )
 
-  const renderSortIcon = (column: SortKey) => {
-    if (sortKey !== column) return <ArrowUpDown className="h-3 w-3 opacity-40" />
+  const summary = useMemo(() => {
+    const total = enriched.reduce((s, r) => s + r.total, 0)
+    const success = enriched.reduce((s, r) => s + r.success, 0)
+    const failed = enriched.reduce((s, r) => s + r.failed, 0)
+    const pending = enriched.reduce((s, r) => s + r.pending, 0)
+    return {
+      total,
+      success,
+      failed,
+      pending,
+      accounts: enriched.length,
+      avgRate: total > 0 ? (success / total) * 100 : 0,
+    }
+  }, [enriched])
+
+  const SortIcon = ({ column }: { column: SortKey }) => {
+    if (sortKey !== column) return <ArrowUpDown className="size-3 opacity-40" />
     return sortDir === 'asc' ? (
-      <ArrowUp className="h-3 w-3 text-primary" />
+      <ArrowUp className="size-3" />
     ) : (
-      <ArrowDown className="h-3 w-3 text-primary" />
+      <ArrowDown className="size-3" />
     )
   }
 
-  const hasData = sorted.length > 0
+  const SortBtn = ({
+    column,
+    children,
+    className,
+  }: {
+    column: SortKey
+    children: ReactNode
+    className?: string
+  }) => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className={cn('-ml-2 h-8 gap-1 px-2 text-xs font-medium', className)}
+      onClick={() => handleSort(column)}
+    >
+      {children}
+      <SortIcon column={column} />
+    </Button>
+  )
 
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-          <Users className="h-4 w-4 text-primary" />
-          账号活跃度
-        </CardTitle>
+      <CardHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1.5">
+            <CardTitle>账号活跃度</CardTitle>
+            <CardDescription>
+              {loading
+                ? '加载中…'
+                : `共 ${summary.accounts} 个账号 · 任务 ${summary.total} · 均成功率 ${summary.avgRate.toFixed(1)}%`}
+            </CardDescription>
+          </div>
+          <div className="relative w-full sm:w-56">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setPage(1)
+              }}
+              placeholder="搜索账号 / 平台"
+              className="h-8 pl-8"
+            />
+          </div>
+        </div>
+        {!loading && enriched.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="info" className="font-normal tabular-nums">
+              任务 {summary.total}
+            </Badge>
+            <Badge variant="success" className="font-normal tabular-nums">
+              成功 {summary.success}
+            </Badge>
+            <Badge variant="error" className="font-normal tabular-nums">
+              失败 {summary.failed}
+            </Badge>
+            {summary.pending > 0 ? (
+              <Badge variant="warning" className="font-normal tabular-nums">
+                进行中 {summary.pending}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {loading ? (
           <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full rounded" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-md" />
             ))}
           </div>
-        ) : !hasData ? (
-          <EmptyState
-            className="h-[200px]"
-            title="暂无账号数据"
-            description="在选定时间范围内没有账号活动"
-          />
+        ) : sorted.length === 0 ? (
+          <Empty className="min-h-[200px]">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Users />
+              </EmptyMedia>
+              <EmptyTitle>{query ? '无匹配账号' : '暂无账号数据'}</EmptyTitle>
+              <EmptyDescription>
+                {query ? '试试其他关键词' : '在选定时间范围内没有账号活动'}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[140px]">
-                    <button
-                      type="button"
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
-                      onClick={() => handleSort('account')}
-                    >
-                      账号 {renderSortIcon('account')}
-                    </button>
+                  <TableHead className="w-12 text-center">#</TableHead>
+                  <TableHead>
+                    <SortBtn column="account">账号</SortBtn>
                   </TableHead>
-                  <TableHead className="w-[90px]">
-                    <button
-                      type="button"
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
-                      onClick={() => handleSort('platform')}
-                    >
-                      平台 {renderSortIcon('platform')}
-                    </button>
+                  <TableHead>
+                    <SortBtn column="platform">平台</SortBtn>
                   </TableHead>
-                  <TableHead className="w-[60px] text-right">
-                    <button
-                      type="button"
-                      className="flex items-center justify-end gap-1 hover:text-foreground transition-colors"
-                      onClick={() => handleSort('total')}
-                    >
-                      总数 {renderSortIcon('total')}
-                    </button>
+                  <TableHead className="text-right">
+                    <SortBtn column="total" className="ml-auto">
+                      总数
+                    </SortBtn>
                   </TableHead>
-                  <TableHead className="w-[60px] text-right">
-                    <button
-                      type="button"
-                      className="flex items-center justify-end gap-1 hover:text-foreground transition-colors"
-                      onClick={() => handleSort('success')}
-                    >
-                      成功 {renderSortIcon('success')}
-                    </button>
+                  <TableHead className="text-right">
+                    <SortBtn column="success" className="ml-auto">
+                      成功
+                    </SortBtn>
                   </TableHead>
-                  <TableHead className="w-[60px] text-right">
-                    <button
-                      type="button"
-                      className="flex items-center justify-end gap-1 hover:text-foreground transition-colors"
-                      onClick={() => handleSort('failed')}
-                    >
-                      失败 {renderSortIcon('failed')}
-                    </button>
+                  <TableHead className="text-right">
+                    <SortBtn column="failed" className="ml-auto">
+                      失败
+                    </SortBtn>
                   </TableHead>
-                  <TableHead className="w-[80px] text-right">
-                    <button
-                      type="button"
-                      className="flex items-center justify-end gap-1 hover:text-foreground transition-colors"
-                      onClick={() => handleSort('success_rate')}
-                    >
-                      成功率 {renderSortIcon('success_rate')}
-                    </button>
+                  <TableHead className="text-right">
+                    <SortBtn column="pending" className="ml-auto">
+                      进行中
+                    </SortBtn>
                   </TableHead>
-                  <TableHead className="w-[150px]">
-                    <button
-                      type="button"
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
-                      onClick={() => handleSort('last_active')}
-                    >
-                      最后活跃 {renderSortIcon('last_active')}
-                    </button>
+                  <TableHead className="min-w-[140px]">
+                    <SortBtn column="success_rate">成功率</SortBtn>
+                  </TableHead>
+                  <TableHead>
+                    <SortBtn column="last_active">最后活跃</SortBtn>
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageItems.map((row) => {
-                  const tone = row.total > 0 ? pctToTone(row.success_rate * 100) : null
+                {pageItems.map((row, idx) => {
+                  const rank = (safePage - 1) * pageSize + idx + 1
+                  const tone = row.total > 0 ? pctToTone(row.rate_pct) : null
+                  const rel = relativeTimeFromNow(row.last_active) || '—'
                   return (
                     <TableRow key={`${row.platform}-${row.account}`}>
-                      <TableCell className="text-xs font-medium truncate max-w-[140px]">
-                        {row.account}
+                      <TableCell className="text-center">
+                        <Badge
+                          variant={rank <= 3 ? 'default' : 'secondary'}
+                          className="size-6 justify-center rounded-md p-0 text-[10px] tabular-nums"
+                        >
+                          {rank}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium max-w-[160px] truncate">
+                        {row.account || '—'}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <PlatformIcon platform={row.platform} className="h-3.5 w-3.5" />
-                          <span className="text-xs">
+                        <div className="flex items-center gap-2">
+                          <PlatformIcon platform={row.platform} className="size-4" />
+                          <span className="text-sm">
                             {platformLabel[row.platform] ?? row.platform}
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{row.total}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-emerald-500">
-                        {row.success}
-                      </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-destructive">
-                        {row.failed}
+                      <TableCell className="text-right tabular-nums text-sm font-medium">
+                        {row.total}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge
-                          variant="secondary"
-                          className={cn('text-[11px] font-medium tabular-nums', toneTextClass(tone))}
-                        >
-                          {(row.success_rate * 100).toFixed(0)}%
+                        <Badge variant="success" className="font-normal tabular-nums">
+                          {row.success}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDateTime(row.last_active)}
+                      <TableCell className="text-right">
+                        <Badge variant="error" className="font-normal tabular-nums">
+                          {row.failed}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {row.pending > 0 ? (
+                          <Badge variant="warning" className="font-normal tabular-nums">
+                            {row.pending}
+                          </Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1.5 min-w-[120px]">
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              'font-semibold tabular-nums',
+                              toneTextClass(tone),
+                              tone && toneBgClass(tone),
+                            )}
+                          >
+                            {row.rate_pct.toFixed(1)}%
+                          </Badge>
+                          <Progress value={row.rate_pct} className="h-1.5" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-default text-xs text-muted-foreground whitespace-nowrap">
+                              {rel}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{row.last_active || '无记录'}</TooltipContent>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   )
                 })}
               </TableBody>
             </Table>
-            {sorted.length > pageSize && (
+            {sorted.length > pageSize ? (
               <Pagination
-                className="border-t-0"
+                className="border-t"
                 page={safePage}
                 pageSize={pageSize}
                 total={sorted.length}
@@ -232,7 +371,7 @@ export const AccountActivityTable = memo(function AccountActivityTable({
                   setPage(1)
                 }}
               />
-            )}
+            ) : null}
           </div>
         )}
       </CardContent>

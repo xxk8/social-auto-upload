@@ -154,7 +154,7 @@ export function TagInput({
     <>
       <div
         className={cn(
-          'flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-within:ring-1 focus-within:ring-ring',
+          'flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-all duration-150 focus-within:ring-2 focus-within:ring-primary/20',
           // At-limit outline: the fg color serves as a tinted outline (NOT a
           // chip rendering). The lib's vocabulary entry for `border` uses
           // --status-*-border tokens, which would shift hue too far; using

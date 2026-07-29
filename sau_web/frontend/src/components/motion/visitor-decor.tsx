@@ -51,13 +51,12 @@ export function DotGridBg({ className = '' }: DotGridBgProps) {
 
 // ── GlowOrb — soft top-canvas radial pulse ────────────────────────────────
 //
-// 600×600 radial gradient with `filter: blur(80px)` + opacity 0.5.
-// `data-glow-orb` is the GSAP target — `useVisitorMotion` tweens
-// scale 1.18 + opacity 0.65 on a 4.5s sine yoyo. The orb is
-// `position: absolute; top: 0; left: 50%` with `-translate-x-1/2
-// -translate-y-1/3` to sit slightly above the section's top edge
-// so the gradient peaks inside the section and fades off the
-// bottom — not centered on the section.
+// Soft glow via a large radial-gradient only (no `filter: blur`).
+// Live blur forces large offscreen rasterization and is a major FPS
+// source under GSAP scale/opacity pulses. Soft edges come from the
+// gradient stop itself. `data-glow-orb` is the GSAP target —
+// `useVisitorMotion` tweens scale 1.18 + opacity 0.65 on a 4.5s sine
+// yoyo. Sits slightly above the section top edge.
 
 export function GlowOrb() {
   return (
@@ -66,12 +65,12 @@ export function GlowOrb() {
       aria-hidden
       className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/3"
       style={{
-        width: '600px',
-        height: '600px',
+        width: '720px',
+        height: '720px',
         background:
-          'radial-gradient(circle, color-mix(in oklab, var(--primary) 25%, transparent) 0%, transparent 70%)',
-        filter: 'blur(80px)',
+          'radial-gradient(circle, color-mix(in oklab, var(--primary) 28%, transparent) 0%, color-mix(in oklab, var(--primary) 10%, transparent) 35%, transparent 68%)',
         opacity: 0.5,
+        willChange: 'transform, opacity',
       }}
     />
   )
@@ -98,13 +97,14 @@ export function CtaSpotlightGlow() {
       aria-hidden
       className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
       style={{
-        width: '1100px',
-        height: '1100px',
+        width: '1200px',
+        height: '1200px',
+        // Soft edge via multi-stop radial — avoid filter:blur (FPS killer).
         background:
-          'radial-gradient(circle, color-mix(in oklab, var(--primary) 24%, transparent) 0%, transparent 60%)',
-        filter: 'blur(100px)',
+          'radial-gradient(circle, color-mix(in oklab, var(--primary) 26%, transparent) 0%, color-mix(in oklab, var(--primary) 12%, transparent) 32%, transparent 62%)',
         opacity: 0.6,
         mixBlendMode: 'screen',
+        willChange: 'transform, opacity',
       }}
     />
   )

@@ -63,13 +63,22 @@ def calendar_tasks():
     platforms = _csv(request.args.get("platform", ""))
     accounts = _csv(request.args.get("account", ""))
 
-    # Postgres: compare date prefix of COALESCE(scheduled_at, created).
+    # Postgres: ``scheduled_at`` is timestamp, ``created`` is text.
+    # NEVER compare timestamp columns to '' (raises InvalidDatetimeFormat).
+    # Pin day = scheduled_at date when set, else first 10 chars of created.
+    # Day bounds stay lexicographic on YYYY-MM-DD so the SPA can pass
+    # inclusive-start / exclusive-end calendar days.
+    effective_day = (
+        "COALESCE(to_char(scheduled_at, 'YYYY-MM-DD'), left(created, 10))"
+    )
+    effective_sort = (
+        "COALESCE(to_char(scheduled_at, 'YYYY-MM-DD HH24:MI:SS'), created)"
+    )
     sql = (
         "SELECT task_id, platform, account, action, status, "
         "scheduled_at, created, argv, title "
-        "FROM tasks WHERE "
-        "substr(COALESCE(NULLIF(scheduled_at, ''), created), 1, 10) >= ? "
-        "AND substr(COALESCE(NULLIF(scheduled_at, ''), created), 1, 10) < ?"
+        f"FROM tasks WHERE {effective_day} >= ? "
+        f"AND {effective_day} < ?"
     )
     params: list = [start, end]
     if platforms:
@@ -80,7 +89,7 @@ def calendar_tasks():
         ph = ",".join("?" for _ in accounts)
         sql += f" AND account IN ({ph})"
         params.extend(accounts)
-    sql += " ORDER BY COALESCE(NULLIF(scheduled_at, ''), created), task_id"
+    sql += f" ORDER BY {effective_sort}, task_id"
 
     with get_connection() as conn:
         conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
@@ -95,13 +104,20 @@ def calendar_tasks():
         account = row.get("account") or ""
         by_platform[platform or "(none)"] += 1
         by_status[status or "(none)"] += 1
-        scheduled_at = row.get("scheduled_at") or ""
+        scheduled_raw = row.get("scheduled_at")
+        if scheduled_raw is None:
+            scheduled_at = ""
+        elif hasattr(scheduled_raw, "isoformat"):
+            scheduled_at = scheduled_raw.isoformat(sep=" ", timespec="seconds")
+        else:
+            scheduled_at = str(scheduled_raw)
         created = row.get("created") or ""
+        task_id = str(row["task_id"])
         title = row.get("title") or _title_from_argv(
-            row.get("argv"), row.get("action") or "", row["task_id"]
+            row.get("argv"), row.get("action") or "", task_id
         )
         tasks.append({
-            "task_id": row["task_id"],
+            "task_id": task_id,
             "platform": platform,
             "account": account,
             "action": row.get("action"),

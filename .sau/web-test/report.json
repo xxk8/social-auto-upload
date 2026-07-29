@@ -1,0 +1,4396 @@
+{
+  "generatedAt": "2026-07-22T23:13:15.805Z",
+  "pageCount": 29,
+  "pass": 26,
+  "fail": 3,
+  "pagesWithApiFail": [
+    {
+      "name": "hotlist",
+      "path": "/hotlist",
+      "failedApi": [
+        {
+          "url": "/api/hotlist/douyin",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/bilibili",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/kuaishou",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/weibo",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/zhihu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/baidu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/toutiao",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/36kr",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/sspai",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/ithome",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douban-movie",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/qq-news",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douyin",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/bilibili",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/kuaishou",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/weibo",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/zhihu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/baidu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/36kr",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/toutiao",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/ithome",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douban-movie",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/sspai",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/qq-news",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "name": "admin",
+      "path": "/dashboard/admin",
+      "failedApi": [
+        {
+          "url": "/api/admin/system?_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/overview?_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=active_today&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=total_tasks&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=task_success_rate&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=total_users&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/overview?_t=1784761909142",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "name": "admin-users",
+      "path": "/dashboard/admin/users",
+      "failedApi": [
+        {
+          "url": "/api/admin/users?_t=1784761910492",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/users?_t=1784761911501",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "name": "admin-audit",
+      "path": "/dashboard/admin/audit",
+      "failedApi": [
+        {
+          "url": "/api/admin/audit/acknowledge",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit?page=1&per_page=50&_t=1784761912749",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit/acknowledge",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit?page=1&per_page=50&_t=1784761913790",
+          "status": 404
+        }
+      ]
+    }
+  ],
+  "pagesWithConsoleError": [
+    {
+      "name": "hotlist",
+      "path": "/hotlist",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "catalog",
+      "path": "/catalog",
+      "consoleErrors": [
+        "%o\n\n%s\n\n%s\n InvalidCharacterError: Failed to execute 'createElement' on 'Document': The tag name provided ('# Design components\n') is not a valid name.\n    at completeWork (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:6361:137)\n    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:851:66)\n    at completeUnitOfWork (ht",
+        "ErrorBoundary caught: InvalidCharacterError: Failed to execute 'createElement' on 'Document': The tag name provided ('# Design components\n') is not a valid name.\n    at completeWork (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:6361:137)\n    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:851:66)\n    at completeUnit"
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "studio",
+      "path": "/dashboard/studio",
+      "consoleErrors": [
+        "%o\n\n%s\n\n%s\n TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?",
+        "ErrorBoundary caught: TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_"
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "studio-detail",
+      "path": "/dashboard/studio/1",
+      "consoleErrors": [
+        "%o\n\n%s\n\n%s\n TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?",
+        "ErrorBoundary caught: TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_"
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "crawl",
+      "path": "/dashboard/crawl",
+      "consoleErrors": [
+        "In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <div> p \n\n  ...\n    <CrawlPage>\n      <CrawlDashboardPage>\n        <PageWrapper>\n          <div className=\"p-6 max-w-...\" data-testid={undefined}>\n            <div className=\"space-y-6\">\n              <motion.div>\n              <HealthStatsStrip platform=\"xhs\">\n                <div className=\"grid grid-...\">\n         ",
+        "<%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. p <div>"
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "admin",
+      "path": "/dashboard/admin",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "admin-users",
+      "path": "/dashboard/admin/users",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": []
+    },
+    {
+      "name": "admin-audit",
+      "path": "/dashboard/admin/audit",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": []
+    }
+  ],
+  "interactions": [
+    {
+      "name": "dashboard shows account group",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n账号管理\n\n管理账号分组和平台授权\n\n一键检测\n新建分组\n账号分组\n1\n尚无平台授权\n有效率\n—\n暂无授权可检测\n最近发布\n抖音\ne2e-dry · 16 分钟前\n失败\n…505-0e9df9\n正在运行\n534\n534 个任务进行中\n/\n全部\n有效\n失效\n全选\n浏览器测试组\n\n暂无授权"
+      }
+    },
+    {
+      "name": "dashboard create group dialog",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "clicked": "新建分组",
+        "after": {
+          "hasDialog": true,
+          "text": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n账号管理\n\n管理账号分组和平台授权\n\n一键检测\n新建分组\n账号分组\n1\n尚无平台授权\n有效率\n—\n暂无授权可检测\n最近发布\n抖音\ne2e-dry · 17 分钟前\n失败\n…505-0e9df9\n正在运行\n534\n534 个任务进行中\n/\n全部\n有效\n失效\n全选\n浏览器测试组\n\n暂无授权\n\n暂无平台授权\n\n添加平台以开始使用\n\n添加授权\n新建账号分组\n\n创建一个分组来管理多个平台的授权"
+        }
+      }
+    },
+    {
+      "name": "publish page form surface",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "inputs": 6,
+        "fileInputs": 1,
+        "hasVideo": true,
+        "hasNote": true,
+        "hasPublish": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n发布中心\n\n发布视频或图文到多个平台\n\n0\n\n可用账号\n\n7\n\n支持平台\n\n—\n\n最近提交\n\n发布视频\n发布图文\n选择发布账号组\n账号分组\n*\n（必填）\n选择一个账号分组…\n内容素材\n视频文件\n\n点击此区域或拖拽视频文件到此处上传\n\n支持 MP4 / MOV / AVI 等常见格式\n\n标题\n0/100\n视频简介\n标签\n无限制\n高级选项\nClear\nSubmit video\nAI 助手\n·\n未配置\n·\ngemma-4-26b-a4b-it\n选一个动作开始\n一键全流程\n增强 → 生成 "
+      }
+    },
+    {
+      "name": "publish switch note mode",
+      "ok": true,
+      "soft": true,
+      "detail": {
+        "ok": true,
+        "clicked": true,
+        "label": "发布图文",
+        "body": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n发布中心\n\n发布视频或图文到多个平台\n\n0\n\n可用账号\n\n7\n\n支持平台\n\n—\n\n最近提交\n\n发布视频\n发布图文\n选择发布账号组\n账号分组\n*\n（必填）\n选择一个账号分组…\n内容素材\n视频文件\n\n点击此区域或拖拽视频文件到此处上传\n\n支持 MP4 / MOV / AVI 等常见格式\n\n标题\n0/100\n视频简介\n标签\n无限制\n高级选项\nClear\nSubmit video\nAI 助手"
+      }
+    },
+    {
+      "name": "tasks page shows data",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "hasTask": true,
+        "rows": 570,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n任务列表\n\n查看和管理所有上传任务\n\n新建任务\n全部\n569\n等待中\n534\n执行中\n0\n定时中\n32\n成功\n0\n失败\n3\n异常\n0\nIn progress\n566\nFailed/Errored\n3\nTotal\n569\n清理\n新建任务\n轮询中\nR·N·/\n\tTask ID\tPlatform\tAction\tAccount\tStatus\tCreated\tActions\n\tcopy-065505-0e9df9\tdouyin\tcheck\te2e-dry\t\n\t\t\nDetails\n\n\tcheck-065505-78b3f1\tdouyin\tcheck\te2e-dry\t\n\t\t\nDetails\n\n"
+      }
+    },
+    {
+      "name": "tasks filter failed chip",
+      "ok": true,
+      "soft": true,
+      "detail": {
+        "ok": true,
+        "clicked": true,
+        "label": "失败3"
+      }
+    },
+    {
+      "name": "logs page shows entries",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "hasLog": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n运行日志\n\n实时查看系统运行日志\n\n导出日志\n全部\n712\n信息\n712\n警告\n0\n错误\n0\n按任务筛选\n自动滚动\n重置\n导出日志\n2026/7/23 01:35:37\n[upload] saved temp file: /var/folders/f0/yb34hn8j3_534pp5kct27bdw0000gn/T/tmpgq9mc5nw/uploads/7031042ba33e4cbaa6b85825b5e201c0.png (10307 bytes)\n2026/7/23 01"
+      }
+    },
+    {
+      "name": "studio lists projects",
+      "ok": false,
+      "soft": false,
+      "detail": {
+        "ok": false,
+        "hasProject": false,
+        "snippet": "页面出错了\n\n应用遇到了一个错误，刷新页面通常可以解决。\n\nCannot read properties of undefined (reading 'labelKey')\n刷新页面"
+      }
+    },
+    {
+      "name": "studio create + open detail",
+      "ok": false,
+      "soft": false,
+      "detail": {
+        "ok": false,
+        "id": 5,
+        "status": 200,
+        "snippet": "页面出错了\n\n应用遇到了一个错误，刷新页面通常可以解决。\n\nCannot read properties of undefined (reading 'labelKey')\n刷新页面"
+      }
+    },
+    {
+      "name": "crawl page content",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "okText": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n数据采集 / 评论监控\n\n7 个平台的关键词搜索 · 帖子详情 · 评论树 · AI 情感分析 + 自动回复建议\n\n小红书\n抖音\n快手\nB站\n微博\n贴吧\n知乎\n关键词搜索\n帖子详情\n二级评论\nAI 情感\n回复建议\n\n0\n\n内容总数\n\n0\n\n评论总数\n\n—\n\nAPI 状态\n\n情感分布（小红书，共 2 条）\n2\n总评论\n正面\n0\n负面\n0\n中性\n2\n100%\n待分析\n0\n任务\n已采集内容\n评论与情感\n启动新的爬虫任务\n任务类型\n搜索\n详情\n评论\n关键词\n数量上限\n使用账号\n暂无 小红书 授权账号\n启动搜索\n\n还没有启动过任务。输入关键词后点击「启动」开始。"
+      }
+    },
+    {
+      "name": "inbox download surface",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "hasUrl": true,
+        "inputs": [
+          "https://www.youtube.com/watch?v=... 或抖音/小红书分享链接"
+        ],
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n>\n_\n下载中心\n\n从分享链接下载到本地，再转写音视频文案\n\n视频分享链接\n粘贴\n下载\n\nyt-dlp 优先；不支持回落 patchright 浏览器抓取。拒绝私有/回环 IP（含 DNS 解析层）。数据归属您，24h 后自动清理。\n\n支持下载\n抖音\n快手\n小红书\nB站\nYouTube\nTikTok\nX (Twitter)\nInstagram\nFacebook\n视频号\n西瓜视频\nDailymotion\nRumble\nVK\n其他·通用\n下载记录 0\n\n暂无下载记录，粘贴分享链接开始下载\n\n1. 粘贴 URL\n→\n2. 下载\n→\n3. 转写文案"
+      }
+    },
+    {
+      "name": "analytics metrics",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "hasMetrics": true,
+        "svg": 38,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n数据分析\n\n发布趋势、平台表现、账号活跃度\n\n导出 CSV\n时间范围\n近 7 天\n近 30 天\n近 90 天\n全部\n概览\n效果\n\n569\n\n总发布\n\n0%\n\n成功率\n\n0/569\n\n11\n\n活跃账号\n\n569\n\n今日\n\n成功率趋势\n07-23\n0%\n25%\n50%\n75%\n100%\n发布趋势\n07-23\n0\n1\n2\n3\n4\n平台分布\n抖音 3\n失败原因 Top 5\n0\n1\n2\n3\ninvalid\n账号活跃度\n账号\n\t\n平台\n\t\n总数\n\t\n成功\n\t\n失败\n\t\n成功率\n\t\n最后活跃\n\ntest\t\n抖音\n\t145\t0\t0\t0%\t\nup\t\nBilibili\n\t91\t0\t0\t0%\t\ncre"
+      }
+    },
+    {
+      "name": "calendar surface",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "hasCal": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n内容日历\n\n按时间维度查看排期和发布节奏，支持周/月切换、平台筛选和统计摘要。\n\n刷新\n今日\n2026 年 7 月\n周\n月\n平台\n抖音\n快手\n小红书\n视频号\nBilibili\nTikTok\n百家号\n账号\ncreator\ne2e-dry\ntest\nup\nTodayBackNext\nJuly 2026\nMonthWeek\nSun\nMon\nTue\nWed\nThu\nFri\nSat\n28\n29\n30\n01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n1"
+      }
+    },
+    {
+      "name": "settings page renders",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n设置\n\n账号权限与套餐管理\n\n当前套餐\n套餐\n社区版\n\n认证用户专享 · 历史数据永保\n\n升级套餐\n价格\n\n感谢您的早期支持\n\n已包含\n包含自由版所有功能\n历史数据永久保留\n升级至专业版可享首月半价\n健康告警通知\n\n当账号 cookie 从「健康」降级为「即将过期」或「已失效」时，系统"
+      }
+    },
+    {
+      "name": "personalization page renders",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n个性化\n\n外观与显示\n\n主题\n浅色\n明亮背景 · 适合日间使用\n深色\n深色背景 · 长时间阅读更舒适\n跟随系统\n由操作系统外观自动切换\n\n工程化界面美学 — 色板可在下方「主题色」选择器中切换。\n\n主题色\n主题色\n绿\nGitHub green · 自然信号\n琥珀\n暖色 · 高对比 CT"
+      }
+    },
+    {
+      "name": "account profile page",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n账户\n\n个人信息与账号管理\n\n账号信息\n邮箱\nlocal@sau.local\n角色\n管理员\n显示名\n本地操作员\n设置密码\n\n设置密码后可使用密码登录。密码至少 8 位，需包含字母和数字。\n\n密码\n确认密码\n保存"
+      }
+    },
+    {
+      "name": "admin overview",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n概览\n用户管理\n审计日志\n系统概览\n\n项目使用统计与最近活动\n\n尚未更新\n7d\n14d\n30d\n下载趋势\n刷新\n0\n总用户数\n全部\n0\n今日活跃\n活跃用户\n0\n总任务数\n历史累计\n0%\n任务成功率\n近 30 天\n最近操作\n最近 10 条\n全部\n今天\n本周\n本月\n自定义\nEMPTY FE"
+      }
+    },
+    {
+      "name": "nav click to publish",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "clicked": true,
+        "url": "http://localhost:5174/dashboard/publish"
+      }
+    },
+    {
+      "name": "command palette Meta+K",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "open": true,
+        "hasDialog": true,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n账号管理\n\n管理账号分组和平台授权\n\n一键检测\n新建分组\n账号分组\n1\n尚无平台授权\n有效率\n—\n暂无授权可检测\n最近发布\n抖音\ne2e-dry · 17 分钟前\n失败\n…505-0e9"
+      }
+    },
+    {
+      "name": "pricing page tiers",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": ">_\nsocial-auto-upload\nHome\nPricing\nHot List\nAbout\n本\n>_\nsocial-auto-upload\n本地部署 · 14 天免费试用 · 免费版永久免费\n按你的运营规模 选择套餐\n\n从单兵创作者到大规模矩阵,都有合适的选择。所有版本均包含本地部署能力,数据始终归属您。\n\n免费开始 →\n联系销售\n免费版\n\n先尝鲜 · 零成本长期可用\n\n¥0\n永久免费\n包含权限\n1 个平台账号\n每月 40 条发布额度\n定时发布 + 任务追踪\n本地部署 · 数据归属您\n升级专业版解锁 AI 内容生成 + 图片素材搜索\n免费开始 →\n个人版\n\n单兵创作者效率之选\n\n¥39"
+      }
+    },
+    {
+      "name": "hotlist page content",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": ">_\nsocial-auto-upload\nHome\nPricing\nHot List\nAbout\n本\n今日热榜\n\n汇聚全网热点\n\n全部\n抖音\n快手\n哔哩哔哩\n微博\n知乎\n百度\n今日头条\n豆瓣\n36氪\n少数派\nIT之家\n腾讯新闻\n抖音\n暂无数据\n快手\n暂无数据\n哔哩哔哩\n暂无数据\n微博\n暂无数据\n知乎\n暂无数据\n百度\n暂无数据\n今日头条\n暂无数据\n豆瓣\n暂无数据\n36氪\n暂无数据\n少数派\n暂无数据\nIT之家\n暂无数据\n腾讯新闻\n暂无数据\n>_\nsocial-auto-upload\nMulti-platform video auto-publish tool\nPRODUCT\nFeatures\nP"
+      }
+    },
+    {
+      "name": "about page content",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "snippet": ">_\nsocial-auto-upload\nHome\nPricing\nHot List\nAbout\n本\n>_\nsocial-auto-upload\n为什么做这个项目\n把繁琐重复的事 交给脚本\n\nsocial-auto-upload 是一个为视频创作者 / 矩阵运营 / MCN 设计的多平台自动发布工具。我们相信:内容分发的繁琐工作不该消耗创作者的主要精力。\n\n私有部署\n数据归属您 · 不上云\n稳定可靠\n持续更新 · 安全维护\n专业支持\n企业方案 · 定制交付\n>_\nsocial-auto-upload\n平台覆盖矩阵\n6 平台 · 持续扩展\n抖音\n视频\n图文\n定时\nB站\n视频\n定时\n小红书\n视频"
+      }
+    },
+    {
+      "name": "login page fields",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "inputs": 3,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n发布中心\n\n发布视频或图文到多个平台\n\n0\n\n可用账号\n\n7\n\n支持平台\n\n—\n\n最近提交\n\n发布视频\n发布图文\n选择发布账号组\n账号分组\n*\n（必填）\n选择一个账号分组…\n内容素材\n视频文件\n\n点击此区域或拖拽视频文件到此处上传\n\n支持 MP4 / MOV / AVI 等常见格式\n\n标题\n0/100\n视频简介\n标签\n无限制\n高级选项\nClear\nSubmit video\nAI 助手"
+      }
+    },
+    {
+      "name": "API account-groups + templates + analytics",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "groups": 1,
+        "templates": [
+          "smoke",
+          "demo"
+        ],
+        "analyticsKeys": [
+          "by_day",
+          "by_platform",
+          "failed",
+          "failure_reasons",
+          "from",
+          "prev_success",
+          "prev_total",
+          "success",
+          "to",
+          "today",
+          "total"
+        ]
+      }
+    },
+    {
+      "name": "API crawl data + inbox list",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "crawlCount": 4,
+        "inboxCount": 0
+      }
+    },
+    {
+      "name": "API calendar range",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "keys": [
+          "summary",
+          "tasks"
+        ]
+      }
+    },
+    {
+      "name": "legacy /publish redirects",
+      "ok": false,
+      "soft": false,
+      "detail": {
+        "ok": false,
+        "url": "http://localhost:5174/publish"
+      }
+    },
+    {
+      "name": "publish fill title draft",
+      "ok": true,
+      "soft": true,
+      "detail": {
+        "ok": true,
+        "filled": true,
+        "value": "全方面测试标题 1784761992682",
+        "placeholder": "Enter video title (6-20 chars recommended)"
+      }
+    },
+    {
+      "name": "tasks has retry/delete actions",
+      "ok": true,
+      "soft": false,
+      "detail": {
+        "ok": true,
+        "hasRetry": false,
+        "hasDelete": false,
+        "snippet": "SAU Shell\nSocial Auto Upload\n导航\n账号管理\n发布中心\n任务列表\n数据分析\n运行日志\n下载中心\n内容日历\n剧本工坊\n数据采集\nS\nSAU Admin\nv1.0.0\n重新引导\n搜索\n⌘K\n任务列表\n\n查看和管理所有上传任务\n\n新建任务\n全部\n569\n等待中\n534\n执行中\n0\n定时中\n32\n成功\n0\n失败\n3\n异常\n0\nIn progress\n566\nFailed/Errored\n3\nTotal\n569\n清理\n新建任务\n轮询中\nR·N·/\n\tTask ID\tPlatfo"
+      }
+    }
+  ],
+  "interactionPass": 26,
+  "interactionFail": 3,
+  "results": [
+    {
+      "name": "landing",
+      "path": "/",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "One video. One command. Every platform."
+      ],
+      "headings": [
+        "One video. One command. Every platform.",
+        "Mainstream Chinese platforms, end to end",
+        "Four daily headaches. We automate them.",
+        "Batch publish everywhere",
+        "Smart scheduling",
+        "AI captioning",
+        "Account groups",
+        "Three steps. Zero code.",
+        "Upload media",
+        "Pick your group",
+        "Publish or schedule",
+        "Hand the publishing pipelineto the tool."
+      ],
+      "buttons": [
+        "本"
+      ],
+      "inputs": [],
+      "bodySnippet": ">_ social-auto-upload Home Pricing Hot List About 本 Multi-platform · Local-first · Self-hosted One video. One command. Every platform. Upload a video, pick an account group, schedule to Douyin / Bilibili / Xiaohongshu / Kuaishou / WeChat Video / Baijia. Stop switching apps, copy-pasting captions, watching each platform feed. Get started → See what it does Multi platform · full coverage 3h+/day saved vs. multi-account chaos No cloud your data · your server >_ social-auto-upload 发布中心 4 个平台已选 抖音 B站 小红书 快手 夏季新品发布视频.mp4 2:34 夏季新品发布 · 限时优惠 夏季新品 · 限时优惠 · 穿搭 一键发布到 4 个平台 发布 SUPPORTED PLATFORMS Mainstream Chinese platforms, end to end Douyin, Bilibili, Xiaohongshu, Kuaishou, WeChat Video, Baijia — one",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761846289",
+          "status": 200
+        }
+      ],
+      "loadMs": 6071,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/landing.png"
+    },
+    {
+      "name": "login",
+      "path": "/login",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/publish",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "发布中心"
+      ],
+      "headings": [
+        "发布中心",
+        "高级选项",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "发布视频",
+        "发布图文",
+        "选择一个账号分组…",
+        "高级选项",
+        "Clear",
+        "Submit video",
+        "gemma-4-26b-a4b-it",
+        "一键全流程增强 → 生成 → 应用",
+        "多平台变体各平台并行生成",
+        "优化表达只跑提示词优化",
+        "自由对话聊天式打磨",
+        "一键生成",
+        "多平台变体",
+        "优化表达",
+        "应用上次",
+        "清空",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser",
+        "发送"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "file",
+          "name": "video-file-input",
+          "placeholder": ""
+        },
+        {
+          "tag": "input",
+          "type": "",
+          "name": "title",
+          "placeholder": "Enter video title (6-20 chars recommended)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "video-desc",
+          "placeholder": "Add a description, background notes, or posting remarks"
+        },
+        {
+          "tag": "input",
+          "type": "text",
+          "name": "",
+          "placeholder": "Press Enter to add tags (# optional)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "input",
+          "placeholder": "输入你的需求，回车发送（输入 / 查看快捷命令）"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "",
+          "placeholder": ""
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 发布中心 发布视频或图文到多个平台 0 可用账号 7 支持平台 — 最近提交 发布视频 发布图文 选择发布账号组 账号分组 * （必填） 选择一个账号分组… 内容素材 视频文件 点击此区域或拖拽视频文件到此处上传 支持 MP4 / MOV / AVI 等常见格式 标题 0/100 视频简介 标签 无限制 高级选项 Clear Submit video AI 助手 · 未配置 · gemma-4-26b-a4b-it 选一个动作开始 一键全流程 增强 → 生成 → 应用 多平台变体 各平台并行生成 优化表达 只跑提示词优化 自由对话 聊天式打磨 一键生成 多平台变体 优化表达 应用上次 清空 图片素材 Pexels · Pixabay 链接拉取 yt-dlp + browser 发送 回车发送 · Shift+回车换行 · 输入 / 用快捷命令",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761851988",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/config?_t=1784761852446",
+          "status": 200
+        },
+        {
+          "url": "/api/usage/quota?_t=1784761852446",
+          "status": 200
+        },
+        {
+          "url": "/api/accounts?_t=1784761852446",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/keys?_t=1784761852446",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761852446",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/models?_t=1784761852446",
+          "status": 200
+        }
+      ],
+      "loadMs": 5719,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/login.png"
+    },
+    {
+      "name": "login-auth",
+      "path": "/login/auth",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/publish",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "发布中心"
+      ],
+      "headings": [
+        "发布中心",
+        "高级选项",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "发布视频",
+        "发布图文",
+        "选择一个账号分组…",
+        "高级选项",
+        "Clear",
+        "Submit video",
+        "gemma-4-26b-a4b-it",
+        "一键全流程增强 → 生成 → 应用",
+        "多平台变体各平台并行生成",
+        "优化表达只跑提示词优化",
+        "自由对话聊天式打磨",
+        "一键生成",
+        "多平台变体",
+        "优化表达",
+        "应用上次",
+        "清空",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser",
+        "发送"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "file",
+          "name": "video-file-input",
+          "placeholder": ""
+        },
+        {
+          "tag": "input",
+          "type": "",
+          "name": "title",
+          "placeholder": "Enter video title (6-20 chars recommended)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "video-desc",
+          "placeholder": "Add a description, background notes, or posting remarks"
+        },
+        {
+          "tag": "input",
+          "type": "text",
+          "name": "",
+          "placeholder": "Press Enter to add tags (# optional)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "input",
+          "placeholder": "输入你的需求，回车发送（输入 / 查看快捷命令）"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "",
+          "placeholder": ""
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 发布中心 发布视频或图文到多个平台 0 可用账号 7 支持平台 — 最近提交 发布视频 发布图文 选择发布账号组 账号分组 * （必填） 选择一个账号分组… 内容素材 视频文件 点击此区域或拖拽视频文件到此处上传 支持 MP4 / MOV / AVI 等常见格式 标题 0/100 视频简介 标签 无限制 高级选项 Clear Submit video AI 助手 · 未配置 · gemma-4-26b-a4b-it 选一个动作开始 一键全流程 增强 → 生成 → 应用 多平台变体 各平台并行生成 优化表达 只跑提示词优化 自由对话 聊天式打磨 一键生成 多平台变体 优化表达 应用上次 清空 图片素材 Pexels · Pixabay 链接拉取 yt-dlp + browser 发送 回车发送 · Shift+回车换行 · 输入 / 用快捷命令",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761856474",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/config?_t=1784761856885",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/keys?_t=1784761856885",
+          "status": 200
+        },
+        {
+          "url": "/api/accounts?_t=1784761856885",
+          "status": 200
+        },
+        {
+          "url": "/api/usage/quota?_t=1784761856885",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761856885",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/models?_t=1784761856885",
+          "status": 200
+        }
+      ],
+      "loadMs": 3580,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/login-auth.png"
+    },
+    {
+      "name": "forgot-password",
+      "path": "/login/forgot-password",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/publish",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "发布中心"
+      ],
+      "headings": [
+        "发布中心",
+        "高级选项",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "发布视频",
+        "发布图文",
+        "选择一个账号分组…",
+        "高级选项",
+        "Clear",
+        "Submit video",
+        "gemma-4-26b-a4b-it",
+        "一键全流程增强 → 生成 → 应用",
+        "多平台变体各平台并行生成",
+        "优化表达只跑提示词优化",
+        "自由对话聊天式打磨",
+        "一键生成",
+        "多平台变体",
+        "优化表达",
+        "应用上次",
+        "清空",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser",
+        "发送"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "file",
+          "name": "video-file-input",
+          "placeholder": ""
+        },
+        {
+          "tag": "input",
+          "type": "",
+          "name": "title",
+          "placeholder": "Enter video title (6-20 chars recommended)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "video-desc",
+          "placeholder": "Add a description, background notes, or posting remarks"
+        },
+        {
+          "tag": "input",
+          "type": "text",
+          "name": "",
+          "placeholder": "Press Enter to add tags (# optional)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "input",
+          "placeholder": "输入你的需求，回车发送（输入 / 查看快捷命令）"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "",
+          "placeholder": ""
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 发布中心 发布视频或图文到多个平台 0 可用账号 7 支持平台 — 最近提交 发布视频 发布图文 选择发布账号组 账号分组 * （必填） 选择一个账号分组… 内容素材 视频文件 点击此区域或拖拽视频文件到此处上传 支持 MP4 / MOV / AVI 等常见格式 标题 0/100 视频简介 标签 无限制 高级选项 Clear Submit video AI 助手 · 未配置 · gemma-4-26b-a4b-it 选一个动作开始 一键全流程 增强 → 生成 → 应用 多平台变体 各平台并行生成 优化表达 只跑提示词优化 自由对话 聊天式打磨 一键生成 多平台变体 优化表达 应用上次 清空 图片素材 Pexels · Pixabay 链接拉取 yt-dlp + browser 发送 回车发送 · Shift+回车换行 · 输入 / 用快捷命令",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761859958",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/keys?_t=1784761860379",
+          "status": 200
+        },
+        {
+          "url": "/api/usage/quota?_t=1784761860379",
+          "status": 200
+        },
+        {
+          "url": "/api/accounts?_t=1784761860379",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761860379",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/config?_t=1784761860379",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/models?_t=1784761860379",
+          "status": 200
+        }
+      ],
+      "loadMs": 3441,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/forgot-password.png"
+    },
+    {
+      "name": "reset-password",
+      "path": "/login/reset-password",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/publish",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "发布中心"
+      ],
+      "headings": [
+        "发布中心",
+        "高级选项",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "发布视频",
+        "发布图文",
+        "选择一个账号分组…",
+        "高级选项",
+        "Clear",
+        "Submit video",
+        "gemma-4-26b-a4b-it",
+        "一键全流程增强 → 生成 → 应用",
+        "多平台变体各平台并行生成",
+        "优化表达只跑提示词优化",
+        "自由对话聊天式打磨",
+        "一键生成",
+        "多平台变体",
+        "优化表达",
+        "应用上次",
+        "清空",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser",
+        "发送"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "file",
+          "name": "video-file-input",
+          "placeholder": ""
+        },
+        {
+          "tag": "input",
+          "type": "",
+          "name": "title",
+          "placeholder": "Enter video title (6-20 chars recommended)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "video-desc",
+          "placeholder": "Add a description, background notes, or posting remarks"
+        },
+        {
+          "tag": "input",
+          "type": "text",
+          "name": "",
+          "placeholder": "Press Enter to add tags (# optional)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "input",
+          "placeholder": "输入你的需求，回车发送（输入 / 查看快捷命令）"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "",
+          "placeholder": ""
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 发布中心 发布视频或图文到多个平台 0 可用账号 7 支持平台 — 最近提交 发布视频 发布图文 选择发布账号组 账号分组 * （必填） 选择一个账号分组… 内容素材 视频文件 点击此区域或拖拽视频文件到此处上传 支持 MP4 / MOV / AVI 等常见格式 标题 0/100 视频简介 标签 无限制 高级选项 Clear Submit video AI 助手 · 未配置 · gemma-4-26b-a4b-it 选一个动作开始 一键全流程 增强 → 生成 → 应用 多平台变体 各平台并行生成 优化表达 只跑提示词优化 自由对话 聊天式打磨 一键生成 多平台变体 优化表达 应用上次 清空 图片素材 Pexels · Pixabay 链接拉取 yt-dlp + browser 发送 回车发送 · Shift+回车换行 · 输入 / 用快捷命令",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761863267",
+          "status": 200
+        },
+        {
+          "url": "/api/usage/quota?_t=1784761863668",
+          "status": 200
+        },
+        {
+          "url": "/api/accounts?_t=1784761863668",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/config?_t=1784761863668",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/keys?_t=1784761863668",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761863668",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/models?_t=1784761863668",
+          "status": 200
+        }
+      ],
+      "loadMs": 3461,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/reset-password.png"
+    },
+    {
+      "name": "pricing",
+      "path": "/pricing",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/pricing",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "按你的运营规模 选择套餐"
+      ],
+      "headings": [
+        "按你的运营规模 选择套餐",
+        "一表看清差异",
+        "一套能力 · 任选你的规模",
+        "批量发布",
+        "定时发布",
+        "账号组管理",
+        "AI 文案生成",
+        "本地部署",
+        "持续维护",
+        "团队与企业 专属能力",
+        "团队版 · 矩阵运营利器",
+        "企业版 · 私有化交付",
+        "就现在选一个方向"
+      ],
+      "buttons": [
+        "本"
+      ],
+      "inputs": [],
+      "bodySnippet": ">_ social-auto-upload Home Pricing Hot List About 本 >_ social-auto-upload 本地部署 · 14 天免费试用 · 免费版永久免费 按你的运营规模 选择套餐 从单兵创作者到大规模矩阵,都有合适的选择。所有版本均包含本地部署能力,数据始终归属您。 免费开始 → 联系销售 免费版 先尝鲜 · 零成本长期可用 ¥0 永久免费 包含权限 1 个平台账号 每月 40 条发布额度 定时发布 + 任务追踪 本地部署 · 数据归属您 升级专业版解锁 AI 内容生成 + 图片素材搜索 免费开始 → 个人版 单兵创作者效率之选 ¥39 / 月 年付 ¥399/年 ≈ ¥33/月 14 天免费试用 包含权限 5 个平台账号 每月 200 条发布额度 AI 文案生成 (高级模型) 账号组管理 + 数据统计面板 定时发布 + 失败自动重试 优先客服支持 本地部署 · 数据归属您 开始试用 → 推荐 团队版 MCN / 矩阵运营的最佳选择 ¥199 / 月 年付 ¥1999/年 ≈ ¥167/月 14 天免费试用 包含权限 12 个平台账号 不限发布次数 AI 文案生成 (多模型切换) 账号组管理 + 多人协作 定时发布 + 失败自动重试 数据看板 + 优先客服 本地部署 · 数据归属您 立即订阅 → 企业版 大规模矩阵 · 私有化交付 联系销售 定制方案 包含权限 不限账号数 不限发布次数 AI 文案生成 (私有模型可选) 多团队 + 角色权限 SSO / SCIM / 审计日志 支持私有化部署 / 定制开发 联系销售 → 功能对比 一",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761866357",
+          "status": 200
+        }
+      ],
+      "loadMs": 1859,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/pricing.png"
+    },
+    {
+      "name": "about",
+      "path": "/about",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/about",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "把繁琐重复的事 交给脚本",
+        "持续迭代 稳定可靠",
+        "按你的运营规模 决定套餐",
+        "看完之后 挑一个方向"
+      ],
+      "buttons": [
+        "本"
+      ],
+      "inputs": [],
+      "bodySnippet": ">_ social-auto-upload Home Pricing Hot List About 本 >_ social-auto-upload 为什么做这个项目 把繁琐重复的事 交给脚本 social-auto-upload 是一个为视频创作者 / 矩阵运营 / MCN 设计的多平台自动发布工具。我们相信:内容分发的繁琐工作不该消耗创作者的主要精力。 私有部署 数据归属您 · 不上云 稳定可靠 持续更新 · 安全维护 专业支持 企业方案 · 定制交付 >_ social-auto-upload 平台覆盖矩阵 6 平台 · 持续扩展 抖音 视频 图文 定时 B站 视频 定时 小红书 视频 图文 定时 快手 视频 图文 定时 视频号 视频 定时 百家号 视频 定时 一条视频 · 同步分发 6 平台 项目活跃度 持续迭代 稳定可靠 产品每周持续迭代,6 大平台适配器持续打磨,保障多账号发布流程稳定可靠。 6 主流平台 · 已覆盖 抖音 · B站 · 小红书 · 快手 · 视频号 · 百家号,持续适配跟进 7×24h 定时发布 · 自动运行 预排流量高峰时段,任务自动排队,无需人工值守 100% 部署位置 · 本地部署 数据归属您,不上云,完整离线可用,企业数据安全无忧 三档可选 按你的运营规模 决定套餐 从单兵创作者到大规模矩阵,都有合适的选择。完整的对比与价格请前往定价页。 个人版 单兵创作者日常发布 ¥0 永久免费 包含权限 最多接入 3 个平台账号 每月 30 条发布额度 定时发布 + 任务追踪 本地部署 · 数据归属您 比较套餐 → 推荐 团队版 MCN / 矩阵运营的最",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761868643",
+          "status": 200
+        }
+      ],
+      "loadMs": 2139,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/about.png"
+    },
+    {
+      "name": "hotlist",
+      "path": "/hotlist",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/hotlist",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "今日热榜"
+      ],
+      "headings": [
+        "今日热榜"
+      ],
+      "buttons": [
+        "本",
+        "全部",
+        "抖音",
+        "快手",
+        "哔哩哔哩",
+        "微博",
+        "知乎",
+        "百度",
+        "今日头条",
+        "豆瓣",
+        "36氪",
+        "少数派",
+        "IT之家",
+        "腾讯新闻"
+      ],
+      "inputs": [],
+      "bodySnippet": ">_ social-auto-upload Home Pricing Hot List About 本 今日热榜 汇聚全网热点 全部 抖音 快手 哔哩哔哩 微博 知乎 百度 今日头条 豆瓣 36氪 少数派 IT之家 腾讯新闻 抖音 暂无数据 快手 暂无数据 哔哩哔哩 暂无数据 微博 暂无数据 知乎 暂无数据 百度 暂无数据 今日头条 暂无数据 豆瓣 暂无数据 36氪 暂无数据 少数派 暂无数据 IT之家 暂无数据 腾讯新闻 暂无数据 >_ social-auto-upload Multi-platform video auto-publish tool PRODUCT Features Platforms Pricing RESOURCES Hot List About Sign In ACCOUNT Console Plans © social-auto-upload. All rights reserved.",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": [],
+      "failedApi": [
+        {
+          "url": "/api/hotlist/douyin",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/bilibili",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/kuaishou",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/weibo",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/zhihu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/baidu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/toutiao",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/36kr",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/sspai",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/ithome",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douban-movie",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/qq-news",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douyin",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/bilibili",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/kuaishou",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/weibo",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/zhihu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/baidu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/36kr",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/toutiao",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/ithome",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douban-movie",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/sspai",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/qq-news",
+          "status": 404
+        }
+      ],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761870824",
+          "status": 200
+        },
+        {
+          "url": "/api/hotlist/douyin",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/bilibili",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/kuaishou",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/weibo",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/zhihu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/baidu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/toutiao",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/36kr",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/sspai",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/ithome",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douban-movie",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/qq-news",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douyin",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/bilibili",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/kuaishou",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/weibo",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/zhihu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/baidu",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/36kr",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/toutiao",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/ithome",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/douban-movie",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/sspai",
+          "status": 404
+        },
+        {
+          "url": "/api/hotlist/qq-news",
+          "status": 404
+        }
+      ],
+      "loadMs": 2809,
+      "hasErrorBoundary": false,
+      "emptyState": true,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/hotlist.png"
+    },
+    {
+      "name": "catalog",
+      "path": "/catalog",
+      "ok": false,
+      "finalUrl": "http://localhost:5174/catalog",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "页面出错了"
+      ],
+      "buttons": [
+        "刷新页面"
+      ],
+      "inputs": [],
+      "bodySnippet": "页面出错了 应用遇到了一个错误，刷新页面通常可以解决。 Failed to execute 'createElement' on 'Document': The tag name provided ('# Design components ') is not a valid name. 刷新页面",
+      "consoleErrors": [
+        "%o\n\n%s\n\n%s\n InvalidCharacterError: Failed to execute 'createElement' on 'Document': The tag name provided ('# Design components\n') is not a valid name.\n    at completeWork (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:6361:137)\n    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:851:66)\n    at completeUnitOfWork (ht",
+        "ErrorBoundary caught: InvalidCharacterError: Failed to execute 'createElement' on 'Document': The tag name provided ('# Design components\n') is not a valid name.\n    at completeWork (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:6361:137)\n    at runWithFiberInDEV (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:851:66)\n    at completeUnit"
+      ],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761873646",
+          "status": 200
+        }
+      ],
+      "loadMs": 1974,
+      "hasErrorBoundary": true,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/catalog.png"
+    },
+    {
+      "name": "dashboard-accounts",
+      "path": "/dashboard",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "账号管理"
+      ],
+      "headings": [
+        "账号管理",
+        "浏览器测试组"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "一键检测",
+        "新建分组",
+        "全部",
+        "有效",
+        "失效",
+        "全选",
+        "添加授权"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "",
+          "name": "search",
+          "placeholder": "搜索分组名称、平台..."
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 账号管理 管理账号分组和平台授权 一键检测 新建分组 账号分组 1 尚无平台授权 有效率 — 暂无授权可检测 最近发布 抖音 e2e-dry · 16 分钟前 失败 …505-0e9df9 正在运行 534 534 个任务进行中 / 全部 有效 失效 全选 浏览器测试组 暂无授权 暂无平台授权 添加平台以开始使用 添加授权",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761875546",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761875853",
+          "status": 200
+        }
+      ],
+      "loadMs": 2181,
+      "hasErrorBoundary": false,
+      "emptyState": true,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/dashboard-accounts.png"
+    },
+    {
+      "name": "publish",
+      "path": "/dashboard/publish",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/publish",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "发布中心"
+      ],
+      "headings": [
+        "发布中心",
+        "高级选项",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "发布视频",
+        "发布图文",
+        "选择一个账号分组…",
+        "高级选项",
+        "Clear",
+        "Submit video",
+        "gemma-4-26b-a4b-it",
+        "一键全流程增强 → 生成 → 应用",
+        "多平台变体各平台并行生成",
+        "优化表达只跑提示词优化",
+        "自由对话聊天式打磨",
+        "一键生成",
+        "多平台变体",
+        "优化表达",
+        "应用上次",
+        "清空",
+        "图片素材Pexels · Pixabay",
+        "链接拉取yt-dlp + browser",
+        "发送"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "file",
+          "name": "video-file-input",
+          "placeholder": ""
+        },
+        {
+          "tag": "input",
+          "type": "",
+          "name": "title",
+          "placeholder": "Enter video title (6-20 chars recommended)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "video-desc",
+          "placeholder": "Add a description, background notes, or posting remarks"
+        },
+        {
+          "tag": "input",
+          "type": "text",
+          "name": "",
+          "placeholder": "Press Enter to add tags (# optional)"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "input",
+          "placeholder": "输入你的需求，回车发送（输入 / 查看快捷命令）"
+        },
+        {
+          "tag": "textarea",
+          "type": "",
+          "name": "",
+          "placeholder": ""
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 发布中心 发布视频或图文到多个平台 0 可用账号 7 支持平台 — 最近提交 发布视频 发布图文 选择发布账号组 账号分组 * （必填） 选择一个账号分组… 内容素材 视频文件 点击此区域或拖拽视频文件到此处上传 支持 MP4 / MOV / AVI 等常见格式 标题 0/100 视频简介 标签 无限制 高级选项 Clear Submit video AI 助手 · 未配置 · gemma-4-26b-a4b-it 选一个动作开始 一键全流程 增强 → 生成 → 应用 多平台变体 各平台并行生成 优化表达 只跑提示词优化 自由对话 聊天式打磨 一键生成 多平台变体 优化表达 应用上次 清空 图片素材 Pexels · Pixabay 链接拉取 yt-dlp + browser 发送 回车发送 · Shift+回车换行 · 输入 / 用快捷命令",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761877769",
+          "status": 200
+        },
+        {
+          "url": "/api/usage/quota?_t=1784761878114",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/config?_t=1784761878114",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/keys?_t=1784761878114",
+          "status": 200
+        },
+        {
+          "url": "/api/accounts?_t=1784761878114",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761878114",
+          "status": 200
+        },
+        {
+          "url": "/api/ai/models?_t=1784761878114",
+          "status": 200
+        }
+      ],
+      "loadMs": 2892,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/publish.png"
+    },
+    {
+      "name": "tasks",
+      "path": "/dashboard/tasks",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/tasks",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "任务列表"
+      ],
+      "headings": [
+        "任务列表"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "新建任务",
+        "全部569",
+        "等待中534",
+        "执行中0",
+        "定时中32",
+        "成功0",
+        "失败3",
+        "异常0",
+        "清理",
+        "新建任务",
+        "copy-065505-0e9df9",
+        "Details",
+        "check-065505-78b3f1",
+        "Details",
+        "check-064819-aa3401",
+        "Details",
+        "upload-note-023220-211a6a",
+        "Details",
+        "upload-video-023220-bcd691",
+        "Details",
+        "login-023220-fa4bb3",
+        "Details",
+        "upload-video-023219-fdf03e",
+        "Details",
+        "upload-video-023219-16174f",
+        "Details",
+        "upload-video-023219-0ae58b",
+        "Details",
+        "upload-video-023219-d657ea",
+        "Details",
+        "upload-video-023219-2db7bf",
+        "Details",
+        "upload-video-023219-1b8f95"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "",
+          "name": "",
+          "placeholder": "搜索任务 ID、平台、账号（按 / 聚焦）"
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 任务列表 查看和管理所有上传任务 新建任务 全部 569 等待中 534 执行中 0 定时中 32 成功 0 失败 3 异常 0 In progress 566 Failed/Errored 3 Total 569 清理 新建任务 轮询中 R·N·/ Task ID Platform Action Account Status Created Actions copy-065505-0e9df9 douyin check e2e-dry Details check-065505-78b3f1 douyin check e2e-dry Details check-064819-aa3401 douyin check demo Details upload-note-023220-211a6a douyin upload-note test Pending Details upload-video-023220-bcd691 douyin upload-video test Pending Details login-023220-fa4bb3 douyin login test Pending Details upload-video-023219-fdf03e douyin upload-video test Pending Details upload-video-",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761880775",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761881083",
+          "status": 200
+        }
+      ],
+      "loadMs": 2283,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/tasks.png"
+    },
+    {
+      "name": "calendar",
+      "path": "/dashboard/calendar",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/calendar",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "内容日历"
+      ],
+      "headings": [
+        "内容日历"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "刷新",
+        "今日",
+        "周",
+        "月",
+        "Today",
+        "Back",
+        "Next",
+        "Month",
+        "Week",
+        "28",
+        "29",
+        "30",
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21"
+      ],
+      "inputs": [],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 内容日历 按时间维度查看排期和发布节奏，支持周/月切换、平台筛选和统计摘要。 刷新 今日 2026 年 7 月 周 月 平台 抖音 快手 小红书 视频号 Bilibili TikTok 百家号 账号 creator e2e-dry test up TodayBackNext July 2026 MonthWeek Sun Mon Tue Wed Thu Fri Sat 28 29 30 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 login B站视频 +566 more 26 27 28 29 30 31 01 同日多发可能触发平台限流 以下日期排期过密，建议错峰发布： 2026-07-23 566 条 共 568 个任务 · 147 抖音 140 视频号 111 Bilibili 50 快手 40 百家号 40 TikTok 40 小红书 · 534 待执行 32 已排期 2 失败",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761883713",
+          "status": 200
+        },
+        {
+          "url": "/api/calendar/tasks?start=2026-07-01&end=2026-08-01&platform=&account=&_t=1784761884031",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761884031",
+          "status": 200
+        }
+      ],
+      "loadMs": 2870,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/calendar.png"
+    },
+    {
+      "name": "analytics",
+      "path": "/dashboard/analytics",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/analytics",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "数据分析"
+      ],
+      "headings": [
+        "数据分析"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "导出 CSV",
+        "近 7 天",
+        "近 30 天",
+        "近 90 天",
+        "全部",
+        "概览",
+        "效果",
+        "抖音 3",
+        "账号",
+        "平台",
+        "总数",
+        "成功",
+        "失败",
+        "成功率",
+        "最后活跃"
+      ],
+      "inputs": [],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 数据分析 发布趋势、平台表现、账号活跃度 导出 CSV 时间范围 近 7 天 近 30 天 近 90 天 全部 概览 效果 569 总发布 0% 成功率 0/569 11 活跃账号 569 今日 成功率趋势 07-23 0% 25% 50% 75% 100% 发布趋势 07-23 0 1 2 3 4 平台分布 抖音 3 失败原因 Top 5 0 1 2 3 invalid 账号活跃度 账号 平台 总数 成功 失败 成功率 最后活跃 test 抖音 145 0 0 0% up Bilibili 91 0 0 0% creator 视频号 90 0 0 0% test 快手 50 0 0 0% test 视频号 50 0 0 0% test 百家号 40 0 0 0% test TikTok 40 0 0 0% test 小红书 40 0 0 0% test Bilibili 20 0 0 0% e2e-dry 抖音 2 0 2 0% demo 抖音 1 0 1 0% invalid",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761886404",
+          "status": 200
+        },
+        {
+          "url": "/api/analytics/accounts?from=2026-07-16&to=2026-07-23&_t=1784761886718",
+          "status": 200
+        },
+        {
+          "url": "/api/analytics/summary?from=2026-07-16&to=2026-07-23&_t=1784761886718",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761886718",
+          "status": 200
+        }
+      ],
+      "loadMs": 2449,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/analytics.png"
+    },
+    {
+      "name": "logs",
+      "path": "/dashboard/logs",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/logs",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "运行日志"
+      ],
+      "headings": [
+        "运行日志"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "导出日志",
+        "全部712",
+        "信息712",
+        "警告0",
+        "错误0",
+        "按任务筛选",
+        "重置",
+        "导出日志"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "",
+          "name": "",
+          "placeholder": "搜索日志内容..."
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 运行日志 实时查看系统运行日志 导出日志 全部 712 信息 712 警告 0 错误 0 按任务筛选 自动滚动 重置 导出日志 2026/7/23 01:35:37 [upload] saved temp file: /var/folders/f0/yb34hn8j3_534pp5kct27bdw0000gn/T/tmpgq9mc5nw/uploads/7031042ba33e4cbaa6b85825b5e201c0.png (10307 bytes) 2026/7/23 01:35:37 [accounts] deleted: douyin_testuser.json 2026/7/23 01:35:37 [upload] rejected file: payload is only 67 bytes (min 10240) 2026/7/23 01:35:37 [upload] rejected file: payload is only 67 bytes (min 10240) 2026/7/23 01:35:37 [upload] failed to decode image: data:image/png;base64,iVBORw0KGgoAAAANSU... 2026/7/23 01:35:37 [upload] rejected file: paylo",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761888986",
+          "status": 200
+        },
+        {
+          "url": "/api/logs?_t=1784761889305",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761889306",
+          "status": 200
+        }
+      ],
+      "loadMs": 2544,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/logs.png"
+    },
+    {
+      "name": "inbox",
+      "path": "/dashboard/inbox",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/inbox",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "下载中心"
+      ],
+      "headings": [
+        "下载中心",
+        "下载记录 0"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "粘贴",
+        "下载"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "",
+          "name": "url",
+          "placeholder": "https://www.youtube.com/watch?v=... 或抖音/小红书分享链接"
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K > _ 下载中心 从分享链接下载到本地，再转写音视频文案 视频分享链接 粘贴 下载 yt-dlp 优先；不支持回落 patchright 浏览器抓取。拒绝私有/回环 IP（含 DNS 解析层）。数据归属您，24h 后自动清理。 支持下载 抖音 快手 小红书 B站 YouTube TikTok X (Twitter) Instagram Facebook 视频号 西瓜视频 Dailymotion Rumble VK 其他·通用 下载记录 0 暂无下载记录，粘贴分享链接开始下载 1. 粘贴 URL → 2. 下载 → 3. 转写文案",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761891671",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761891977",
+          "status": 200
+        }
+      ],
+      "loadMs": 2431,
+      "hasErrorBoundary": false,
+      "emptyState": true,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/inbox.png"
+    },
+    {
+      "name": "studio",
+      "path": "/dashboard/studio",
+      "ok": false,
+      "finalUrl": "http://localhost:5174/dashboard/studio",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "页面出错了"
+      ],
+      "buttons": [
+        "刷新页面"
+      ],
+      "inputs": [],
+      "bodySnippet": "页面出错了 应用遇到了一个错误，刷新页面通常可以解决。 Cannot read properties of undefined (reading 'labelKey') 刷新页面",
+      "consoleErrors": [
+        "%o\n\n%s\n\n%s\n TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?",
+        "ErrorBoundary caught: TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_"
+      ],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761894027",
+          "status": 200
+        },
+        {
+          "url": "/api/studio/projects?_t=1784761894332",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761894332",
+          "status": 200
+        }
+      ],
+      "loadMs": 2245,
+      "hasErrorBoundary": true,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/studio.png"
+    },
+    {
+      "name": "studio-detail",
+      "path": "/dashboard/studio/1",
+      "ok": false,
+      "finalUrl": "http://localhost:5174/dashboard/studio/1",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "页面出错了"
+      ],
+      "buttons": [
+        "刷新页面"
+      ],
+      "inputs": [],
+      "bodySnippet": "页面出错了 应用遇到了一个错误，刷新页面通常可以解决。 Cannot read properties of undefined (reading 'labelKey') 刷新页面",
+      "consoleErrors": [
+        "%o\n\n%s\n\n%s\n TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?",
+        "ErrorBoundary caught: TypeError: Cannot read properties of undefined (reading 'labelKey')\n    at ProjectCard (http://localhost:5174/src/components/Studio/ProjectCard.tsx?t=1784745972804:69:53)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/react-dom_client.js?v=45156635:12866:12)\n    at renderWithHooks (http://localhost:5174/node_modules/.vite/deps/react-dom_"
+      ],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761896165",
+          "status": 200
+        },
+        {
+          "url": "/api/studio/projects?_t=1784761896471",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761896471",
+          "status": 200
+        }
+      ],
+      "loadMs": 2115,
+      "hasErrorBoundary": true,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/studio-detail.png"
+    },
+    {
+      "name": "account",
+      "path": "/dashboard/account",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/account",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "账户"
+      ],
+      "headings": [
+        "账户"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "保存"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "password",
+          "name": "new-password",
+          "placeholder": "至少 8 位，包含字母和数字"
+        },
+        {
+          "tag": "input",
+          "type": "password",
+          "name": "confirm-password",
+          "placeholder": "再次输入密码"
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 账户 个人信息与账号管理 账号信息 邮箱 local@sau.local 角色 管理员 显示名 本地操作员 设置密码 设置密码后可使用密码登录。密码至少 8 位，需包含字母和数字。 密码 确认密码 保存",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761898502",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761898798",
+          "status": 200
+        }
+      ],
+      "loadMs": 2291,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/account.png"
+    },
+    {
+      "name": "settings",
+      "path": "/dashboard/settings",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/settings",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "设置"
+      ],
+      "headings": [
+        "设置"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K"
+      ],
+      "inputs": [],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 设置 账号权限与套餐管理 当前套餐 套餐 社区版 认证用户专享 · 历史数据永保 升级套餐 价格 感谢您的早期支持 已包含 包含自由版所有功能 历史数据永久保留 升级至专业版可享首月半价 健康告警通知 当账号 cookie 从「健康」降级为「即将过期」或「已失效」时，系统会通过以下渠道通知你。 邮件通知 向管理员邮箱发送 cookie 失效告警 Webhook 通知 向配置的 webhook 地址推送 cookie 失效事件 相关页面 查看运行日志",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761900657",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761900970",
+          "status": 200
+        }
+      ],
+      "loadMs": 2121,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/settings.png"
+    },
+    {
+      "name": "personalization",
+      "path": "/dashboard/personalization",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/personalization",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "个性化"
+      ],
+      "headings": [
+        "个性化"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "浅色明亮背景 · 适合日间使用",
+        "深色深色背景 · 长时间阅读更舒适",
+        "跟随系统由操作系统外观自动切换",
+        "绿GitHub green · 自然信号",
+        "琥珀暖色 · 高对比 CTA",
+        "蓝冷色 · 工业界面",
+        "紫品牌感 · 创意产品",
+        "青清新 · 科技感",
+        "红强烈 · 促销 / 警告"
+      ],
+      "inputs": [],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 个性化 外观与显示 主题 浅色 明亮背景 · 适合日间使用 深色 深色背景 · 长时间阅读更舒适 跟随系统 由操作系统外观自动切换 工程化界面美学 — 色板可在下方「主题色」选择器中切换。 主题色 主题色 绿 GitHub green · 自然信号 琥珀 暖色 · 高对比 CTA 蓝 冷色 · 工业界面 紫 品牌感 · 创意产品 青 清新 · 科技感 红 强烈 · 促销 / 警告",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761902926",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761903231",
+          "status": 200
+        }
+      ],
+      "loadMs": 2220,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/personalization.png"
+    },
+    {
+      "name": "crawl",
+      "path": "/dashboard/crawl",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/crawl",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "数据采集 / 评论监控"
+      ],
+      "headings": [
+        "数据采集 / 评论监控"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "小红书",
+        "抖音",
+        "快手",
+        "B站",
+        "微博",
+        "贴吧",
+        "知乎",
+        "任务",
+        "已采集内容",
+        "评论与情感",
+        "搜索",
+        "详情",
+        "评论",
+        "启动搜索"
+      ],
+      "inputs": [
+        {
+          "tag": "input",
+          "type": "",
+          "name": "",
+          "placeholder": "比如：美食，旅游"
+        },
+        {
+          "tag": "input",
+          "type": "number",
+          "name": "",
+          "placeholder": ""
+        }
+      ],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 数据采集 / 评论监控 7 个平台的关键词搜索 · 帖子详情 · 评论树 · AI 情感分析 + 自动回复建议 小红书 抖音 快手 B站 微博 贴吧 知乎 关键词搜索 帖子详情 二级评论 AI 情感 回复建议 0 内容总数 0 评论总数 — API 状态 情感分布（小红书，共 2 条） 2 总评论 正面 0 负面 0 中性 2 100% 待分析 0 任务 已采集内容 评论与情感 启动新的爬虫任务 任务类型 搜索 详情 评论 关键词 数量上限 使用账号 暂无 小红书 授权账号 启动搜索 还没有启动过任务。输入关键词后点击「启动」开始。",
+      "consoleErrors": [
+        "In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <div> p \n\n  ...\n    <CrawlPage>\n      <CrawlDashboardPage>\n        <PageWrapper>\n          <div className=\"p-6 max-w-...\" data-testid={undefined}>\n            <div className=\"space-y-6\">\n              <motion.div>\n              <HealthStatsStrip platform=\"xhs\">\n                <div className=\"grid grid-...\">\n         ",
+        "<%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. p <div>"
+      ],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761905144",
+          "status": 200
+        },
+        {
+          "url": "/api/crawl/sentiment-summary?platform=xhs&_t=1784761905469",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761905469",
+          "status": 200
+        },
+        {
+          "url": "/api/crawl/health?_t=1784761905470",
+          "status": 200
+        },
+        {
+          "url": "/api/crawl/health?_t=1784761905469",
+          "status": 200
+        },
+        {
+          "url": "/api/crawl/sentiment-summary?platform=xhs&_t=1784761905470",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761905470",
+          "status": 200
+        },
+        {
+          "url": "/api/tasks?_t=1784761905469",
+          "status": 200
+        }
+      ],
+      "loadMs": 2529,
+      "hasErrorBoundary": false,
+      "emptyState": true,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/crawl.png"
+    },
+    {
+      "name": "admin",
+      "path": "/dashboard/admin",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/admin",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "系统概览"
+      ],
+      "headings": [
+        "系统概览",
+        "暂无记录"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "概览",
+        "用户管理",
+        "审计日志",
+        "7d",
+        "14d",
+        "30d",
+        "下载趋势",
+        "刷新",
+        "全部",
+        "今天",
+        "本周",
+        "本月",
+        "自定义"
+      ],
+      "inputs": [],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 概览 用户管理 审计日志 系统概览 项目使用统计与最近活动 尚未更新 7d 14d 30d 下载趋势 刷新 0 总用户数 全部 0 今日活跃 活跃用户 0 总任务数 历史累计 0% 任务成功率 近 30 天 最近操作 最近 10 条 全部 今天 本周 本月 自定义 EMPTY FEED 暂无记录 所选时间范围内没有用户操作",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": [],
+      "failedApi": [
+        {
+          "url": "/api/admin/system?_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/overview?_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=active_today&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=total_tasks&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=task_success_rate&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=total_users&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/overview?_t=1784761909142",
+          "status": 404
+        }
+      ],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 200
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 200
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 200
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 200
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 200
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 200
+        },
+        {
+          "url": "/api/account-groups?_t=1784761907817",
+          "status": 200
+        },
+        {
+          "url": "/api/admin/system?_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/overview?_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=active_today&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=total_tasks&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=task_success_rate&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/trends?metric=total_users&days=14&_t=1784761908124",
+          "status": 404
+        },
+        {
+          "url": "/api/tasks?_t=1784761908124",
+          "status": 200
+        },
+        {
+          "url": "/api/admin/overview?_t=1784761909142",
+          "status": 404
+        }
+      ],
+      "loadMs": 2250,
+      "hasErrorBoundary": false,
+      "emptyState": true,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/admin.png"
+    },
+    {
+      "name": "admin-users",
+      "path": "/dashboard/admin/users",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/admin/users",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "用户管理"
+      ],
+      "headings": [
+        "用户管理",
+        "还没有注册用户"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "概览",
+        "用户管理",
+        "审计日志"
+      ],
+      "inputs": [],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 概览 用户管理 审计日志 用户管理 查看和管理所有注册用户 共 0 位用户 EMPTY DIRECTORY 还没有注册用户 等待第一位用户通过邮箱验证码或社交登录注册",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": [],
+      "failedApi": [
+        {
+          "url": "/api/admin/users?_t=1784761910492",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/users?_t=1784761911501",
+          "status": 404
+        }
+      ],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761910179",
+          "status": 200
+        },
+        {
+          "url": "/api/admin/users?_t=1784761910492",
+          "status": 404
+        },
+        {
+          "url": "/api/tasks?_t=1784761910492",
+          "status": 200
+        },
+        {
+          "url": "/api/admin/users?_t=1784761911501",
+          "status": 404
+        }
+      ],
+      "loadMs": 2254,
+      "hasErrorBoundary": false,
+      "emptyState": true,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/admin-users.png"
+    },
+    {
+      "name": "admin-audit",
+      "path": "/dashboard/admin/audit",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/dashboard/admin/audit",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [
+        "操作日志"
+      ],
+      "headings": [
+        "操作日志",
+        "暂无操作记录"
+      ],
+      "buttons": [
+        "重新引导",
+        "搜索⌘K",
+        "概览",
+        "用户管理",
+        "审计日志",
+        "全部",
+        "今天",
+        "本周",
+        "本月",
+        "自定义"
+      ],
+      "inputs": [],
+      "bodySnippet": "SAU Shell Social Auto Upload 导航 账号管理 发布中心 任务列表 数据分析 运行日志 下载中心 内容日历 剧本工坊 数据采集 S SAU Admin v1.0.0 重新引导 搜索 ⌘K 概览 用户管理 审计日志 操作日志 管理员操作审计记录 全部 今天 本周 本月 自定义 EMPTY LOG 暂无操作记录 管理员操作（如角色变更）会记录在这里",
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+        "Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+      ],
+      "pageErrors": [],
+      "failedApi": [
+        {
+          "url": "/api/admin/audit/acknowledge",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit?page=1&per_page=50&_t=1784761912749",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit/acknowledge",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit?page=1&per_page=50&_t=1784761913790",
+          "status": 404
+        }
+      ],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761912443",
+          "status": 200
+        },
+        {
+          "url": "/api/admin/audit/acknowledge",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit?page=1&per_page=50&_t=1784761912749",
+          "status": 404
+        },
+        {
+          "url": "/api/admin/audit/acknowledge",
+          "status": 404
+        },
+        {
+          "url": "/api/tasks?_t=1784761912749",
+          "status": 200
+        },
+        {
+          "url": "/api/admin/audit?page=1&per_page=50&_t=1784761913790",
+          "status": 404
+        }
+      ],
+      "loadMs": 2249,
+      "hasErrorBoundary": false,
+      "emptyState": true,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/admin-audit.png"
+    },
+    {
+      "name": "legacy-publish",
+      "path": "/publish",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/publish",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "页面未找到"
+      ],
+      "buttons": [],
+      "inputs": [],
+      "bodySnippet": "页面未找到 请检查 URL 是否正确，或返回首页继续操作。 返回首页",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761914757",
+          "status": 200
+        }
+      ],
+      "loadMs": 1954,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [
+        "legacy redirect may have failed"
+      ],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/legacy-publish.png"
+    },
+    {
+      "name": "legacy-tasks",
+      "path": "/tasks",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/tasks",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "页面未找到"
+      ],
+      "buttons": [],
+      "inputs": [],
+      "bodySnippet": "页面未找到 请检查 URL 是否正确，或返回首页继续操作。 返回首页",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761916657",
+          "status": 200
+        }
+      ],
+      "loadMs": 1833,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [
+        "legacy redirect may have failed"
+      ],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/legacy-tasks.png"
+    },
+    {
+      "name": "legacy-logs",
+      "path": "/logs",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/logs",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "页面未找到"
+      ],
+      "buttons": [],
+      "inputs": [],
+      "bodySnippet": "页面未找到 请检查 URL 是否正确，或返回首页继续操作。 返回首页",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761918664",
+          "status": 200
+        }
+      ],
+      "loadMs": 1941,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/legacy-logs.png"
+    },
+    {
+      "name": "legacy-analytics",
+      "path": "/analytics",
+      "ok": true,
+      "finalUrl": "http://localhost:5174/analytics",
+      "title": "SAU Shell - 自媒体自动化运营",
+      "h1": [],
+      "headings": [
+        "页面未找到"
+      ],
+      "buttons": [],
+      "inputs": [],
+      "bodySnippet": "页面未找到 请检查 URL 是否正确，或返回首页继续操作。 返回首页",
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedApi": [],
+      "apiCalls": [
+        {
+          "url": "/src/api/client.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/types.ts?t=1784745972857",
+          "status": 304
+        },
+        {
+          "url": "/src/api/studio.ts?t=1784745972880",
+          "status": 304
+        },
+        {
+          "url": "/src/api/sse.ts?t=1784745972854",
+          "status": 304
+        },
+        {
+          "url": "/src/api/request.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/accounts.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/publish.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/tasks.ts?t=1784745972883",
+          "status": 304
+        },
+        {
+          "url": "/src/api/ai.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/inbox.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/calendar.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/crawl.ts?t=1784745972886",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_createAuth401ResponseInterceptor.ts?t=1784745972877",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_appendAuthPendingHeader.ts?t=1784745972868",
+          "status": 304
+        },
+        {
+          "url": "/src/api/_idempotencyStore.ts?t=1784745972848",
+          "status": 304
+        },
+        {
+          "url": "/api/account-groups?_t=1784761920499",
+          "status": 200
+        }
+      ],
+      "loadMs": 1855,
+      "hasErrorBoundary": false,
+      "emptyState": false,
+      "notes": [],
+      "rootChildren": 2,
+      "screenshot": "../../output/playwright/legacy-analytics.png"
+    }
+  ]
+}

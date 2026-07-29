@@ -32,7 +32,8 @@ import {
 import { cn } from '@/lib/utils'
 import { TagInput } from '@/components/ui/tag-input'
 import { motion } from 'motion/react'
-import {useToast} from '@/components/ui/toast.helpers';import { toneTextClass } from '@/lib/tone'
+import {useToast} from '@/components/ui/toast.helpers'
+import { toneTextClass } from '@/lib/tone'
 import { usePublishDraft } from '@/hooks/usePublishDraft'
 import { PublishDraftBanner } from './PublishDraftBanner'
 import {
@@ -47,7 +48,8 @@ import {
   X,
 } from 'lucide-react'
 import {SectionHeader} from './shared';
-import {effectiveMaxTags, platformTagLabel} from './shared.helpers';import { cardVariants, thumbVariants } from './animations'
+import {effectiveMaxTags, platformTagLabel} from './shared.helpers'
+import { cardVariants, thumbVariants } from './animations'
 import { SchedulePicker } from './SchedulePicker'
 import { ImageLightbox } from './ImageLightbox'
 
@@ -69,6 +71,8 @@ type NoteFormProps = {
   onError: (label: '图文') => void
   /** Called on every form-change so the parent can render a live preview. */
   onFormChange?: (data: FormPreviewData) => void
+  /** Deep-link schedule from the content calendar (`?schedule=`). */
+  initialSchedule?: string
 }
 
 /**
@@ -78,7 +82,7 @@ type NoteFormProps = {
  */
 export const NoteForm = memo(
   forwardRef<NoteFormHandle, NoteFormProps>(function NoteForm(
-    { groupSelection, onSuccess, onError, onFormChange },
+    { groupSelection, onSuccess, onError, onFormChange, initialSchedule = '' },
     ref,
   ) {
     const { addToast } = useToast()
@@ -89,13 +93,21 @@ export const NoteForm = memo(
     /** Path C: native `string[]` (canonical `#tag`). Wire-format join
      *  happens only at the api.uploadNoteMultipart call site in `submit()`. */
     const [tags, setTags] = useState<string[]>([])
-    const [schedule, setSchedule] = useState('')
+    const [schedule, setSchedule] = useState(() => initialSchedule || '')
+    const scheduleSeedApplied = useRef(Boolean(initialSchedule))
+    useEffect(() => {
+      if (scheduleSeedApplied.current) return
+      if (!initialSchedule) return
+      scheduleSeedApplied.current = true
+      setSchedule((prev) => (prev.trim() ? prev : initialSchedule))
+    }, [initialSchedule])
     const [headless, setHeadless] = useState(true)
 
     const [imageFiles, setImageFiles] = useState<File[]>([])
     const [dragOver, setDragOver] = useState(false)
     const [dragIndex, setDragIndex] = useState<number | null>(null)
     const dragIdxRef = useRef<number | null>(null)
+    const submitRef = useRef<(() => void | Promise<void>) | null>(null)
     const [dropTarget, setDropTarget] = useState<number | null>(null)
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
     const [submitting, setSubmitting] = useState(false)
@@ -268,8 +280,12 @@ export const NoteForm = memo(
         // NoteForm internal `content` ↔ FormSnapshot `desc` mapping preserved.
         // Path C: tags is string[] — bridge sees array form directly.
         getFormSnapshot: () => ({ title, desc: content, tags }),
+        setSchedule: (value: string) => setSchedule(value),
+        submit: () => {
+          void submitRef.current?.()
+        },
       }),
-      [setTitle, setContent, setTags, title, content, tags, addImagesWithinLimit],
+      [setTitle, setContent, setTags, setSchedule, title, content, tags, addImagesWithinLimit],
     )
 
     /**
@@ -432,6 +448,7 @@ export const NoteForm = memo(
         setSubmitting(false)
       }
     }, [groupSelection, title, content, tags, schedule, headless, imageFiles, addToast, clearFilesAndReset, onSuccess, onError, t])
+    submitRef.current = submit
 
     return (
       <>
@@ -442,16 +459,16 @@ export const NoteForm = memo(
           initial="hidden"
           animate="visible"
         >
-          <Card className="card-refined">
-            <CardContent className="p-5 space-y-4">
+          <Card className="card-refined overflow-hidden">
+            <CardContent className="p-6 space-y-5">
               <SectionHeader
                 icon={<FilePlus className="h-4 w-4" />}
                 title="内容素材"
               />
-              <div className="space-y-4">
-                <div className="space-y-2">
+              <div className="space-y-5">
+                <div className="space-y-2.5">
                   {/* eslint-disable-next-line sau/label-html-for -- 装饰标签·div作为click-target + 隐藏 <input id="note-image-input"> */}
-                  <Label>图片</Label>
+                  <Label className="text-xs font-medium text-muted-foreground tracking-wide uppercase">图片</Label>
                   <div
                     className={cn(
                       'flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 transition-colors cursor-pointer',
@@ -541,8 +558,10 @@ export const NoteForm = memo(
                   </p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="note-title">标题</Label>
+                <div className="space-y-2.5">
+                  <Label htmlFor="note-title" className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+                    标题
+                  </Label>
                   <Input
                     id="note-title"
                     name="title"
@@ -550,26 +569,31 @@ export const NoteForm = memo(
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     maxLength={100}
+                    className="h-10 text-sm"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="note-content">图文正文</Label>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div className="space-y-2.5">
+                    <Label htmlFor="note-content" className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+                      图文正文
+                    </Label>
                     <Textarea
                       id="note-content"
-                      className="min-h-[90px]"
+                      className="min-h-[100px] text-sm leading-relaxed"
                       placeholder={t('publish.note_form.content_placeholder', '请输入图文正文，多行内容会自动换行显示')}
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
                       maxLength={3000}
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
                       {/* eslint-disable-next-line sau/label-html-for -- 装饰分组·TagInput 当前调用未挂 id */}
-                      <Label>标签</Label>
-                      <span className="text-[11px] text-muted-foreground">
+                      <Label className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+                        标签
+                      </Label>
+                      <span className="text-[11px] text-muted-foreground/60">
                         {platformTagLabel(activePlatforms)}
                       </span>
                     </div>
@@ -582,6 +606,12 @@ export const NoteForm = memo(
                     <SchedulePicker
                       value={schedule}
                       onChange={setSchedule}
+                      highlighted={Boolean(initialSchedule) && schedule === initialSchedule}
+                      hint={
+                        initialSchedule && schedule === initialSchedule
+                          ? '已从内容日历预填，可改时间或点快捷预设。'
+                          : undefined
+                      }
                     />
                     <div className="flex items-center gap-2 pt-1">
                       <Checkbox
@@ -611,14 +641,14 @@ export const NoteForm = memo(
         />
 
         {/* ── 提交按钮 ─────────────────────────────────────────── */}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={handleClearClick}>
+        <div className="flex items-center justify-end gap-3 pt-3 pb-1">
+          <Button variant="outline" size="sm" className="h-9 text-xs" onClick={handleClearClick}>
             {t('publish.note_form.button_clear', '清空')}
           </Button>
           <Button
             onClick={submit}
             disabled={submitting}
-            className="btn-elegant"
+            className="h-9 px-5 text-sm"
           >
             {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {t('publish.note_form.button_submit', '提交图文')}

@@ -180,20 +180,73 @@ def refresh_stale_accounts_sse():
     )
 
 
-@bp.get("/api/account-authorizations/<int:auth_id>/health")
-def auth_health(auth_id: int):
-    return jsonify({
+def _auth_health_payload(auth_id: int) -> tuple[dict, int]:
+    """Resolve authorization cookie health via the same quick check used by list.
+
+    Returns ``(body, http_status)``. Local shell has no deep browser check —
+    file presence / JSON integrity / age is the source of truth.
+    """
+    from pathlib import Path
+
+    from web_runner.db import get_connection
+    from web_runner.utils import _quick_check_cookie
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT aa.id, aa.platform, aa.cookie_file, ag.name AS group_name "
+            "FROM account_authorizations aa "
+            "JOIN account_groups ag ON aa.group_id = ag.id "
+            "WHERE aa.id = ?",
+            (auth_id,),
+        ).fetchone()
+    if not row:
+        return {"success": False, "message": f"authorization {auth_id} not found"}, 404
+
+    cookie_path = Path(row["cookie_file"])
+    account_name = row["group_name"]
+    stem = cookie_path.stem
+    parts = stem.split("_", 1)
+    if len(parts) == 2 and parts[1]:
+        account_name = parts[1]
+
+    quick = (
+        _quick_check_cookie(row["platform"], account_name)
+        if cookie_path.exists()
+        else {"valid": False, "reason": "no_file", "age_hours": None}
+    )
+    age_hours = quick.get("age_hours")
+    valid = bool(quick.get("valid"))
+    stale = valid and age_hours is not None and age_hours >= 24
+    if not valid:
+        health = "invalid"
+    elif stale:
+        health = "expiring_soon"
+    else:
+        health = "valid"
+
+    return {
         "success": True,
         "data": {
             "id": auth_id,
-            "health": "unknown",
-            "valid": True,
-            "stale": False,
-            "message": "local shell: deep health not run",
+            "platform": row["platform"],
+            "account_name": account_name,
+            "health": health,
+            "valid": valid,
+            "stale": stale,
+            "age_hours": age_hours,
+            "reason": quick.get("reason"),
+            "message": "ok" if valid and not stale else (quick.get("reason") or "stale"),
         },
-    })
+    }, 200
+
+
+@bp.get("/api/account-authorizations/<int:auth_id>/health")
+def auth_health(auth_id: int):
+    body, status = _auth_health_payload(auth_id)
+    return jsonify(body), status
 
 
 @bp.post("/api/account-authorizations/<int:auth_id>/health-check")
 def auth_health_check(auth_id: int):
-    return auth_health(auth_id)
+    body, status = _auth_health_payload(auth_id)
+    return jsonify(body), status

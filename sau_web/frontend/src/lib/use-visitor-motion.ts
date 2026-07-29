@@ -174,19 +174,22 @@ export function useVisitorMotion(rootRef: RefObject<HTMLElement | null>) {
             })
           })
 
-          // (4) Mouse parallax on the Hero mockup — only fires
-          // when the cursor is over the hero section (event-
-          // driven, not per-frame). rAF-throttled via GSAP's
-          // `overwrite: 'auto'` so each new mousemove cancels
-          // the in-flight parallax tween (the float below is
-          // on a different node so it doesn't get cancelled).
+          // (4) Mouse parallax on the Hero mockup — rAF-throttled
+          // so a 120Hz trackpad doesn't schedule 120 gsap.to calls
+          // per second. Only the latest pointer sample is applied.
           // No-op on pages without `data-mockup-parallax` +
           // `data-hero-section` (PricingPage + AboutPage).
           const parallaxEl = document.querySelector<HTMLElement>('[data-mockup-parallax]')
           const heroEl = document.querySelector<HTMLElement>('[data-hero-section]')
           if (parallaxEl && heroEl) {
-            const onMove = (e: MouseEvent) => {
+            let rafId = 0
+            let latest: MouseEvent | null = null
+            const applyParallax = () => {
+              rafId = 0
+              const e = latest
+              if (!e) return
               const rect = heroEl.getBoundingClientRect()
+              if (rect.width <= 0 || rect.height <= 0) return
               const x = (e.clientX - rect.left) / rect.width - 0.5
               const y = (e.clientY - rect.top) / rect.height - 0.5
               gsap.to(parallaxEl, {
@@ -197,7 +200,17 @@ export function useVisitorMotion(rootRef: RefObject<HTMLElement | null>) {
                 overwrite: 'auto',
               })
             }
+            const onMove = (e: MouseEvent) => {
+              latest = e
+              if (rafId) return
+              rafId = requestAnimationFrame(applyParallax)
+            }
             const onLeave = () => {
+              latest = null
+              if (rafId) {
+                cancelAnimationFrame(rafId)
+                rafId = 0
+              }
               gsap.to(parallaxEl, {
                 x: 0,
                 y: 0,
@@ -205,9 +218,10 @@ export function useVisitorMotion(rootRef: RefObject<HTMLElement | null>) {
                 ease: 'power3.out',
               })
             }
-            heroEl.addEventListener('mousemove', onMove)
+            heroEl.addEventListener('mousemove', onMove, { passive: true })
             heroEl.addEventListener('mouseleave', onLeave)
             return () => {
+              if (rafId) cancelAnimationFrame(rafId)
               heroEl.removeEventListener('mousemove', onMove)
               heroEl.removeEventListener('mouseleave', onLeave)
             }
@@ -267,45 +281,52 @@ export function useVisitorMotion(rootRef: RefObject<HTMLElement | null>) {
         })
       })
 
-      // (7) Section ambient parallax — the section-level
-      // translate is keyed to scroll progress. Each section's
-      // content shifts up by 24px as the user scrolls past, so
-      // deep sections feel like they're being lifted into the
-      // viewport rather than scrolling flat. `scrub: 0.6` ties
-      // the tween to the scrollbar (not just on/off), so it
-      // always tracks the user's scroll position smoothly.
-      //
-      // Opt-out: a section with `data-no-parallax` is excluded
-      // (data-dense sections like PricingComparison or the
-      // tier-card grids opt out so a continuously scrubbing
-      // -24px doesn't shift the numbers / prices as the user
-      // reads). The hero section is also excluded (it has its
-      // own entrance + mouse parallax via the data-hero-section
-      // selector).
-      const mmParallax = gsap.matchMedia()
-      mmParallax.add({ motion: '(prefers-reduced-motion: no-preference)' }, () => {
-        gsap.utils.toArray<HTMLElement>('section').forEach((section) => {
-          if (section.dataset.heroSection !== undefined) return
-          if (section.dataset.noParallax !== undefined) return
-          const trigger = ScrollTrigger.create({
-            trigger: section,
-            start: 'top bottom',
-            end: 'bottom top',
-            scrub: 0.6,
-            animation: gsap.fromTo(section, { y: 24 }, { y: -24, ease: 'none' }),
-          })
-          createdTriggers.push(trigger)
-        })
-      })
+      // Pause continuous ambient tweens while the tab is hidden so
+      // background tabs don't keep the compositor warm.
+      const onVisibility = () => {
+        const paused = typeof document !== 'undefined' && document.hidden
+        gsap.globalTimeline.timeScale(paused ? 0 : 1)
+      }
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', onVisibility)
+      }
 
-      // Cleanup — kill ONLY the ScrollTriggers we created
-      // (preserved by `createdTriggers`), then revert the two
-      // matchMedia contexts so their inner cleanups fire. This
-      // is the fix for the bug where the previous version
-      // called `ScrollTrigger.getAll().filter(... matches
-      // 'section')` and accidentally killed triggers from
-      // useRevealStagger that share the same scope.
+      // (7) Section ambient parallax — desktop fine-pointer only.
+      // Touch / coarse pointers scroll enough already; scrubbing
+      // every section y by ±24px is a measurable FPS tax on mobile.
+      //
+      // Opt-out: `data-no-parallax`. Hero excluded (own entrance).
+      const mmParallax = gsap.matchMedia()
+      mmParallax.add(
+        {
+          motion: '(prefers-reduced-motion: no-preference)',
+          fine: '(pointer: fine)',
+        },
+        (ctx) => {
+          const { motion, fine } = ctx.conditions as { motion: boolean; fine: boolean }
+          if (!motion || !fine) return
+          gsap.utils.toArray<HTMLElement>('section').forEach((section) => {
+            if (section.dataset.heroSection !== undefined) return
+            if (section.dataset.noParallax !== undefined) return
+            const trigger = ScrollTrigger.create({
+              trigger: section,
+              start: 'top bottom',
+              end: 'bottom top',
+              scrub: 0.6,
+              animation: gsap.fromTo(section, { y: 24 }, { y: -24, ease: 'none' }),
+            })
+            createdTriggers.push(trigger)
+          })
+        },
+      )
+
+      // Cleanup — kill ONLY the ScrollTriggers we created, then
+      // revert matchMedia contexts + restore timeline timeScale.
       return () => {
+        if (typeof document !== 'undefined') {
+          document.removeEventListener('visibilitychange', onVisibility)
+          gsap.globalTimeline.timeScale(1)
+        }
         createdTriggers.forEach((t) => t.kill())
         mmParallax.revert()
         mm.revert()

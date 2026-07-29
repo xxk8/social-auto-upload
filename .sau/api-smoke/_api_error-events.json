@@ -1,0 +1,56 @@
+{
+  "data": [
+    {
+      "account": "",
+      "action": "",
+      "argv": "[\"douyin\", \"check\", \"--account\", \"e2e-dry\"]",
+      "attempt_no": null,
+      "exc_message": "exit code 1 invalid",
+      "exc_type": "NonZeroExit",
+      "id": 195,
+      "level": "error",
+      "phase": "cli",
+      "platform": "",
+      "retry_count": null,
+      "status_code": 1,
+      "task_id": "check-065505-78b3f1",
+      "traceback": "",
+      "ts": "2026-07-23T06:55:07"
+    },
+    {
+      "account": "",
+      "action": "",
+      "argv": "[\"douyin\", \"check\", \"--account\", \"e2e-dry\"]",
+      "attempt_no": null,
+      "exc_message": "exit code 1 invalid",
+      "exc_type": "NonZeroExit",
+      "id": 194,
+      "level": "error",
+      "phase": "cli",
+      "platform": "",
+      "retry_count": null,
+      "status_code": 1,
+      "task_id": "copy-065505-0e9df9",
+      "traceback": "",
+      "ts": "2026-07-23T06:55:07"
+    },
+    {
+      "account": "",
+      "action": "",
+      "argv": "[\"douyin\", \"check\", \"--account\", \"demo\"]",
+      "attempt_no": null,
+      "exc_message": "exit code 1 invalid",
+      "exc_type": "NonZeroExit",
+      "id": 193,
+      "level": "error",
+      "phase": "cli",
+      "platform": "",
+      "retry_count": null,
+      "status_code": 1,
+      "task_id": "check-064819-aa3401",
+      "traceback": "",
+      "ts": "2026-07-23T06:48:20"
+    }
+  ],
+  "success": true
+}

@@ -93,13 +93,13 @@ function SidebarNavItem({
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r-full bg-primary" />
         )}
         <item.icon className={cn(
-          "h-4 w-4 shrink-0 transition-colors duration-150",
+          "h-4 w-4 shrink-0 transition-all duration-150",
           isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
         )} />
         {!isCollapsed && (
           <>
             <span className={cn(
-              "truncate transition-colors duration-150 flex-1",
+              "truncate transition-all duration-150 flex-1",
               isActive && "font-medium"
             )}>
               {item.label}
@@ -134,12 +134,12 @@ function SidebarNavItem({
           )}
         >
           <item.icon className={cn(
-            "h-4 w-4 shrink-0 transition-colors duration-150",
+            "h-4 w-4 shrink-0 transition-all duration-150",
             hasActiveChild ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
           )} />
           {!isCollapsed && (
             <>
-              <span className="truncate transition-colors duration-150 flex-1 text-left">
+              <span className="truncate transition-all duration-150 flex-1 text-left">
                 {item.label}
               </span>
               <ChevronRight className={cn(

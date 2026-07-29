@@ -12,6 +12,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Activity,
   AlertTriangle,
   Check,
   ChevronDown,
@@ -44,7 +45,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { api } from '@/api/client'
@@ -106,21 +106,21 @@ export function AiSettingsPopover() {
   const [batchInput, setBatchInput] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [batchBusy, setBatchBusy] = useState(false)
+  const [probeBusy, setProbeBusy] = useState(false)
+  const [probeMsg, setProbeMsg] = useState<string | null>(null)
+  const [probingId, setProbingId] = useState<number | null>(null)
   const [dismissRateLimit, setDismissRateLimit] = useState(false)
   /** When non-null, the popover is in "delete confirmation" mode. */
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'all' } | { type: 'single'; id: number; masked: string } | null>(null)
 
-  // Founder gate (ai-api-keys-founder feature): mirrors the
-  // backend `founder_required` decorator on `/api/ai/config`,
-  // `/api/ai/keys`, `/api/ai/keys/batch`. Non-founders see a
-  // read-only notice instead of add/batch/list/delete controls.
+  // Founder gate for key management. Local shell / unauthenticated
+  // sessions still allow manage so devs can paste OpenRouter keys.
   const { user } = useAuth()
   const isFounder = Boolean(user?.is_founder)
+  const canManageKeys = isFounder || user == null
 
   const { data: aiConfig, isLoading: configLoading } = useAiConfig()
-  // `useAiKeys(enabled)` short-circuits the network round-trip
-  // for non-founders so we don't log noise 403 retry cycles.
-  const { data: aiKeys, isLoading: keysLoading, refetch: refetchKeys } = useAiKeys(isFounder)
+  const { data: aiKeys, isLoading: keysLoading, refetch: refetchKeys } = useAiKeys(canManageKeys)
   const setKeyMutation = useSetAiConfig()
   const deleteKeyMutation = useDeleteAiConfig()
   const { addToast } = useToast()
@@ -130,19 +130,74 @@ export function AiSettingsPopover() {
   const safeKeys: AiKey[] = Array.isArray(aiKeys) ? aiKeys : []
   const rateLimited = safeKeys.filter((k) => k.rate_limited)
 
+  /** 快捷测活 — does not store the key. */
+  const handleProbeInput = async () => {
+    const key = keyInput.trim()
+    if (!key) return
+    setProbeBusy(true)
+    setProbeMsg(null)
+    try {
+      const res = await api.validateAiKey({ api_key: key })
+      if (res.success) {
+        const label = res.data?.label ? `（${res.data.label}）` : ''
+        setProbeMsg(`有效 ${label}`.trim())
+        addToast(`Key 测活通过 ${label}`.trim(), 'success')
+      } else {
+        setProbeMsg(res.message || '无效')
+        addToast(res.message || 'Key 无效', 'error')
+      }
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        '测活失败'
+      setProbeMsg(msg)
+      addToast(msg, 'error')
+    } finally {
+      setProbeBusy(false)
+    }
+  }
+
+  const handleProbeStored = async (keyId: number) => {
+    setProbingId(keyId)
+    try {
+      const res = await api.validateAiKey({ key_id: keyId })
+      if (res.success) {
+        addToast('Key 有效，已清除限流标记', 'success')
+        await refetchKeys()
+      } else {
+        addToast(res.message || 'Key 无效', 'error')
+      }
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        '测活失败'
+      addToast(msg, 'error')
+    } finally {
+      setProbingId(null)
+    }
+  }
+
+  /** Save after server-side validate (default). */
   const handleSaveSingle = async () => {
     if (!keyInput.trim()) return
+    setProbeMsg(null)
     try {
       const res = await setKeyMutation.mutateAsync(keyInput.trim())
       if (res.success) {
-        addToast('API Key 已添加', 'success')
+        addToast('Key 已校验并添加（限流时自动轮询切换）', 'success')
         setKeyInput('')
         setShowInput(false)
+        setProbeMsg(null)
       } else {
         addToast(res.message || '保存失败', 'error')
+        setProbeMsg(res.message || '保存失败')
       }
-    } catch {
-      addToast('保存失败', 'error')
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        '保存失败（可能已存在或测活未通过）'
+      addToast(msg, 'error')
+      setProbeMsg(msg)
     }
   }
 
@@ -153,8 +208,25 @@ export function AiSettingsPopover() {
     try {
       const res = await api.batchAddKeys(lines)
       if (res.success) {
-        const { added, skipped } = res.data!
-        addToast(`批量导入完成：新增 ${added} 个，跳过 ${skipped} 个`, 'success')
+        const { added, skipped, invalid } = res.data as {
+          added: number
+          skipped: number
+          invalid?: Array<{ masked: string; message: string }>
+        }
+        const inv = invalid?.length ?? 0
+        addToast(
+          inv > 0
+            ? `导入完成：新增 ${added}，跳过 ${skipped}（含 ${inv} 个无效）`
+            : `导入完成：新增 ${added}，跳过 ${skipped}`,
+          added > 0 ? 'success' : 'warning',
+        )
+        if (inv > 0) {
+          const detail = invalid!
+            .slice(0, 3)
+            .map((x) => `${x.masked}: ${x.message}`)
+            .join('；')
+          addToast(`无效 Key：${detail}`, 'error')
+        }
         setBatchInput('')
         setShowBatch(false)
         await refetchKeys()
@@ -203,7 +275,7 @@ export function AiSettingsPopover() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 rounded-lg p-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 active:scale-[0.95] transition-all duration-150"
             aria-label={configured ? '管理 API Key' : '设置 API Key'}
             data-testid="ai-settings-trigger"
           >
@@ -224,9 +296,7 @@ export function AiSettingsPopover() {
               )}
             </div>
 
-            {/* Founder-gated read-only banner: non-founders see this
-                instead of the add/batch/list/delete menu. */}
-            {!isFounder && (
+            {!canManageKeys && (
               <div
                 className="flex items-start gap-2 px-2 py-2 rounded bg-muted/40 text-[11px] leading-snug"
                 data-testid="ai-settings-not-founder"
@@ -238,57 +308,59 @@ export function AiSettingsPopover() {
               </div>
             )}
 
-            {/* ── Menu entries — mutually exclusive modes, founder-only ── */}
-            {!showInput && !showBatch && !showList && !deleteTarget && isFounder && (
+            {!showInput && !showBatch && !deleteTarget && canManageKeys && (
               <>
+                <p className="px-2.5 py-1.5 text-[10px] leading-snug text-muted-foreground/70">
+                导入前会向 OpenRouter 测活；多 Key 限流时自动轮询切换。
+              </p>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setShowInput(true); setShowBatch(false); setShowList(false); setProbeMsg(null) }}
+                className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-all duration-150 hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 text-left"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span className="flex-1">{configured ? '添加 Key' : '设置 Key'}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setShowBatch(true); setShowInput(false); setShowList(false) }}
+                className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-all duration-150 hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 text-left"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                <span className="flex-1">批量导入（校验后入库）</span>
+              </button>
+              {configured && (
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => { setShowInput(true); setShowBatch(false); setShowList(false) }}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded hover:bg-muted focus-visible:bg-muted focus-visible:outline-none transition-colors text-left"
+                  onClick={() => { setShowList((v) => !v); setShowInput(false); setShowBatch(false) }}
+                  className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-all duration-150 hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 text-left"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span className="flex-1">{configured ? '添加 Key' : '设置 Key'}</span>
+                  {showList ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  <span className="flex-1">Key 列表 / 测活</span>
+                  <Badge variant="outline" className="ml-auto h-4 px-1 text-[9px]">{safeKeys.length}</Badge>
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { setShowBatch(true); setShowInput(false); setShowList(false) }}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded hover:bg-muted focus-visible:bg-muted focus-visible:outline-none transition-colors text-left"
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  <span className="flex-1">批量导入</span>
-                </button>
-                {configured && (
+              )}
+              {configured && (
+                <>
+                  <div className="my-1.5 h-px bg-border/40" />
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => { setShowList(!showList); setShowInput(false); setShowBatch(false) }}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded hover:bg-muted focus-visible:bg-muted focus-visible:outline-none transition-colors text-left"
+                    onClick={() => setDeleteTarget({ type: 'all' })}
+                    className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-all duration-150 text-destructive hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 text-left"
                   >
-                    {showList ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                    <span className="flex-1">查看 Key 列表</span>
-                    <Badge variant="outline" className="ml-auto h-4 px-1 text-[9px]">{safeKeys.length}</Badge>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span className="flex-1">删除全部 Key</span>
                   </button>
-                )}
-                {configured && (
-                  <>
-                    <div className="my-1 h-px bg-border/60" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => setDeleteTarget({ type: 'all' })}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded text-destructive hover:bg-destructive/10 transition-colors text-left"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      <span className="flex-1">删除全部 Key</span>
-                    </button>
-                  </>
-                )}
+                </>
+              )}
               </>
             )}
 
-            {showInput && (
+            {showInput && canManageKeys && (
               <div className="space-y-1.5">
                 <div className="flex gap-1.5">
                   <div className="relative flex-1">
@@ -296,7 +368,7 @@ export function AiSettingsPopover() {
                       type={showKey ? 'text' : 'password'}
                       placeholder="sk-or-v1-xxxxxxxxxxxxxxxx"
                       value={keyInput}
-                      onChange={(e) => setKeyInput(e.target.value)}
+                      onChange={(e) => { setKeyInput(e.target.value); setProbeMsg(null) }}
                       onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveSingle() }}
                       className="h-7 text-xs pr-7 font-mono tracking-tight"
                     />
@@ -309,20 +381,41 @@ export function AiSettingsPopover() {
                       {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                     </button>
                   </div>
-                  <Button size="sm" className="h-7 w-7 p-0" onClick={() => void handleSaveSingle()} disabled={setKeyMutation.isPending}>
-                    <Check className="h-3.5 w-3.5" />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1 px-2 text-[10px]"
+                    onClick={() => void handleProbeInput()}
+                    disabled={probeBusy || !keyInput.trim()}
+                    title="向 OpenRouter 测活，不入库"
+                  >
+                    {probeBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Activity className="h-3 w-3" />}
+                    测活
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setShowInput(false); setKeyInput('') }}>
+                  <Button
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => void handleSaveSingle()}
+                    disabled={setKeyMutation.isPending || !keyInput.trim()}
+                    title="测活通过后入库"
+                  >
+                    {setKeyMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setShowInput(false); setKeyInput(''); setProbeMsg(null) }}>
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>
+                {probeMsg && (
+                  <p className="text-[10px] text-muted-foreground leading-tight px-0.5">{probeMsg}</p>
+                )}
                 <p className="text-[10px] text-muted-foreground leading-tight">
-                  从 <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" className="font-medium underline underline-offset-2 hover:text-primary">openrouter.ai/keys</a> 免费获取
+                  保存前会校验有效性。多 Key 限流时自动切换。获取：
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" className="font-medium underline underline-offset-2 hover:text-primary"> openrouter.ai/keys</a>
                 </p>
               </div>
             )}
 
-            {showBatch && (
+            {showBatch && canManageKeys && (
               <div className="space-y-1.5">
                 <Textarea
                   placeholder={"多行 Key，每行一个或逗号分隔：\nsk-or-v1-aaa...\nsk-or-v1-bbb..."}
@@ -334,7 +427,7 @@ export function AiSettingsPopover() {
                 <div className="flex items-center gap-1.5">
                   <Button size="sm" className="h-7 px-2 text-[11px]" onClick={() => void handleBatchImport()} disabled={batchBusy || !batchInput.trim()}>
                     {batchBusy ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
-                    {batchBusy ? '导入中…' : '导入'}
+                    {batchBusy ? '校验导入中…' : '测活并导入'}
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => { setShowBatch(false); setBatchInput('') }}>
                     取消
@@ -343,10 +436,11 @@ export function AiSettingsPopover() {
                     {batchInput.split(/[\n,]+/).filter((l) => l.trim()).length} 个
                   </span>
                 </div>
+                <p className="text-[10px] text-muted-foreground">仅入库测活通过的 Key；无效会跳过并提示。</p>
               </div>
             )}
 
-            {isFounder && showList && configured && safeKeys.length > 0 && (
+            {canManageKeys && showList && configured && safeKeys.length > 0 && (
               <div className="space-y-1 max-h-44 overflow-y-auto" data-testid="ai-settings-key-list">
                 {safeKeys.map((k, idx) => (
                   <div key={k.id} className="group/keyrow flex items-center justify-between rounded bg-background/80 px-2 py-1.5 hover:bg-background">
@@ -360,15 +454,32 @@ export function AiSettingsPopover() {
                         </Badge>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 shrink-0 p-0 opacity-0 group-hover/keyrow:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                      aria-label={`删除 Key #${idx + 1}`}
-                      onClick={() => setDeleteTarget({ type: 'single', id: k.id, masked: k.masked })}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                        aria-label={`测活 Key #${idx + 1}`}
+                        title="测活"
+                        disabled={probingId === k.id}
+                        onClick={() => void handleProbeStored(k.id)}
+                      >
+                        {probingId === k.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Activity className="h-3 w-3" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 group-hover/keyrow:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={`删除 Key #${idx + 1}`}
+                        onClick={() => setDeleteTarget({ type: 'single', id: k.id, masked: k.masked })}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -573,19 +684,25 @@ export function ModelInlinePicker() {
       disabled={isLoading}
     >
       <SelectTrigger
-        className="h-7 px-2 text-[11px] font-mono tabular-nums gap-1 border-border/60 bg-transparent hover:bg-muted/30 min-w-0 shrink"
+        className={cn(
+          'h-8 min-w-0 max-w-[200px] shrink gap-1.5 rounded-full border-border/50',
+          'bg-muted/40 px-3 text-[12px] font-medium text-foreground shadow-none',
+          'hover:bg-muted/70 focus:ring-1 focus:ring-primary/20',
+        )}
         aria-label="选择模型"
         data-testid="model-inline-picker"
       >
-        <SelectValue placeholder={isLoading ? '加载中…' : displayTail} />
+        <span className="truncate">
+          {isLoading ? '加载模型…' : displayTail || '选择模型'}
+        </span>
       </SelectTrigger>
-      <SelectContent className="max-h-72">
+      <SelectContent className="max-h-72 min-w-[220px]">
         {models.map((m) => {
           const mTail = (m.id?.split('/').pop() || m.id || '').replace(/:free$/i, '')
           return (
-            <SelectItem key={m.id} value={m.id} className="text-[11px]">
+            <SelectItem key={m.id} value={m.id} className="text-[12px]">
               <div className="flex items-center gap-1.5">
-                <span className="truncate font-mono">{mTail}</span>
+                <span className="truncate">{m.name || mTail}</span>
                 {m.tags && m.tags.length > 0 && (
                   <span className="flex items-center gap-0.5 shrink-0">
                     {m.tags.map((tag) => {

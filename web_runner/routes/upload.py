@@ -152,11 +152,28 @@ def upload_video():
     task_id = _new_task_id("upload-video")
     if schedule:
         normalised = _normalise_schedule(schedule)
-        parsed = datetime.strptime(normalised, '%Y-%m-%d %H:%M')
-        _db_insert_task(task_id=task_id, status="scheduled", platform=platform, action="upload-video", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        parsed = datetime.strptime(normalised, "%Y-%m-%d %H:%M")
+        _db_insert_task(
+            task_id=task_id,
+            status="scheduled",
+            platform=platform,
+            action="upload-video",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+            scheduled_at=normalised,
+        )
         _schedule_task(task_id, argv, parsed)
     else:
-        _db_insert_task(task_id=task_id, status="pending", platform=platform, action="upload-video", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        _db_insert_task(
+            task_id=task_id,
+            status="pending",
+            platform=platform,
+            action="upload-video",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+        )
         task_executor.submit(_run_sau, task_id, argv)
     return jsonify({"success": True, "data": {"task_id": task_id}})
 
@@ -230,11 +247,28 @@ def upload_note():
     task_id = _new_task_id("upload-note")
     if schedule:
         normalised = _normalise_schedule(schedule)
-        parsed = datetime.strptime(normalised, '%Y-%m-%d %H:%M')
-        _db_insert_task(task_id=task_id, status="scheduled", platform=platform, action="upload-note", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        parsed = datetime.strptime(normalised, "%Y-%m-%d %H:%M")
+        _db_insert_task(
+            task_id=task_id,
+            status="scheduled",
+            platform=platform,
+            action="upload-note",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+            scheduled_at=normalised,
+        )
         _schedule_task(task_id, argv, parsed)
     else:
-        _db_insert_task(task_id=task_id, status="pending", platform=platform, action="upload-note", account=account, created=datetime.now().isoformat(timespec="seconds"), argv=argv)
+        _db_insert_task(
+            task_id=task_id,
+            status="pending",
+            platform=platform,
+            action="upload-note",
+            account=account,
+            created=datetime.now().isoformat(timespec="seconds"),
+            argv=argv,
+        )
         task_executor.submit(_run_sau, task_id, argv)
     return jsonify({"success": True, "data": {"task_id": task_id}})
 

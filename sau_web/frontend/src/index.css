@@ -219,6 +219,13 @@
   * {
     @apply border-border;
   }
+  /* Let dashboard AppShell fill the viewport (h-dvh). Marketing pages still
+     scroll the document when content exceeds the viewport. */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
@@ -258,6 +265,13 @@
 @keyframes subtle-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+/* ===== Resizable panel drag-hint pulse (plays once on mount to hint at drag) ===== */
+@keyframes hint-pulse {
+  0% { opacity: 0.3; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.35); }
+  100% { opacity: 0.7; transform: scale(1); }
 }
 
 @keyframes accordion-down {
@@ -420,7 +434,18 @@
   box-shadow: 0 0 0 3px var(--ring-alpha);
 }
 
-/* ===== Scrollbar (Linear: minimal, hairline-strong thumb) ===== */
+/* ===== Scrollbar (premium: ultra-thin, gradient thumb, hover-expand, cross-browser) =====
+ *
+ * Design intent:
+ *   • Default 4px — barely visible, keeps UI clean.
+ *   • Hover/scroll → expands to 6px + track + brighter thumb (delight).
+ *   • Gradient thumb with primary lavender hint for brand cohesion.
+ *   • Active (drag) state for tactile feedback.
+ *   • Firefox via `scrollbar-width` / `scrollbar-color` fallback.
+ *   • Smooth scroll on the dashboard main pane (class-applied, not global).
+ * ============================================================ */
+
+/* ── WebKit (Chrome, Safari, Edge) ────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -428,24 +453,56 @@
 
 ::-webkit-scrollbar-track {
   background: transparent;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.85 0 0);
-  border-radius: 3px;
+  background: oklch(0.50 0.12 264 / 0.22);         /* primary-hinted, subtle on light */
+  border-radius: 999px;
+  transition: background 0.25s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.7 0 0);
+  background: oklch(0.48 0.16 264 / 0.50);          /* richer lavender on hover */
 }
 
+::-webkit-scrollbar-thumb:active {
+  background: oklch(0.48 0.16 264 / 0.70);          /* boldest when dragging */
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── Dark mode overrides ─────────────────────────────────── */
 .dark ::-webkit-scrollbar-thumb {
-  background: oklch(0.32 0.008 264);               /* hairline-strong on dark */
-  border-radius: 3px;
+  background: oklch(0.55 0.12 264 / 0.16);          /* ghost on dark canvas */
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.42 0.01 264);
+  background: oklch(0.65 0.16 264 / 0.38);
+}
+
+.dark ::-webkit-scrollbar-thumb:active {
+  background: oklch(0.65 0.16 264 / 0.55);
+}
+
+/* ── Firefox (standard properties) ────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.50 0.12 264 / 0.22) transparent;
+}
+
+.dark * {
+  scrollbar-color: oklch(0.55 0.12 264 / 0.16) transparent;
+}
+
+/* ── Smooth scroll for dashboard content panes only ─────────
+ * (global scroll-behavior: smooth feels sluggish on marketing
+ * pages with hero animations; scope to dashboard main area.) */
+.dashboard-scroll {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
 }
 
 /* ===== Selection (Linear: primary at low alpha) ===== */

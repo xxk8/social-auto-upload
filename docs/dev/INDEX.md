@@ -24,6 +24,7 @@ A future dev adding a new file under `docs/dev/` **must** do all five of the fol
 | [VALUE-UPGRADE](VALUE-UPGRADE.md) | Quick-win product-value uplift (confetti, preview, progress) — status table tracks delivery |
 | [skill-distribution](skill-distribution.md) | How Claude skills get distributed; read before adding a skill under `skills/` |
 | [web-shell-architecture-lock](web-shell-architecture-lock.md) | **LOCKED**：Web Shell = TanStack Router SPA + Flask；不上 Start/SSR/`createServerFn` |
+| [LOCALE-JSON-MUTATION-RULES](LOCALE-JSON-MUTATION-RULES.md) | Locale JSON edit rule: `python json.load/dump` or `write_file`; never multi-line `str_replace`. Read before touching `sau_web/frontend/src/locales/`. |
 | [tanstack-start-gap-analysis](tanstack-start-gap-analysis.md) | Historical Start gap catalogue — **reference only**, migration stopped |
 | [tanstack-start-migration-plan](tanstack-start-migration-plan.md) | Historical Start plan — **reference only** |
 | [08-toast-context-case-mismatch](second-batch-tickets/08-toast-context-case-mismatch.md) | Casing accident post-mortem; use lowercase `components` paths |
@@ -54,6 +55,7 @@ A future dev adding a new file under `docs/dev/` **must** do all five of the fol
 | `VALUE-UPGRADE.md` | ✅ | ✅ |
 | `skill-distribution.md` | ✅ | — |
 | `web-shell-architecture-lock.md` | ✅ | ✅ |
+| `LOCALE-JSON-MUTATION-RULES.md` | ✅ | — |
 | `tanstack-start-gap-analysis.md` | ✅ | — |
 | `tanstack-start-migration-plan.md` | ✅ | — |
 | `second-batch-tickets/*` | ✅ | — |

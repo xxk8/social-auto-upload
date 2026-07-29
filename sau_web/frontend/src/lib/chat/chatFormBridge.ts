@@ -55,6 +55,10 @@ export interface FormHandle {
    */
   applyMedia?: (media: { file?: File; thumbnail?: string; images?: File[] }) => ApplyAttempt
   getFormSnapshot: () => FormSnapshot
+  /** Set schedule input (`YYYY-MM-DDTHH:mm` local). Optional. */
+  setSchedule?: (value: string) => void
+  /** Trigger the form's primary submit. Optional. */
+  submit?: () => void | Promise<void>
 }
 
 /**

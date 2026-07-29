@@ -148,6 +148,83 @@ export async function readSSEStream(
 }
 
 /**
+ * NDJSON stream reader (one JSON object per line).
+ * Used by inbox subtitle progress: `{type:progress|done|error,...}`.
+ */
+export async function readNdjsonStream(
+  url: string,
+  payload: Record<string, unknown>,
+  onEvent: (event: Record<string, unknown>) => void,
+  onError: (message: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let resp: Response
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return
+    onError(err instanceof Error ? err.message : 'Network error')
+    return
+  }
+
+  if (!resp.ok) {
+    try {
+      const errBody = await resp.json()
+      onError(errBody.message || `HTTP ${resp.status}`)
+    } catch {
+      onError(`HTTP ${resp.status}`)
+    }
+    return
+  }
+
+  const reader = resp.body?.getReader()
+  if (!reader) {
+    onError('No response body')
+    return
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        try {
+          onEvent(JSON.parse(trimmed) as Record<string, unknown>)
+        } catch {
+          // skip malformed line
+        }
+      }
+    }
+    if (buffer.trim()) {
+      try {
+        onEvent(JSON.parse(buffer.trim()) as Record<string, unknown>)
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return
+    onError(err instanceof Error ? err.message : 'Stream error')
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+/**
  * 纯文本流读取（非 SSE），用于 inboxTranscribeStream 等场景。
  */
 export async function readTextStream(

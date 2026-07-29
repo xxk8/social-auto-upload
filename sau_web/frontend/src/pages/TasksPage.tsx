@@ -14,11 +14,12 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Pagination } from '@/components/ui/pagination'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ChipBar } from '@/components/ui/chip-bar'
 import { PageHeader } from '@/components/ui/page-header'
 import { api, type TaskItem } from '../api/client'
-import { useTasks } from '../hooks/useTasks'
+import { TASKS_QUERY_KEY, useTasks } from '../hooks/useTasks'
 import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/components/ui/toast'
 import {
@@ -45,7 +46,6 @@ import { TaskBatchActions } from '../features/tasks/TaskBatchActions'
 import { AddTaskDialog, type AddTaskFormState } from '../features/tasks/AddTaskDialog'
 import { TaskProgressBar } from '../features/tasks/TaskProgressBar'
 
-const TASKS_QUERY_KEY = ['tasks'] as const
 export default function TasksPage() {
   const qc = useQueryClient()
   const { addToast } = useToast()
@@ -62,6 +62,9 @@ export default function TasksPage() {
     }
   }, [keyword])
   const [status, setStatus] = useState<StatusType>('all')
+  /** 1-based page index for the filtered task list. */
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [batchProgress, setBatchProgress] = useState<BatchProgress>(null)
   const [batchDetailOpen, setBatchDetailOpen] = useState(false)
@@ -101,6 +104,23 @@ export default function TasksPage() {
       })
       .sort((a, b) => (b.created ?? '').localeCompare(a.created ?? ''))
   }, [tasks, debouncedKeyword, status])
+
+  // Reset to first page when filters change.
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedKeyword, status])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  // Keep page in range when list shrinks (delete / filter).
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), totalPages))
+  }, [totalPages])
+
+  const pageItems = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
+
   const counts = useMemo(() => {
     const map: Record<string, number> = { all: 0 }
     tasks.forEach((item) => {
@@ -210,20 +230,26 @@ export default function TasksPage() {
       return next
     })
   }, [])
+  // Header checkbox only toggles the **current page** (standard table UX).
   const handleToggleAll = useCallback(
     (checked: boolean) => {
       setSelectedIds((prev) => {
         const next = new Set(prev)
-        if (checked) filtered.forEach((t) => next.add(t.task_id))
-        else filtered.forEach((t) => next.delete(t.task_id))
+        if (checked) pageItems.forEach((t) => next.add(t.task_id))
+        else pageItems.forEach((t) => next.delete(t.task_id))
         return next
       })
     },
-    [filtered],
+    [pageItems],
   )
   const handleClearSelection = useCallback(() => setSelectedIds(new Set()), [])
   const handleStatusBadgeClick = useCallback((next: StatusType) => {
     setStatus((prev) => (prev === next ? 'all' : next))
+    setPage(1)
+  }, [])
+  const handlePageSizeChange = useCallback((size: number) => {
+    setPageSize(size)
+    setPage(1)
   }, [])
   const canDelete = (s?: string) =>
     s === 'success' || s === 'failed' || s === 'error' || s === 'scheduled'
@@ -301,6 +327,7 @@ export default function TasksPage() {
       '批量删除完成',
     )
   }, [filtered, selectedIds, addToast, runBatch])
+  // When filters change, drop selections that are no longer in the filtered set.
   const filteredRef = useRef(filtered)
   useEffect(() => {
     filteredRef.current = filtered
@@ -440,7 +467,7 @@ export default function TasksPage() {
         </div>
         <TaskTable
           isLoading={isLoading}
-          filtered={filtered}
+          filtered={pageItems}
           selectedIds={selectedIds}
           onToggle={handleToggleSelect}
           onToggleAll={handleToggleAll}
@@ -453,6 +480,17 @@ export default function TasksPage() {
           onRefresh={refresh}
           onAddTask={handleOpenAddModal}
         />
+        {!isLoading && filtered.length > 0 && (
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={filtered.length}
+            onPageChange={setPage}
+            onPageSizeChange={handlePageSizeChange}
+            pageSizeOptions={[10, 20, 50, 100]}
+            className="mt-0 rounded-b-md border-x-0 border-b-0 px-0 sm:px-0"
+          />
+        )}
       </TaskTableCard>
       <TaskDrawer
         taskId={drawerTaskId}

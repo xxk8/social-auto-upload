@@ -28,15 +28,17 @@ type ToneStyle = {
   dot: string
 }
 
+// Design tokens use `--status-error-*` (see index.css). Keep `danger` /
+// `error` tones as aliases so call-sites and CSS stay aligned.
 const dangerStyle: ToneStyle = {
-  bg: 'bg-[var(--status-danger-bg)]',
-  fg: 'text-[var(--status-danger-fg)]',
-  border: 'border-[var(--status-danger-fg)]/20',
-  fill: 'bg-[var(--status-danger-fg)]',
-  chip: 'bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)]',
-  ring: 'ring-[var(--status-danger-fg)]/30',
-  text: 'text-[var(--status-danger-fg)]',
-  dot: 'bg-[var(--status-danger-fg)]',
+  bg: 'bg-[var(--status-error-bg)]',
+  fg: 'text-[var(--status-error-fg)]',
+  border: 'border-[var(--status-error-fg)]/20',
+  fill: 'bg-[var(--status-error-fg)]',
+  chip: 'bg-[var(--status-error-bg)] text-[var(--status-error-fg)]',
+  ring: 'ring-[var(--status-error-fg)]/30',
+  text: 'text-[var(--status-error-fg)]',
+  dot: 'bg-[var(--status-error-fg)]',
 }
 
 export const toneStyleClasses: Record<Tone, ToneStyle> = {
@@ -102,7 +104,19 @@ function resolve(tone: Tone | string | null | undefined): Tone {
 type ToneArg = Tone | string | null | undefined
 
 export const toneTextClass = (t: ToneArg): string => toneStyleClasses[resolve(t)].text
-export const toneFgVar = (t: ToneArg): string => toneStyleClasses[resolve(t)].fg
+/**
+ * CSS color for SVG / inline `fill` / `background` — a real
+ * `var(--status-*-fg)` string, **not** a Tailwind class.
+ * (The `.fg` field on `toneStyleClasses` is `text-[var(...)]` and must
+ * not be passed to recharts `Cell fill` or style.background.)
+ */
+export const toneFgVar = (t: ToneArg): string => {
+  const tone = resolve(t)
+  if (tone === 'error' || tone === 'danger') return 'var(--status-error-fg)'
+  if (tone === 'primary') return 'var(--primary)'
+  if (tone === 'neutral') return 'var(--muted-foreground)'
+  return `var(--status-${tone}-fg)`
+}
 export const toneChipClasses = (t: ToneArg): string => toneStyleClasses[resolve(t)].chip
 export const toneFillBgClass = (t: ToneArg): string => toneStyleClasses[resolve(t)].fill
 export const toneBorderClass = (t: ToneArg): string => toneStyleClasses[resolve(t)].border

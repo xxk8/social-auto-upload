@@ -10,6 +10,7 @@ import { ReviewStep } from './ReviewStep'
 import { usePublishWizardStore, type WizardStep } from '@/stores/publishWizardStore'
 import type { AccountGroup } from '@/api/client'
 import type { PlatformSpecificSection } from '../GroupPublishSelector'
+import { parseScheduleParam } from '../schedulePresets'
 
 /**
  * §11.1 + §11.7 — PublishWizard: the main container that orchestrates
@@ -84,6 +85,22 @@ export const PublishWizard = memo(function PublishWizard({
     const urlStep = Number(searchParams.get('step'))
     if (!Number.isNaN(urlStep) && urlStep >= 0 && urlStep <= 2) {
       setStep(urlStep as WizardStep)
+    }
+    // Calendar deep-link: seed schedule once from `?schedule=`.
+    const schedule = parseScheduleParam(searchParams.get('schedule'))
+    if (schedule) {
+      const current = usePublishWizardStore.getState().content.schedule
+      if (!current.trim()) {
+        usePublishWizardStore.getState().setSchedule(schedule)
+      }
+      // Jump to content step so schedule field is reachable.
+      if (usePublishWizardStore.getState().currentStep < 1) {
+        setStep(1)
+      }
+      const next = new URLSearchParams(searchParams)
+      next.delete('schedule')
+      if (!next.has('step')) next.set('step', '1')
+      setSearchParams(next, { replace: true })
     }
     // Only run on mount — we don't want this to fight with our own writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

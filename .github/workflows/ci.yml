@@ -43,3 +43,23 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run build
+
+  # Round-trip the locale JSON files through Python to catch indentation /
+  # depth-of-nesting regressions introduced by naive str_replace edits on
+  # JSON. See docs/dev/LOCALE-JSON-MUTATION-RULES.md for the rule that
+  # motivated this gate. The job is intentionally self-contained (no
+  # working-directory, no service deps) so a future editor failure here
+  # surfaces as a CI red that's easy to triage.
+  locale-json-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify locale JSON round-trips
+        run: |
+          python -c "import json; json.load(open('sau_web/frontend/src/locales/zh-CN.json'))" \
+            && python -c "import json; json.load(open('sau_web/frontend/src/locales/en-US.json'))" \
+            && python -c "import json; d=json.load(open('sau_web/frontend/src/locales/en-US.json')); assert 'marketing' in d and 'stats' in d['marketing'], 'en-US.json has top-level stats instead of marketing.stats — see LOCALE-JSON-MUTATION-RULES.md'" \
+            && echo 'Locale JSON files: valid round-trip + canonical marketing.stats placement'

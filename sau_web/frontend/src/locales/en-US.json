@@ -1,9 +1,7 @@
 {
   "locale": {
     "switch_label": "Switch language",
-    "select_label": "Select language",
-    "name_zh-CN": "中文",
-    "name_en-US": "English"
+    "select_label": "Select language"
   },
   "marketing": {
     "topbar": {
@@ -18,7 +16,6 @@
       }
     },
     "footer": {
-      "brand": "social-auto-upload",
       "subtitle": "Multi-platform video auto-publish tool",
       "copyright": "© social-auto-upload. All rights reserved.",
       "columns": {
@@ -98,9 +95,18 @@
         "title_1": "Three steps. ",
         "title_2": "Zero code.",
         "description": "Upload to publish in under a minute.",
-        "step_upload": { "title": "Upload media", "description": "Drop in your video, fill title + description. AI drafts platform-native copies." },
-        "step_select": { "title": "Pick your group", "description": "Group by creator / team / matrix scenario, tick the target platform accounts." },
-        "step_publish": { "title": "Publish or schedule", "description": "One click to ship everywhere, or queue to peak hours — tasks run unattended." }
+        "step_upload": {
+          "title": "Upload media",
+          "description": "Drop in your video, fill title + description. AI drafts platform-native copies."
+        },
+        "step_select": {
+          "title": "Pick your group",
+          "description": "Group by creator / team / matrix scenario, tick the target platform accounts."
+        },
+        "step_publish": {
+          "title": "Publish or schedule",
+          "description": "One click to ship everywhere, or queue to peak hours — tasks run unattended."
+        }
       },
       "cta": {
         "eyebrow": "Start now",
@@ -114,70 +120,51 @@
         "trust_24x7": "Runs 24/7",
         "trust_full_coverage": "Full platform coverage"
       }
+    },
+    "testimonials": {
+      "eyebrow": "User stories",
+      "title_1": "What creators say.",
+      "subtitle": "Sample feedback · real usage",
+      "quote_1": "I used to spend 3 hours a day manually cross-posting to 5 platforms. Now I queue once and focus on content.",
+      "author_1_name": "M",
+      "author_1_role": "Solo creator",
+      "quote_2": "Managing 12 account groups used to take 4 operators. Now one is enough — and we get cookie-expiry warnings on time.",
+      "author_2_name": "L",
+      "author_2_role": "Matrix operator",
+      "quote_3": "We run 80+ accounts from our studio — sau is the only tool that doesn't choke on logins, captchas, or uploads.",
+      "author_3_name": "Y",
+      "author_3_role": "Studio partner"
+    },
+    "faq": {
+      "eyebrow": "FAQ",
+      "title_1": "Still have questions?",
+      "q_1": "Is my account safe? Will cookies leak?",
+      "a_1": "Cookies and login state stay on your local machine. The system collects nothing, uploads nothing, and every publish action runs on your own computer.",
+      "q_2": "I don't know code — can I use this?",
+      "a_2": "Yes. QR sign-in to a platform → drop in your video → pick an account group → click publish. Zero code required.",
+      "q_3": "Which platforms do you support, and what's next?",
+      "a_3": "Mainline: Douyin, Bilibili, Xiaohongshu, Kuaishou. Beta: WeChat Video, Baijia. Roadmap: TikTok and YouTube.",
+      "q_4": "What happens when a cookie expires?",
+      "a_4": "The system continuously polls login state and nudges you 24 hours before expiry — re-scan the QR to refresh. All platforms use standard QR login.",
+      "q_5": "Where do my videos go?",
+      "a_5": "Everything stays local. Unless you opt-in to cloud backup, your videos never leave your machine."
+    },
+    "stats": {
+      "banner_label": "Trust metrics at a glance",
+      "caption_platforms": "mainstream platforms covered",
+      "caption_hours_saved": "daily publishing hours saved",
+      "caption_cloud": "video files uploaded to cloud",
+      "caption_runtime": "hours always-on automation"
     }
   },
-  "dashboard": {
-    "sidebar": {
-      "section_main": "Workspace",
-      "section_admin": "Admin",
-      "nav": {
-        "accounts": "Accounts",
-        "publish": "Publish",
-        "tasks": "Tasks",
-        "analytics": "Analytics",
-        "logs": "Logs",
-        "inbox": "Inbox",
-        "calendar": "Calendar",
-        "studio": "Script Studio"
-      },
-      "admin": {
-        "root": "Admin",
-        "overview": "Overview",
-        "users": "Users",
-        "audit": "Audit logs"
-      },
-      "footer": {
-        "role_admin": "Admin",
-        "role_user": "User",
-        "email_fallback": "Admin"
-      },
-      "expand_sidebar": "Expand sidebar",
-      "collapse_sidebar": "Collapse sidebar",
-      "toggle_sidebar": "Toggle sidebar",
-      "search_button": "Search",
-      "help_aria": "Keyboard shortcuts",
-      "mobile_nav_label": "Main navigation"
-    }
-  },
+  "dashboard": {}
+  ,
   "common": {
-    "back": "Back",
-    "close": "Close",
-    "loading": "Loading…"
+    "clear": "Clear"
   },
   "accounts": {
     "actions": {
       "menu": "Authorization actions"
-    },
-    "group": {
-      "rename": "Rename group",
-      "add_authorization": "Add authorization",
-      "delete": "Delete group"
-    },
-    "toolbar": {
-      "clear_search": "Clear search",
-      "grid_view": "Grid view",
-      "list_view": "List view"
-    },
-    "login": {
-      "interactive_browser_handoff": {
-        "title": "Browser is ready — switch to the window to sign in",
-        "guidance_l1": "This platform has no web QR sign-in flow; the backend has launched a headed Chromium on the host machine.",
-        "guidance_l2": "In the popup window, complete Google account + 2FA in the order guided by the platform.",
-        "guidance_l3": "No button click needed after — the backend watches login state and saves the cookie automatically.",
-        "cta_label": "Backend is waiting on the headed Chrome sign-in · auto-cancels after 5 minutes",
-        "timeout_label": "5-minute timeout reached, this authorization was cancelled",
-        "status_label": "Headed Chrome waiting"
-      }
     }
   },
   "tasks": {
@@ -261,6 +248,9 @@
       }
     },
     "progress": {
+      "title": "Task status",
+      "subtitle": "Status summary of current list",
+      "success_rate": "Success rate",
       "empty": "No tasks yet",
       "done": "Succeeded",
       "active": "In progress",
@@ -275,12 +265,14 @@
       "downloaded": "Downloaded",
       "failed": "Failed",
       "transcribing": "Transcribing",
-      "transcribed": "Transcribed"
+      "transcribed": "Transcribed",
+      "subtitling": "Adding subtitles"
     },
     "batch": {
       "select_all": "Select all",
       "unselect_all": "Clear selection",
       "selected_count": "{{count}} selected",
+      "organize_selected": "Archive group",
       "remove_selected": "Remove selected",
       "retry_selected": "Retry selected",
       "transcribe_selected": "Transcribe selected",
@@ -299,9 +291,14 @@
         "downloading": "Downloading",
         "downloaded": "Downloaded",
         "failed": "Failed",
+        "subtitling": "Adding subtitles",
         "transcribing": "Transcribing",
         "transcribed": "Transcribed"
       },
+      "subtitle": "Add subtitles",
+      "subtitle_again": "Re-add subtitles",
+      "download": "Download file",
+      "download_aria": "Download file to your computer",
       "transcribe": "Transcribe",
       "copy": "Copy",
       "export": "Export",
@@ -403,7 +400,7 @@
       "button_clear": "Clear",
       "clear_dialog": {
         "title": "Clear the form?",
-        "description": "You've filled in {{count}} fields. Clearing will also delete the local draft — this cannot be undone.",
+        "description": "You've filled in {{count}} fields with video details, tags, and platform-specific settings. Clearing will also delete the local draft — this cannot be undone.",
         "confirm": "Clear",
         "cancel": "Cancel"
       },
@@ -421,7 +418,7 @@
       "button_clear": "Clear",
       "clear_dialog": {
         "title": "Clear the form?",
-        "description": "You've filled in {{count}} fields. Clearing will also delete the local draft — this cannot be undone.",
+        "description": "You've filled in {{count}} fields with post content, tags, and images. Clearing will also delete the local draft — this cannot be undone.",
         "confirm": "Clear",
         "cancel": "Cancel"
       },

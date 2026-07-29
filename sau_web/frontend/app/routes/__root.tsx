@@ -9,26 +9,42 @@ import { ThemeProvider } from '@/components/ThemeProvider'
 import { AccountsProvider } from '@/features/accounts/AccountsProvider'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AuthLoadingSkeleton } from '@/features/auth/AuthLoadingSkeleton'
-import { resumeInterruptedDownloads } from '@/stores/inboxResume'
+import { scheduleInboxResume } from '@/stores/inboxResume'
 import { NotFound } from '@/components/NotFound'
 
-// Browser-only startup side-effect (IndexedDB / localStorage).
-resumeInterruptedDownloads()
+// Browser-only: re-issue in-progress inbox downloads/transcribes after
+// localStorage rehydration. Idle-defer so first paint is not blocked.
+const _resumeInbox = () => {
+  try {
+    scheduleInboxResume()
+  } catch {
+    /* private mode / storage blocked */
+  }
+}
+if (typeof requestIdleCallback === 'function') {
+  requestIdleCallback(() => _resumeInbox(), { timeout: 2_000 })
+} else {
+  setTimeout(_resumeInbox, 1)
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 1_000,
+      // Default 5s: most shell screens are not tick-sensitive.
+      staleTime: 5_000,
       refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
     },
   },
 })
 
 queryClient.setQueryDefaults(['accounts'], { staleTime: 60_000 })
 queryClient.setQueryDefaults(['account-groups'], { staleTime: 60_000 })
-queryClient.setQueryDefaults(['tasks'], { staleTime: 3_000 })
-queryClient.setQueryDefaults(['task-logs'], { staleTime: 1_000 })
+queryClient.setQueryDefaults(['tasks'], { staleTime: 5_000 })
+queryClient.setQueryDefaults(['task-logs'], { staleTime: 1_500 })
+queryClient.setQueryDefaults(['logs'], { staleTime: 1_500 })
+queryClient.setQueryDefaults(['calendar-tasks'], { staleTime: 10_000 })
 queryClient.setQueryDefaults(['ai-config'], { staleTime: 300_000 })
 queryClient.setQueryDefaults(['ai-keys'], { staleTime: 300_000 })
 

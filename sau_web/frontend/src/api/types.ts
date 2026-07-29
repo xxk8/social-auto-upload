@@ -84,6 +84,8 @@ export type AccountGroup = {
 export type AccountAuthorization = {
   id: number
   platform: string
+  /** CLI `--account` label (cookie stem after platform_). Shown under the platform name. */
+  account_name?: string
   cookie_file: string
   valid: boolean
   reason?: string

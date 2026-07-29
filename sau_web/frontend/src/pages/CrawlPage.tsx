@@ -45,6 +45,7 @@ import type {
   CrawlHealth,
   SentimentBucket,
 } from '@/api/crawl'
+import { SectionIcon } from '@/components/ui/section-header'
 import {
   Search,
   FileText,
@@ -399,9 +400,9 @@ function HealthStatsStrip({ platform: _platform }: { platform: PlatformKey }) {
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-2xl font-bold leading-none tabular-nums tracking-tight">
+                <div className="text-2xl font-bold leading-none tabular-nums tracking-tight">
                   {loading ? <Skeleton className="h-7 w-16 mt-1" /> : s.value}
-                </p>
+                </div>
                 <p className="text-xs text-muted-foreground mt-1.5 truncate">
                   {s.label}
                 </p>
@@ -469,7 +470,7 @@ function SentimentDistributionBar({ platform }: { platform: PlatformKey }) {
     }))
 
   return (
-    <Card className="border-border/40 bg-gradient-to-br from-background to-muted/20 overflow-hidden">
+    <Card className="card-refined bg-gradient-to-br from-background to-muted/20 overflow-hidden">
       <CardContent className="py-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-medium text-muted-foreground">
@@ -791,13 +792,11 @@ function TasksTab({
     if (kind === 'search') setKeyword(v)
     else setPostIds(v)
   }
-  // search requires an authorized account (backend /api/crawl/
-  // search-stream returns 401 missing_account otherwise).  detail
-  // + comments don't have this gate — their task-queue endpoints
-  // don't currently pass account through.
+  // Account is optional: without cookies / SAU_CRAWLER_LIVE the backend
+  // records demo rows so the page is usable 0→1. With an authorized
+  // account + LIVE mode the same path can scrape for real.
   const canSubmit =
-    (kind === 'search' ? keyword : postIds).trim().length > 0 &&
-    (kind !== 'search' || selectedAccount.length > 0)
+    (kind === 'search' ? keyword : postIds).trim().length > 0
 
   const start = async () => {
     const label =
@@ -901,12 +900,10 @@ function TasksTab({
   }
 
   return (
-    <Card className="border-border/40">
+    <Card className="card-refined">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-            <Sparkles className="h-4 w-4 text-primary" />
-          </div>
+          <SectionIcon size="md"><Sparkles className="h-4 w-4" /></SectionIcon>
           启动新的爬虫任务
         </CardTitle>
       </CardHeader>
@@ -969,7 +966,7 @@ function TasksTab({
                   data-testid="crawl-account-select"
                   value={selectedAccount}
                   onChange={(e) => setSelectedAccount(e.target.value)}
-                  className="flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="flex h-9 w-full items-center rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
                 >
                   {/* Hide the "auto" option for search kind — the
                       auto-pick useEffect above makes it unselectable
@@ -987,16 +984,30 @@ function TasksTab({
                   ))}
                 </select>
               ) : (
-                <div className="text-xs text-muted-foreground">
-                  暂无 {PLATFORM_LABEL[platform]} 授权账号
+                <div className="rounded-md border border-dashed border-border/50 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                  暂无 {PLATFORM_LABEL[platform]} 授权账号。
+                  <span className="block mt-0.5 text-foreground/70">
+                    仍可启动：写入本地演示数据。真爬需账号 cookie +{' '}
+                    <code className="font-mono text-[10px]">SAU_CRAWLER_LIVE=1</code>
+                  </span>
                 </div>
               )}
             </div>
           )}
           <div className="flex items-end">
-            <Button onClick={start} disabled={!canSubmit} className="w-full gap-1.5">
-              <Sparkles className="h-3.5 w-3.5" />
-              {kind === 'search' ? '启动搜索' : kind === 'detail' ? '拉取详情' : '拉取评论'}
+            <Button onClick={start} disabled={!canSubmit || streaming} className="w-full gap-1.5">
+              {streaming ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {streaming
+                ? '采集中…'
+                : kind === 'search'
+                  ? '启动搜索'
+                  : kind === 'detail'
+                    ? '拉取详情'
+                    : '拉取评论'}
             </Button>
           </div>
         </div>
@@ -1111,11 +1122,11 @@ function ContentTab({
   }, [platform, refreshKey])
 
   return (
-    <Card className="border-border/40">
+    <Card className="card-refined">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10">
-            <Database className="h-4 w-4 text-blue-500" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-blue-500/5 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/20">
+            <Database className="h-4 w-4" />
           </div>
           最近 50 条内容（{PLATFORM_LABEL[platform]}）
         </CardTitle>
@@ -1237,11 +1248,11 @@ function CommentsTab({ platform }: { platform: PlatformKey }) {
   }, [rows])
 
   return (
-    <Card className="border-border/40">
+    <Card className="card-refined">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10">
-            <MessageSquare className="h-4 w-4 text-violet-500" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/15 to-violet-500/5 text-violet-600 dark:text-violet-400 ring-1 ring-violet-500/20">
+            <MessageSquare className="h-4 w-4" />
           </div>
           最近 50 条评论（{PLATFORM_LABEL[platform]}）
         </CardTitle>

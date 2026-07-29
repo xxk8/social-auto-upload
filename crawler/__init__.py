@@ -1,7 +1,9 @@
 """Multi-platform crawler package surface for the local Web Shell.
 
 Platform workers live under ``crawler/platforms/`` (optional / heavy).
-Local Flask uses PostgreSQL; public helpers enqueue + record without Postgres.
+Default path records demo rows into PostgreSQL so the UI is 0→1 usable
+without ``SAU_CRAWLER_LIVE``. Real browser crawl: set
+``SAU_CRAWLER_LIVE=1`` and provide platform cookies.
 """
 from __future__ import annotations
 
@@ -79,153 +81,309 @@ def run_crawl(
             engine = "live-error"
 
     # Scaffold demo rows so the UI has something to show without live mode.
+    max_count = int(payload.get("max_count") or payload.get("limit") or 5)
+    max_count = max(1, min(max_count, 20))
+
     if not items and kind == "search" and keyword:
         items = [
             {
                 "platform": plat or platform or "",
                 "post_id": f"demo-{secrets.token_hex(4)}",
-                "title": f"[{plat or platform or 'web'}] {keyword}",
-                "author": "local-shell",
+                "title": f"[{plat or platform or 'web'}] {keyword} · 示例 {i + 1}",
+                "desc": f"本地演示数据（关键词：{keyword}）。开启 SAU_CRAWLER_LIVE=1 并配置账号 cookie 可抓取真实内容。",
+                "author": "local-shell-demo",
                 "url": None,
                 "note": "demo row — set SAU_CRAWLER_LIVE=1 for browser crawl",
             }
+            for i in range(min(3, max_count))
         ]
         message = "demo search rows recorded (enable SAU_CRAWLER_LIVE for real crawl)"
+        engine = "demo"
     if not items and kind == "detail" and post_ids:
         items = [
             {
                 "platform": plat or platform or "",
                 "post_id": pid,
-                "title": f"detail:{pid}",
-                "author": "local-shell",
+                "title": f"详情占位 · {pid}",
+                "desc": f"本地壳对 post_id={pid} 的详情占位。",
+                "author": "local-shell-demo",
                 "url": None,
             }
             for pid in post_ids[:10]
         ]
         message = "detail placeholders recorded"
+        engine = "demo"
     if kind == "comments" and post_ids and not comments:
-        for pid in post_ids[:5]:
-            comments.append({
-                "platform": plat or platform or "",
-                "post_id": pid,
-                "comment_id": f"c-{secrets.token_hex(3)}",
-                "content": f"示例评论（{pid}）— 本地壳占位",
-                "sentiment": "neutral",
-            })
+        sentiments = ("positive", "neutral", "negative")
+        for i, pid in enumerate(post_ids[:5]):
+            for j in range(min(3, max_count)):
+                comments.append({
+                    "platform": plat or platform or "",
+                    "post_id": pid,
+                    "comment_id": f"c-{secrets.token_hex(3)}",
+                    "content": f"示例评论 {j + 1}（{pid}）— 本地壳占位",
+                    "text": f"示例评论 {j + 1}（{pid}）— 本地壳占位",
+                    "sentiment": sentiments[j % 3],
+                })
         message = "comment placeholders recorded"
+        engine = "demo"
 
-    if kind == "search":
-        title = f"search:{keyword}" if keyword else "search"
-    elif kind == "detail":
-        title = f"detail:{','.join(post_ids[:3])}"
-    elif kind == "comments":
-        title = f"comments:{','.join(post_ids[:3])}"
-    else:
-        title = kind
-
+    stored_items: list[dict[str, Any]] = []
     for it in items:
-        _persist_content_row(
-            platform=it.get("platform") or plat or (platform or ""),
+        row = _persist_content_row(
+            platform=str(it.get("platform") or plat or (platform or "")),
             post_id=it.get("post_id"),
-            title=it.get("title") or title,
-            author=it.get("author"),
-            url=it.get("url"),
-            payload={
+            raw_payload={
                 "kind": kind,
                 "platform": plat,
-                "request": payload,
-                "item": it,
                 "engine": engine,
                 "message": message,
+                "title": it.get("title"),
+                "desc": it.get("desc") or it.get("note"),
+                "author": it.get("author"),
+                "url": it.get("url"),
+                "note": it.get("note"),
+                "item": it,
+                "request": {
+                    "keyword": keyword,
+                    "post_ids": post_ids,
+                    "account": payload.get("account"),
+                },
             },
         )
-    if not items:
-        # still leave a breadcrumb for empty runs
-        _persist_content_row(
+        if row:
+            stored_items.append(row)
+
+    if not items and not comments:
+        # Breadcrumb for empty runs so operators can see the attempt.
+        row = _persist_content_row(
             platform=plat or (platform or ""),
             post_id=(post_ids[0] if post_ids else None),
-            title=title,
-            author=None,
-            url=None,
-            payload={
+            raw_payload={
                 "kind": kind,
                 "platform": plat,
-                "request": payload,
-                "items": items,
                 "engine": engine,
                 "message": message,
+                "title": f"{kind}:empty",
+                "request": payload,
             },
         )
+        if row:
+            stored_items.append(row)
 
+    stored_comments: list[dict[str, Any]] = []
     for cm in comments:
-        _persist_comment_row(
-            platform=cm.get("platform") or plat or (platform or ""),
+        row = _persist_comment_row(
+            platform=str(cm.get("platform") or plat or (platform or "")),
             post_id=cm.get("post_id"),
-            comment_id=cm.get("comment_id"),
-            content=cm.get("content") or "",
-            sentiment=cm.get("sentiment") or "pending",
+            raw_payload={
+                "comment_id": cm.get("comment_id"),
+                "text": cm.get("text") or cm.get("content") or "",
+                "content": cm.get("content") or cm.get("text") or "",
+                "engine": engine,
+            },
+            sentiment=str(cm.get("sentiment") or "neutral"),
         )
+        if row:
+            stored_comments.append(row)
 
     return {
-        "items": items,
-        "comments": comments,
+        "items": stored_items,
+        "comments": stored_comments,
         "message": message,
         "kind": kind,
         "platform": plat,
         "engine": engine,
-        "counts": {"items": len(items), "comments": len(comments)},
+        "counts": {"items": len(stored_items), "comments": len(stored_comments)},
     }
+
+
+def _parse_json_field(val: Any) -> Any:
+    if val is None:
+        return None
+    if isinstance(val, (dict, list)):
+        return val
+    if isinstance(val, str) and val.strip():
+        try:
+            return json.loads(val)
+        except Exception:
+            return val
+    return val
+
+
+def _iso(val: Any) -> str | None:
+    if val is None:
+        return None
+    if hasattr(val, "isoformat"):
+        try:
+            return val.isoformat(timespec="seconds")  # type: ignore[call-arg]
+        except TypeError:
+            return val.isoformat()
+    return str(val)
+
+
+def _content_api_row(r: dict) -> dict[str, Any]:
+    raw = _parse_json_field(r.get("raw_payload") if "raw_payload" in r else r.get("payload"))
+    if not isinstance(raw, dict):
+        raw = {"payload": raw} if raw is not None else {}
+    # Promote flat columns into raw_payload for the UI extractor.
+    for k in ("title", "author", "url", "desc"):
+        if r.get(k) and k not in raw:
+            raw[k] = r[k]
+    return {
+        "id": r["id"],
+        "platform": r.get("platform"),
+        "post_id": r.get("post_id"),
+        "raw_payload": raw,
+        "crawled_at": _iso(r.get("crawled_at") or r.get("created_at")),
+    }
+
+
+def _comment_api_row(r: dict) -> dict[str, Any]:
+    raw = _parse_json_field(r.get("raw_payload") if "raw_payload" in r else None)
+    if not isinstance(raw, dict):
+        raw = {}
+    if r.get("content") and "text" not in raw:
+        raw["text"] = r["content"]
+        raw["content"] = r["content"]
+    if r.get("comment_id") and "comment_id" not in raw:
+        raw["comment_id"] = r["comment_id"]
+    sentiment = r.get("ai_sentiment") if r.get("ai_sentiment") is not None else r.get("sentiment")
+    return {
+        "id": r["id"],
+        "platform": r.get("platform"),
+        "post_id": r.get("post_id"),
+        "raw_payload": raw,
+        "ai_sentiment": sentiment,
+        "ai_sentiment_confidence": r.get("ai_sentiment_confidence"),
+        "ai_reply_suggestion": r.get("ai_reply_suggestion"),
+        "crawled_at": _iso(r.get("crawled_at") or r.get("created_at")),
+    }
+
+
+def _dict_rows(conn) -> None:
+    conn.row_factory = lambda c, r: {col[0]: r[i] for i, col in enumerate(c.description)}
 
 
 def _persist_content_row(
     *,
     platform: str,
     post_id: str | None,
-    title: str,
-    author: str | None,
-    url: str | None,
-    payload: dict[str, Any],
-) -> None:
+    raw_payload: dict[str, Any],
+) -> dict[str, Any] | None:
     from web_runner.db import db_lock, get_connection
 
+    now = _now()
+    payload_json = json.dumps(raw_payload, ensure_ascii=False)
     with db_lock:
         with get_connection() as conn:
-            conn.execute(
-                "INSERT INTO crawled_content "
-                "(platform, post_id, title, author, url, payload, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    platform,
-                    post_id,
-                    title,
-                    author,
-                    url,
-                    json.dumps(payload, ensure_ascii=False),
-                    _now(),
-                ),
-            )
-            conn.commit()
+            _dict_rows(conn)
+            # Preferred schema (matches frontend + SauliteStore docs).
+            try:
+                cur = conn.execute(
+                    "INSERT INTO crawled_content "
+                    "(platform, post_id, raw_payload, crawled_at) "
+                    "VALUES (?, ?, ?::jsonb, ?) RETURNING *",
+                    (platform, post_id, payload_json, now),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return _content_api_row(row) if row else None
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            # Legacy scaffold columns (title/author/url/payload/created_at).
+            try:
+                cur = conn.execute(
+                    "INSERT INTO crawled_content "
+                    "(platform, post_id, title, author, url, payload, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *",
+                    (
+                        platform,
+                        post_id,
+                        raw_payload.get("title"),
+                        raw_payload.get("author"),
+                        raw_payload.get("url"),
+                        payload_json,
+                        now,
+                    ),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return _content_api_row(row) if row else None
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
 
 
 def _persist_comment_row(
     *,
     platform: str,
     post_id: str | None,
-    comment_id: str | None,
-    content: str,
-    sentiment: str,
-) -> None:
+    raw_payload: dict[str, Any],
+    sentiment: str = "neutral",
+) -> dict[str, Any] | None:
     from web_runner.db import db_lock, get_connection
+
+    now = _now()
+    payload_json = json.dumps(raw_payload, ensure_ascii=False)
+    text = (
+        raw_payload.get("text")
+        or raw_payload.get("content")
+        or raw_payload.get("comment")
+        or ""
+    )
+    # Simple local "AI" suggestion so the comments tab is not empty.
+    suggestion = f"感谢反馈：{str(text)[:40]}" if text else "感谢留言，我们会持续关注。"
+    conf = 0.72 if sentiment in ("positive", "negative", "neutral") else None
 
     with db_lock:
         with get_connection() as conn:
-            conn.execute(
-                "INSERT INTO crawled_comments "
-                "(platform, post_id, comment_id, content, sentiment, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (platform, post_id, comment_id, content, sentiment, _now()),
-            )
-            conn.commit()
+            _dict_rows(conn)
+            try:
+                cur = conn.execute(
+                    "INSERT INTO crawled_comments "
+                    "(platform, post_id, raw_payload, ai_sentiment, "
+                    "ai_sentiment_confidence, ai_reply_suggestion, crawled_at) "
+                    "VALUES (?, ?, ?::jsonb, ?, ?, ?, ?) RETURNING *",
+                    (platform, post_id, payload_json, sentiment, conf, suggestion, now),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return _comment_api_row(row) if row else None
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            try:
+                cur = conn.execute(
+                    "INSERT INTO crawled_comments "
+                    "(platform, post_id, comment_id, content, sentiment, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?) RETURNING *",
+                    (
+                        platform,
+                        post_id,
+                        raw_payload.get("comment_id"),
+                        text,
+                        sentiment,
+                        now,
+                    ),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return _comment_api_row(row) if row else None
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
 
 
 def _try_live_crawl(
@@ -238,6 +396,35 @@ def _try_live_crawl(
     if cls is None:
         return [], [], f"no crawler class for platform={platform!r}", "live-miss"
     crawler = cls()  # type: ignore[call-arg]
+    # Prefer the SauliteStore path when available (already writes raw_payload).
+    if hasattr(crawler, kind):
+        method = getattr(crawler, kind)
+        try:
+            if kind == "search":
+                result = method(payload.get("keyword") or "")
+            elif kind == "detail":
+                pids = payload.get("post_ids") or payload.get("post_id") or []
+                if isinstance(pids, str):
+                    pids = [pids]
+                result = method(pids[0] if pids else "")
+            elif kind == "comments":
+                pids = payload.get("post_ids") or payload.get("post_id") or []
+                if isinstance(pids, str):
+                    pids = [pids]
+                result = method(pids[0] if pids else "")
+            else:
+                result = None
+            if isinstance(result, dict):
+                return (
+                    list(result.get("items") or []),
+                    list(result.get("comments") or []),
+                    "live ok",
+                    "live",
+                )
+            if isinstance(result, list):
+                return result, [], "live ok", "live"
+        except Exception as exc:
+            return [], [], f"live method failed: {type(exc).__name__}: {exc}", "live-error"
     if hasattr(crawler, "run_once"):
         result = crawler.run_once(kind=kind, **payload)  # type: ignore[attr-defined]
         if isinstance(result, dict):
@@ -249,7 +436,7 @@ def _try_live_crawl(
             )
         if isinstance(result, list):
             return result, [], "live ok", "live"
-    return [], [], "crawler has no run_once(); optional live mode unsupported", "live-unsupported"
+    return [], [], "crawler has no usable entrypoint for live mode", "live-unsupported"
 
 
 def create_crawl_task(

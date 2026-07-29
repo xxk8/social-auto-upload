@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { SectionIcon } from '@/components/ui/section-header'
 import { Button } from '@/components/ui/button'
 import type {
   StudioAct,
@@ -96,6 +97,11 @@ export function EpisodeAppendDialog({
     }
   }, [open])
 
+  // Allow retry after a failed mutation without closing the dialog.
+  useEffect(() => {
+    if (!isPending) submittingRef.current = false
+  }, [isPending])
+
   const titleTrim = title.trim()
   const titleValid = titleTrim.length <= TITLE_MAX
   // Backend contract: ``act`` is the only required key (string in
@@ -132,7 +138,10 @@ export function EpisodeAppendDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>添加 1 集</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <SectionIcon size="sm"><Sparkles className="h-3.5 w-3.5" /></SectionIcon>
+            添加 1 集
+          </DialogTitle>
           <DialogDescription>
             为这个项目添加一集剧情。act 必填，title / scenes /
             dialogues 可选。后续可以反复添加 4 幕（起 / 承 / 转 /
@@ -156,7 +165,7 @@ export function EpisodeAppendDialog({
               id="studio-episode-act"
               value={act}
               onChange={(e) => setAct(e.target.value as StudioAct)}
-              className="w-full rounded-md border border-border/60 bg-background px-3 py-2 text-[14px] text-foreground outline-none transition-colors focus:border-foreground/40"
+              className="w-full rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[14px] text-foreground outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-primary/20"
             >
               {ACT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -183,9 +192,9 @@ export function EpisodeAppendDialog({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="例：风雪山神庙"
-              className="w-full rounded-md border border-border/60 bg-background px-3 py-2 text-[14px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground/40"
+              className="w-full rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[14px] text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/20"
             />
-            <p className="text-[10px] text-muted-foreground/60 tabular-nums">
+            <p className="text-[10px] text-muted-foreground/50 tabular-nums">
               {titleTrim.length}/{TITLE_MAX}
             </p>
           </div>
@@ -206,7 +215,7 @@ export function EpisodeAppendDialog({
               value={scenes}
               onChange={(e) => setScenes(e.target.value)}
               placeholder={'例：\n江边小镇·黄昏\n客栈内·夜\n山神庙·雪夜'}
-              className="w-full resize-none rounded-md border border-border/60 bg-background px-3 py-2 text-[13px] font-mono text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground/40"
+              className="w-full resize-none rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[13px] font-mono text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/20"
             />
           </div>
 
@@ -228,7 +237,7 @@ export function EpisodeAppendDialog({
               placeholder={
                 '例：\n林冲：英雄末路,竟至于此。\n陆谦：师兄,你今日之祸,皆因从前不忍。'
               }
-              className="w-full resize-none rounded-md border border-border/60 bg-background px-3 py-2 text-[13px] font-mono text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground/40"
+              className="w-full resize-none rounded-lg border border-border/50 bg-background/80 px-3 py-2 text-[13px] font-mono text-foreground outline-none transition-all duration-150 placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-primary/20"
             />
           </div>
 
@@ -245,6 +254,7 @@ export function EpisodeAppendDialog({
             variant="ghost"
             onClick={() => onOpenChange(false)}
             disabled={isPending}
+
           >
             取消
           </Button>
@@ -252,6 +262,7 @@ export function EpisodeAppendDialog({
             type="submit"
             form="studio-episode-append-form"
             disabled={!isValid || isPending}
+            className="gap-1.5"
           >
             <Sparkles className="h-4 w-4" />
             {isPending ? '保存中…' : '添加'}

@@ -34,6 +34,7 @@ import { Route as LoginResetPasswordRouteImport } from './routes/login.reset-pas
 import { Route as DashboardAdminIndexRouteImport } from './routes/dashboard/admin/index'
 import { Route as DashboardAdminAuditRouteImport } from './routes/dashboard/admin/audit'
 import { Route as DashboardAdminUsersRouteImport } from './routes/dashboard/admin/users'
+import { Route as DashboardStudioIndexRouteImport } from './routes/dashboard/studio.index'
 import { Route as DashboardStudioIdRouteImport } from './routes/dashboard/studio.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -162,6 +163,11 @@ const DashboardAdminUsersRoute = DashboardAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardStudioIndexRoute = DashboardStudioIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DashboardStudioRoute,
+} as any)
 const DashboardStudioIdRoute = DashboardStudioIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -195,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/admin/users': typeof DashboardAdminUsersRoute
   '/dashboard/studio/$id': typeof DashboardStudioIdRoute
   '/dashboard/admin/': typeof DashboardAdminIndexRoute
+  '/dashboard/studio/': typeof DashboardStudioIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -212,7 +219,6 @@ export interface FileRoutesByTo {
   '/dashboard/personalization': typeof DashboardPersonalizationRoute
   '/dashboard/publish': typeof DashboardPublishRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
-  '/dashboard/studio': typeof DashboardStudioRouteWithChildren
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/login/auth': typeof LoginAuthRoute
   '/login/forgot-password': typeof LoginForgotPasswordRoute
@@ -222,6 +228,7 @@ export interface FileRoutesByTo {
   '/dashboard/admin/users': typeof DashboardAdminUsersRoute
   '/dashboard/studio/$id': typeof DashboardStudioIdRoute
   '/dashboard/admin': typeof DashboardAdminIndexRoute
+  '/dashboard/studio': typeof DashboardStudioIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -251,6 +258,7 @@ export interface FileRoutesById {
   '/dashboard/admin/users': typeof DashboardAdminUsersRoute
   '/dashboard/studio/$id': typeof DashboardStudioIdRoute
   '/dashboard/admin/': typeof DashboardAdminIndexRoute
+  '/dashboard/studio/': typeof DashboardStudioIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -281,6 +289,7 @@ export interface FileRouteTypes {
     | '/dashboard/admin/users'
     | '/dashboard/studio/$id'
     | '/dashboard/admin/'
+    | '/dashboard/studio/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -298,7 +307,6 @@ export interface FileRouteTypes {
     | '/dashboard/personalization'
     | '/dashboard/publish'
     | '/dashboard/settings'
-    | '/dashboard/studio'
     | '/dashboard/tasks'
     | '/login/auth'
     | '/login/forgot-password'
@@ -308,6 +316,7 @@ export interface FileRouteTypes {
     | '/dashboard/admin/users'
     | '/dashboard/studio/$id'
     | '/dashboard/admin'
+    | '/dashboard/studio'
   id:
     | '__root__'
     | '/'
@@ -336,6 +345,7 @@ export interface FileRouteTypes {
     | '/dashboard/admin/users'
     | '/dashboard/studio/$id'
     | '/dashboard/admin/'
+    | '/dashboard/studio/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -525,6 +535,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAdminUsersRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/studio/': {
+      id: '/dashboard/studio/'
+      path: '/'
+      fullPath: '/dashboard/studio/'
+      preLoaderRoute: typeof DashboardStudioIndexRouteImport
+      parentRoute: typeof DashboardStudioRoute
+    }
     '/dashboard/studio/$id': {
       id: '/dashboard/studio/$id'
       path: '/$id'
@@ -537,10 +554,12 @@ declare module '@tanstack/react-router' {
 
 interface DashboardStudioRouteChildren {
   DashboardStudioIdRoute: typeof DashboardStudioIdRoute
+  DashboardStudioIndexRoute: typeof DashboardStudioIndexRoute
 }
 
 const DashboardStudioRouteChildren: DashboardStudioRouteChildren = {
   DashboardStudioIdRoute: DashboardStudioIdRoute,
+  DashboardStudioIndexRoute: DashboardStudioIndexRoute,
 }
 
 const DashboardStudioRouteWithChildren = DashboardStudioRoute._addFileChildren(

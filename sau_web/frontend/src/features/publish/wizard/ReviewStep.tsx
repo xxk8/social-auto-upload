@@ -5,7 +5,8 @@ import {
   CardContent,
   Badge,
 } from '@/components/ui/index'
-import {PlatformIcon} from '@/components/ui/platform-icon';import {
+import {PlatformIcon} from '@/components/ui/platform-icon'
+import {
   Clock,
   Eye,
   FileText,
@@ -14,10 +15,12 @@ import {PlatformIcon} from '@/components/ui/platform-icon';import {
   Send,
   Tag,
 } from 'lucide-react'
-import {SectionHeader} from '../shared';import { cardVariants } from '../animations'
+import {SectionHeader} from '../shared'
+import { cardVariants } from '../animations'
 import { cn } from '@/lib/utils'
 import { usePublishWizardStore } from '@/stores/publishWizardStore'
-import {useToast} from '@/components/ui/toast.helpers';import { api, PLATFORMS } from '@/api/client'
+import {useToast} from '@/components/ui/toast.helpers'
+import { api, PLATFORMS } from '@/api/client'
 import type { GroupSelection } from '../GroupPublishSelector'
 
 /**

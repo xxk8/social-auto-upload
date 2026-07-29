@@ -31,6 +31,8 @@ import {
   type StudioProject,
   type StudioEpisode,
   type StudioEpisodeCreateInput,
+  type StudioScene,
+  type StudioDialogue,
 } from '@/api/studio'
 import { EpisodeAppendDialog } from '@/components/Studio/EpisodeAppendDialog'
 import { StudioRenderQuotaPill } from '@/components/Studio/StudioRenderQuotaPill'
@@ -58,6 +60,30 @@ const ACT_LABEL: Record<string, string> = {
   承: '承',
   转: '转',
   合: '合',
+}
+
+function isStudioScene(v: unknown): v is StudioScene {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function isStudioDialogue(v: unknown): v is StudioDialogue {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function sceneMeta(ep: StudioEpisode): {
+  hook?: string
+  cliffhanger?: string
+  hook_type?: string
+  beat?: string
+} {
+  const first = ep.scenes?.[0]
+  if (!isStudioScene(first)) return {}
+  return {
+    hook: first.hook,
+    cliffhanger: first.cliffhanger,
+    hook_type: first.hook_type,
+    beat: first.beat,
+  }
 }
 
 /**
@@ -130,6 +156,15 @@ export default function StudioDetailPage() {
     refetchOnWindowFocus: true,
   })
 
+  // Local LLM (8317) + Imagine media status — so operators see whether
+  // SAU_MEDIA_BASE_URL=https://api.x.ai/v1.
+  const { data: providerEnv } = useQuery({
+    queryKey: ['studio-provider'],
+    queryFn: () => studioApi.providerStatus().then((d) => d?.data),
+    staleTime: 60 * 1000,
+    retry: 1,
+  })
+
   // Round-OPT-MONETIZE-v1 — daily per-action quota envelope so the
   // top-of-page pill can render "今日已渲染 N / M 次" without waiting
   // for a render-mutation round-trip. The /api/usage/quota route
@@ -187,6 +222,14 @@ export default function StudioDetailPage() {
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const generateAbortRef = useRef<AbortController | null>(null)
+  /** Expanded episode cards (episode_no). */
+  const [expandedEps, setExpandedEps] = useState<Set<number>>(() => new Set())
+  const [pipelineError, setPipelineError] = useState<string | null>(null)
+  const [mediaError, setMediaError] = useState<string | null>(null)
+  const [mediaBusy, setMediaBusy] = useState<string | null>(null)
+  const [videoJobs, setVideoJobs] = useState<
+    Record<number, { request_id: string; status: string; url?: string | null }>
+  >({})
 
   const updateMutation = useMutation({
     mutationFn: (patch: {
@@ -267,6 +310,7 @@ export default function StudioDetailPage() {
 
     setGenerating(true)
     setGenerateError(null)
+    setPipelineError(null)
 
     const abort = new AbortController()
     generateAbortRef.current = abort
@@ -282,6 +326,9 @@ export default function StudioDetailPage() {
           // progress feedback for v0.1.
         },
         onGenerationDone: () => {
+          // Expand all acts so the operator sees scenes/dialogues
+          // immediately after a craft generate.
+          setExpandedEps(new Set([1, 2, 3, 4]))
           qc.invalidateQueries({ queryKey: ['studio-project', projectId] })
           qc.invalidateQueries({ queryKey: ['studio-projects'] })
         },
@@ -297,6 +344,121 @@ export default function StudioDetailPage() {
       setGenerating(false)
       generateAbortRef.current = null
     })
+  }
+
+  const pipelineMutation = useMutation({
+    mutationFn: (input: { script_approved?: boolean; cast_approved?: boolean }) =>
+      studioApi.updatePipeline(projectId, input),
+    onSuccess: (res) => {
+      if (!res?.success) {
+        setPipelineError(res?.message ?? '更新生产门禁失败')
+        return
+      }
+      setPipelineError(null)
+      qc.invalidateQueries({ queryKey: ['studio-project', projectId] })
+    },
+    onError: (err: Error) => {
+      setPipelineError(err?.message ?? '网络错误,稍后重试')
+    },
+  })
+
+  const mediaErrMsg = (err: unknown, fallback: string) => {
+    const ax = err as {
+      response?: { data?: { message?: string; hint?: string } }
+      message?: string
+    }
+    const msg = ax?.response?.data?.message || ax?.message
+    const hint = ax?.response?.data?.hint
+    return [msg || fallback, hint].filter(Boolean).join(' — ')
+  }
+
+  const handleImagineCast = async () => {
+    if (mediaBusy) return
+    setMediaBusy('cast')
+    setMediaError(null)
+    try {
+      const res = await studioApi.imagineCast(projectId, 5)
+      if (!res?.success) {
+        setMediaError(res?.message ?? '定妆生图失败')
+        return
+      }
+      const errs = res.data?.errors ?? []
+      if (errs.length && !(res.data?.updated?.length)) {
+        const first = errs[0]
+        setMediaError(
+          [first?.message, first?.hint].filter(Boolean).join(' — ') || '定妆生图失败',
+        )
+      }
+      qc.invalidateQueries({ queryKey: ['studio-project', projectId] })
+    } catch (err) {
+      setMediaError(mediaErrMsg(err, '定妆生图失败'))
+    } finally {
+      setMediaBusy(null)
+    }
+  }
+
+  const handleImagineAsset = async (assetId: number) => {
+    if (mediaBusy) return
+    setMediaBusy(`asset-${assetId}`)
+    setMediaError(null)
+    try {
+      const res = await studioApi.imagineAsset(projectId, assetId)
+      if (!res?.success) {
+        setMediaError(res?.message ?? '生图失败')
+        return
+      }
+      qc.invalidateQueries({ queryKey: ['studio-project', projectId] })
+    } catch (err) {
+      setMediaError(mediaErrMsg(err, '生图失败'))
+    } finally {
+      setMediaBusy(null)
+    }
+  }
+
+  const handleStartEpisodeVideo = async (episodeNo: number) => {
+    if (mediaBusy) return
+    setMediaBusy(`video-${episodeNo}`)
+    setMediaError(null)
+    try {
+      const res = await studioApi.startEpisodeVideo(projectId, episodeNo, {
+        duration: 6,
+        resolution: '480p',
+        use_cast_ref: true,
+      })
+      if (!res?.success || !res.data?.request_id) {
+        setMediaError(res?.message ?? '视频任务启动失败')
+        return
+      }
+      const rid = res.data.request_id
+      setVideoJobs((prev) => ({
+        ...prev,
+        [episodeNo]: { request_id: rid, status: 'pending' },
+      }))
+      // Light poll (max ~2 min)
+      for (let i = 0; i < 24; i++) {
+        await new Promise((r) => setTimeout(r, 5000))
+        const poll = await studioApi.pollVideoJob(rid)
+        const st = poll?.data?.status || 'unknown'
+        const url = poll?.data?.url
+        setVideoJobs((prev) => ({
+          ...prev,
+          [episodeNo]: { request_id: rid, status: st, url },
+        }))
+        if (['done', 'completed', 'succeeded', 'success'].includes(st) && url) break
+        if (['failed', 'expired', 'error', 'cancelled'].includes(st)) {
+          setMediaError(poll?.data?.message || `视频生成失败（${st}）`)
+          break
+        }
+        if (poll?.data?.error) {
+          setMediaError(poll.data.message || '视频轮询失败')
+          break
+        }
+      }
+    } catch (err) {
+      setMediaError(mediaErrMsg(err, '视频任务失败'))
+    } finally {
+      setMediaBusy(null)
+    }
   }
 
   const renderMutation = useMutation({
@@ -528,6 +690,13 @@ export default function StudioDetailPage() {
   const project = data.data
   const episodes = project.episodes ?? []
   const assets = project.assets ?? []
+  const pipeline = project.pipeline ?? {
+    script_approved: false,
+    cast_approved: false,
+    source: '',
+    logline: '',
+    genre_tags: [],
+  }
   const resolvedPresetId = useResolvedPresetId(project)
 
   // The effective display value: optimistic override (during PATCH)
@@ -600,7 +769,32 @@ export default function StudioDetailPage() {
           "升级专业版" CTA (via `<StudioRenderQuotaPill>` canUpgradeCta
           default), so the modal is only opened via the
           render-mutation pre-flight + onError backstop. */}
-      <div className="flex justify-end -mt-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 -mt-2">
+        {providerEnv?.chat && (
+          <span
+            className={[
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]',
+              providerEnv.chat.ok
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200',
+            ].join(' ')}
+            title={[
+              providerEnv.chat.base_url,
+              `chat=${providerEnv.chat.model}`,
+              `image=${providerEnv.media?.image_model ?? ''}`,
+              `video=${providerEnv.media?.video_model ?? ''}`,
+              providerEnv.local_only ? 'local-only' : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+            data-testid="studio-provider-pill"
+          >
+            <Sparkles className="h-3 w-3" />
+            {providerEnv.chat.ok ? '本地 Grok' : 'Grok 离线'} · {providerEnv.chat.model}
+            {providerEnv.chat.has_imagine_image ? ' · 图' : ''}
+            {providerEnv.chat.has_imagine_video ? ' · 视频' : ''}
+          </span>
+        )}
         <StudioRenderQuotaPill quota={quota} />
       </div>
 
@@ -653,9 +847,9 @@ export default function StudioDetailPage() {
               </Button>
             )}
             <span
-              className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider ${STATUS_TONE[project.status]}`}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider ${STATUS_TONE[project.status] ?? STATUS_TONE.draft}`}
             >
-              {STATUS_LABEL[project.status]}
+              {STATUS_LABEL[project.status] ?? STATUS_LABEL.draft}
             </span>
           </div>
         </div>
@@ -819,7 +1013,7 @@ export default function StudioDetailPage() {
                 disabled={updateMutation.isPending}
                 aria-label="Visual Style Preset 选择"
                 title={pickedPreset.description}
-                className="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 disabled:opacity-60"
+                className="h-8 rounded-lg border border-input bg-background px-2 text-[12px] text-foreground transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-60"
               >
                 {PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -909,6 +1103,113 @@ export default function StudioDetailPage() {
         </div>
       )}
 
+      {/* Production gates: script → cast (shortdrama-pipeline style). */}
+      {episodes.length > 0 && (
+        <section
+          className="rounded-lg border border-border/70 bg-muted/20 p-4 space-y-3"
+          data-testid="studio-pipeline-bar"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-[14px] font-semibold text-foreground">生产门禁</h2>
+            <Badge variant="secondary" className="text-[10px]">
+              剧本确认 → 定妆确认 → 再渲染
+            </Badge>
+            {pipeline?.source && (
+              <span className="text-[11px] text-muted-foreground">
+                来源：
+                {pipeline.source === 'ai'
+                  ? 'AI'
+                  : pipeline.source === 'ai-legacy'
+                    ? 'AI(兼容)'
+                    : pipeline.source === 'scaffold'
+                      ? '本地模板'
+                      : pipeline.source}
+              </span>
+            )}
+          </div>
+          {pipeline?.logline && (
+            <p className="text-[13px] text-foreground/90 leading-relaxed">
+              <span className="text-muted-foreground">故事线 · </span>
+              {pipeline.logline}
+            </p>
+          )}
+          {pipeline?.genre_tags && pipeline.genre_tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {pipeline.genre_tags.map((tag) => (
+                <Badge key={tag} variant="outline" className="text-[10px] font-normal">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={pipeline?.script_approved ? 'default' : 'outline'}
+              className="gap-1.5"
+              disabled={pipelineMutation.isPending || generating}
+              onClick={() =>
+                pipelineMutation.mutate({
+                  script_approved: !pipeline?.script_approved,
+                })
+              }
+              data-testid="pipeline-approve-script"
+            >
+              {pipelineMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Check className="h-3.5 w-3.5" />
+              )}
+              {pipeline?.script_approved ? '剧本已批准' : '批准剧本'}
+            </Button>
+            <Button
+              size="sm"
+              variant={pipeline?.cast_approved ? 'default' : 'outline'}
+              className="gap-1.5"
+              disabled={
+                pipelineMutation.isPending ||
+                generating ||
+                !pipeline?.script_approved ||
+                !assets.some((a) => a.kind === 'character')
+              }
+              onClick={() =>
+                pipelineMutation.mutate({
+                  cast_approved: !pipeline?.cast_approved,
+                })
+              }
+              data-testid="pipeline-approve-cast"
+            >
+              {pipeline?.cast_approved ? '定妆已批准' : '批准定妆'}
+            </Button>
+            {!pipeline?.script_approved && (
+              <span className="text-[11px] text-muted-foreground">
+                先核对分镜与对白，再点批准，避免在错误剧本上烧视频额度
+              </span>
+            )}
+            {pipeline?.script_approved && !pipeline?.cast_approved && (
+              <span className="text-[11px] text-muted-foreground">
+                检查角色定妆描述一致后批准，再进入渲染
+              </span>
+            )}
+            {pipeline?.script_approved && pipeline?.cast_approved && (
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                门禁已通过，可导出或渲染成片
+              </span>
+            )}
+          </div>
+          {pipelineError && (
+            <p className="text-[12px] text-destructive" role="alert">
+              {pipelineError}
+            </p>
+          )}
+          {mediaError && (
+            <p className="text-[12px] text-destructive" role="alert" data-testid="studio-media-error">
+              {mediaError}
+            </p>
+          )}
+        </section>
+      )}
+
       <section className="space-y-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[14px] font-semibold text-foreground">分集</h2>
@@ -916,30 +1217,46 @@ export default function StudioDetailPage() {
             {episodes.length}
           </Badge>
           {episodes.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-auto gap-1.5"
-              onClick={handleDownloadAll}
-              disabled={exportProjectMutation.isPending}
-              data-testid="storyboard-export-zip"
-            >
-              {exportProjectMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Download className="h-3.5 w-3.5" />
-              )}
-              {exportProjectMutation.isPending
-                ? t('studio.export.bulk_zip_pending', '正在打包…')
-                : t('studio.export.bulk_zip', '一键导出全剧 .zip')}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-[11px] text-muted-foreground"
+                onClick={() =>
+                  setExpandedEps(
+                    expandedEps.size === episodes.length
+                      ? new Set()
+                      : new Set(episodes.map((e) => e.episode_no)),
+                  )
+                }
+              >
+                {expandedEps.size === episodes.length ? '全部收起' : '全部展开'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto gap-1.5"
+                onClick={handleDownloadAll}
+                disabled={exportProjectMutation.isPending}
+                data-testid="storyboard-export-zip"
+              >
+                {exportProjectMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                {exportProjectMutation.isPending
+                  ? t('studio.export.bulk_zip_pending', '正在打包…')
+                  : t('studio.export.bulk_zip', '一键导出全剧 .zip')}
+              </Button>
+            </>
           )}
         </div>
         {episodes.length === 0 ? (
           <EmptyState
             icon={<Sparkles className="h-6 w-6 text-muted-foreground/50" />}
             title="还没有分集"
-            description="使用 AI 一键生成四幕剧本,或手动添加 1 集。"
+            description="使用 AI 一键生成结构化四幕（分镜+对白+角色定妆），或手动添加 1 集。"
             action={
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -970,79 +1287,297 @@ export default function StudioDetailPage() {
           />
         ) : (
           <div className="space-y-3">
-            {episodes.map((ep) => (
-              <Card key={ep.id}>
-                <CardContent className="flex items-start gap-3 pt-5">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-[12px] font-semibold text-muted-foreground">
-                    {ACT_LABEL[ep.act] ?? ep.act}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <h3 className="truncate text-[14px] font-medium text-foreground">
-                        第 {ep.episode_no} 集 · {ep.title}
-                      </h3>
-                      <span className="shrink-0 text-[11px] text-muted-foreground/70">
-                        {STATUS_LABEL[ep.status as keyof typeof STATUS_LABEL] ?? ep.status}
+            {episodes.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleGenerateEpisodes}
+                  disabled={generating || !project.synopsis?.trim()}
+                  className="gap-1.5"
+                  data-testid="ai-regenerate-button"
+                >
+                  {generating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {generating ? '重新生成中…' : '重新生成四幕'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEpisodeDialogOpen(true)}
+                  disabled={generating}
+                  className="gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  追加 1 集
+                </Button>
+              </div>
+            )}
+            {episodes.map((ep) => {
+              const open = expandedEps.has(ep.episode_no)
+              const meta = sceneMeta(ep)
+              return (
+                <Card key={ep.id} data-testid={`episode-card-${ep.episode_no}`}>
+                  <CardContent className="pt-5 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-[12px] font-semibold text-muted-foreground">
+                        {ACT_LABEL[ep.act] ?? ep.act}
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <h3 className="truncate text-[14px] font-medium text-foreground">
+                            第 {ep.episode_no} 集 · {ep.title}
+                          </h3>
+                          <span className="shrink-0 text-[11px] text-muted-foreground/70">
+                            {STATUS_LABEL[ep.status as keyof typeof STATUS_LABEL] ?? ep.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[12px] text-muted-foreground">
+                          {ep.scenes?.length ?? 0} 个分镜 · {ep.dialogues?.length ?? 0} 条对白
+                          {meta.hook_type ? ` · ${meta.hook_type}` : ''}
+                        </p>
+                        {meta.hook && (
+                          <p className="mt-1.5 text-[12px] text-foreground/80 line-clamp-2">
+                            <span className="text-muted-foreground">钩子 · </span>
+                            {meta.hook}
+                          </p>
+                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+                            onClick={() => {
+                              setExpandedEps((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(ep.episode_no)) next.delete(ep.episode_no)
+                                else next.add(ep.episode_no)
+                                return next
+                              })
+                            }}
+                            data-testid={`episode-expand-${ep.episode_no}`}
+                          >
+                            <Film className="h-3 w-3" />
+                            {open ? '收起分镜' : '展开分镜'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+                            onClick={() => handleCopyEpisode(ep)}
+                            data-testid={`storyboard-copy-${ep.episode_no}`}
+                          >
+                            <Copy className="h-3 w-3" />
+                            {copyError === ep.episode_no
+                              ? t('studio.export.copy_failed', '复制失败,请改用下载')
+                              : copiedEp === ep.episode_no
+                                ? t('studio.export.copied', '已复制')
+                                : t('studio.export.copy', '复制 Markdown')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+                            onClick={() => handleDownloadEpisode(ep)}
+                            data-testid={`storyboard-md-${ep.episode_no}`}
+                          >
+                            <Download className="h-3 w-3" />
+                            {t('studio.export.download', '下载 .md')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+                            disabled={
+                              !!mediaBusy ||
+                              !pipeline?.script_approved ||
+                              generating
+                            }
+                            onClick={() => handleStartEpisodeVideo(ep.episode_no)}
+                            data-testid={`episode-video-${ep.episode_no}`}
+                            title={
+                              pipeline?.script_approved
+                                ? 'Grok Imagine 生成本集首镜视频'
+                                : '请先批准剧本'
+                            }
+                          >
+                            {mediaBusy === `video-${ep.episode_no}` ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Clapperboard className="h-3 w-3" />
+                            )}
+                            {videoJobs[ep.episode_no]?.status === 'done' ||
+                            videoJobs[ep.episode_no]?.url
+                              ? '视频就绪'
+                              : mediaBusy === `video-${ep.episode_no}`
+                                ? '出片中…'
+                                : 'Grok 视频'}
+                          </Button>
+                        </div>
+                        {videoJobs[ep.episode_no]?.url && (
+                          <a
+                            href={videoJobs[ep.episode_no].url!}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 inline-block text-[11px] text-sky-600 dark:text-sky-400 underline"
+                          >
+                            打开生成视频
+                          </a>
+                        )}
+                      </div>
                     </div>
-                    {(ep.scenes?.length || ep.dialogues?.length) && (
-                      <p className="mt-1 text-[12px] text-muted-foreground">
-                        {ep.scenes?.length ?? 0} 个场景 · {ep.dialogues?.length ?? 0} 条台词
-                      </p>
+
+                    {open && (
+                      <div className="ml-10 space-y-3 border-t border-border/60 pt-3">
+                        {meta.beat && (
+                          <p className="text-[12px] text-muted-foreground">
+                            <span className="font-medium text-foreground/80">节拍 · </span>
+                            {meta.beat}
+                          </p>
+                        )}
+                        {meta.cliffhanger && (
+                          <p className="text-[12px] text-muted-foreground">
+                            <span className="font-medium text-foreground/80">集末 · </span>
+                            {meta.cliffhanger}
+                          </p>
+                        )}
+                        <div className="space-y-2">
+                          <h4 className="text-[12px] font-semibold text-foreground">分镜</h4>
+                          {(ep.scenes ?? []).map((sc, idx) => {
+                            if (typeof sc === 'string') {
+                              return (
+                                <div
+                                  key={idx}
+                                  className="rounded-md bg-muted/40 px-3 py-2 text-[12px] text-foreground/90 whitespace-pre-wrap"
+                                >
+                                  {sc}
+                                </div>
+                              )
+                            }
+                            if (!isStudioScene(sc)) return null
+                            return (
+                              <div
+                                key={sc.id ?? idx}
+                                className="rounded-md border border-border/50 bg-background/60 px-3 py-2 space-y-1"
+                              >
+                                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                                  <span className="font-medium text-foreground/80">
+                                    镜 {idx + 1}
+                                  </span>
+                                  {sc.location && <span>· {sc.location}</span>}
+                                  {sc.time && <span>· {sc.time}</span>}
+                                  {sc.shot && <span>· {sc.shot}</span>}
+                                  {typeof sc.duration_s === 'number' && (
+                                    <span className="tabular-nums">· {sc.duration_s}s</span>
+                                  )}
+                                </div>
+                                {sc.visual && (
+                                  <p className="text-[12px] text-foreground/85">
+                                    <span className="text-muted-foreground">画面 · </span>
+                                    {sc.visual}
+                                  </p>
+                                )}
+                                {sc.action && (
+                                  <p className="text-[12px] text-foreground/85 whitespace-pre-wrap">
+                                    <span className="text-muted-foreground">动作 · </span>
+                                    {sc.action}
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {(ep.dialogues?.length ?? 0) > 0 && (
+                          <div className="space-y-1.5">
+                            <h4 className="text-[12px] font-semibold text-foreground">对白</h4>
+                            <ul className="space-y-1">
+                              {(ep.dialogues ?? []).map((d, idx) => {
+                                if (typeof d === 'string') {
+                                  return (
+                                    <li key={idx} className="text-[12px] text-foreground/85">
+                                      {d}
+                                    </li>
+                                  )
+                                }
+                                if (!isStudioDialogue(d)) return null
+                                return (
+                                  <li key={d.id ?? idx} className="text-[12px] text-foreground/85">
+                                    <span className="font-medium">{d.speaker || '旁白'}</span>
+                                    {d.emotion ? (
+                                      <span className="text-muted-foreground">
+                                        （{d.emotion}）
+                                      </span>
+                                    ) : null}
+                                    <span className="text-muted-foreground">：</span>
+                                    {d.line}
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     )}
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
-                        onClick={() => handleCopyEpisode(ep)}
-                        data-testid={`storyboard-copy-${ep.episode_no}`}
-                      >
-                        <Copy className="h-3 w-3" />
-                        {copyError === ep.episode_no
-                          ? t('studio.export.copy_failed', '复制失败,请改用下载')
-                          : copiedEp === ep.episode_no
-                            ? t('studio.export.copied', '已复制')
-                            : t('studio.export.copy', '复制 Markdown')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
-                        onClick={() => handleDownloadEpisode(ep)}
-                        data-testid={`storyboard-md-${ep.episode_no}`}
-                      >
-                        <Download className="h-3 w-3" />
-                        {t('studio.export.download', '下载 .md')}
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         )}
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-[14px] font-semibold text-foreground">素材</h2>
           <Badge variant="secondary" className="tabular-nums">
             {assets.length}
           </Badge>
+          {pipeline?.cast_approved && (
+            <Badge className="text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-0">
+              定妆已锁
+            </Badge>
+          )}
+          {assets.some((a) => a.kind === 'character') && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto gap-1.5 h-7 text-[11px]"
+              disabled={!!mediaBusy || generating}
+              onClick={handleImagineCast}
+              data-testid="imagine-cast-button"
+            >
+              {mediaBusy === 'cast' ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ImageIcon className="h-3 w-3" />
+              )}
+              {mediaBusy === 'cast' ? '定妆生图中…' : 'Grok 批量定妆图'}
+            </Button>
+          )}
         </div>
         {assets.length === 0 ? (
           <EmptyState
             icon={<ImageIcon className="h-6 w-6 text-muted-foreground/50" />}
             title="还没有素材"
-            description="角色、场景、道具等素材会在生成分集后自动归档到这里。"
+            description="AI 生成四幕时会自动写入角色定妆与场景描述；再用 Grok Imagine 出定妆图。"
           />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {assets.map((asset) => (
               <Card key={asset.id}>
                 <CardContent className="flex items-start gap-3 pt-5">
-                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                  {asset.ref_image_url ? (
+                    <img
+                      src={asset.ref_image_url}
+                      alt={asset.name}
+                      className="h-14 w-14 shrink-0 rounded-md object-cover border border-border/60"
+                    />
+                  ) : (
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground/60 mt-1" />
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h3 className="truncate text-[13px] font-medium text-foreground">
@@ -1051,12 +1586,32 @@ export default function StudioDetailPage() {
                       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
                         {asset.kind}
                       </span>
+                      {asset.code && (
+                        <span className="shrink-0 font-mono text-[10px] text-muted-foreground/80">
+                          {asset.code}
+                        </span>
+                      )}
                     </div>
                     {asset.prompt && (
-                      <p className="mt-1 line-clamp-2 text-[12px] text-muted-foreground">
+                      <p className="mt-1 line-clamp-3 text-[12px] text-muted-foreground">
                         {asset.prompt}
                       </p>
                     )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-1.5 h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+                      disabled={!!mediaBusy}
+                      onClick={() => handleImagineAsset(asset.id)}
+                      data-testid={`imagine-asset-${asset.id}`}
+                    >
+                      {mediaBusy === `asset-${asset.id}` ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <ImageIcon className="h-3 w-3" />
+                      )}
+                      {asset.ref_image_url ? '重新生图' : 'Grok 生图'}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
